@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+target/
+
+# IDE
+.idea/
+.codegraph/
+
+# Claude Code (local only)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# FFmpeg downloaded libraries (gitignored)
+src-tauri/binaries/
+
+# Tauri
+src-tauri/gen
+src-tauri/target
+
+# Environment
+.env
+.env.local
+
+public/
+chrome*
+reasonix.toml

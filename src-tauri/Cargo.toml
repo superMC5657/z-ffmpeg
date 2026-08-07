@@ -1,0 +1,55 @@
+[package]
+name = "zffmpeg"
+version = "0.1.0"
+description = "Cross-platform video encoding application powered by FFmpeg"
+authors = ["zffmpeg"]
+edition = "2021"
+
+[lib]
+name = "zffmpeg_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
+regex = "1"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "process", "sync", "time", "io-util", "fs"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking"] }
+zip = "4"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+parking_lot = "0.12"
+sysinfo = "0.33"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+# --- 体积优化配置 ---
+# 以下配置仅在编译时生效，不改变任何运行行为。
+# 构建命令: cargo tauri build（或 cargo build --release）
+
+[profile.release]
+opt-level = "z"        # 体积优先的优化级别（相对 "s"/3 能再省一点）
+lto = "fat"            # 全程序链接时优化，跨 crate 内联裁剪
+codegen-units = 1      # 单编译单元，最大化优化空间（代价：编译变慢）
+strip = true           # 剥离符号表与调试信息（体积收益最大的一项）
+panic = "abort"        # panic 直接终止，去掉 unwind 栈展开代码
+
