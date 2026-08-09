@@ -2,6 +2,7 @@ use serde_json::Value;
 
 use crate::commands::encode::FileInfo;
 use crate::encoder::codec::{EncodeConfig, RateControl, VideoCodec};
+use crate::encoder::engine::{fallback_audio_bps, find_main_video_stream};
 
 /// 预估压缩后的输出体积（字节）。
 ///
@@ -44,11 +45,8 @@ pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64
     }
 
     // 输入视频流分辨率 / 帧率（输出缩放用；仅 CRF/CQP 生效）。
-    // streams 缺失时退化为不缩放，不影响预估本身。
-    let video_stream = probe
-        .get("streams")
-        .and_then(|v| v.as_array())
-        .and_then(|arr| arr.iter().find(|s| s.get("codec_type").and_then(|t| t.as_str()) == Some("video")));
+    // 跳过内嵌封面（attached_pic）流；streams 缺失时退化为不缩放，不影响预估本身。
+    let video_stream = probe.get("streams").and_then(find_main_video_stream);
     let in_width = video_stream.and_then(|s| s.get("width")).and_then(|v| v.as_u64()).map(|w| w as u32);
     let in_height = video_stream.and_then(|s| s.get("height")).and_then(|v| v.as_u64()).map(|h| h as u32);
     let in_fps = video_stream.and_then(|s| s.get("r_frame_rate")).and_then(|v| v.as_str()).and_then(parse_fps_str);
@@ -210,7 +208,8 @@ fn audio_stream_kbps(probe: &Value) -> Option<f64> {
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<f64>().ok())
         .or_else(|| {
-            // 个别封装不写 stream bit_rate，按容器总码率近似
+            // 个别封装不写 stream bit_rate：用「容器总码率 − 视频流码率」近似，
+            // 与 engine.rs `fallback_audio_bps` 一致，避免把整个容器当成音频
             let dur = probe
                 .get("format")?
                 .get("duration")
@@ -221,7 +220,14 @@ fn audio_stream_kbps(probe: &Value) -> Option<f64> {
                 .get("size")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse::<f64>().ok())?;
-            Some(size * 8.0 / 1000.0 / dur)
+            let container_bps = size * 8.0 / dur;
+            let video_bps = probe
+                .get("streams")
+                .and_then(find_main_video_stream)
+                .and_then(|s| s.get("bit_rate"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<f64>().ok());
+            Some(fallback_audio_bps(container_bps, video_bps))
         })?;
     (bps > 0.0).then_some(bps / 1000.0)
 }
@@ -335,6 +341,71 @@ mod tests {
             "streams": [],
         }));
         assert_eq!(est, with_empty);
+    }
+
+    /// 带内嵌封面（attached_pic，列在首位）的 probe：缩放必须取主视频尺寸而非封面
+    #[test]
+    fn probe_skips_cover_stream_for_scale() {
+        let mut cfg = base_config();
+        cfg.video_settings.resolution = Some(Resolution { width: 1280, height: 720 });
+        // 封面 400×300 在首位（若误用 → out/in = 0.576/0.12 会 clamp 到 4.0）
+        let with_cover = json!({
+            "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
+            "streams": [
+                { "codec_type": "video", "width": 400, "height": 300,
+                  "disposition": { "attached_pic": 1 } },
+                { "codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1" },
+                { "codec_type": "audio", "bit_rate": "192000" },
+            ],
+        });
+        let without_cover = json!({
+            "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
+            "streams": [
+                { "codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1" },
+                { "codec_type": "audio", "bit_rate": "192000" },
+            ],
+        });
+        assert_eq!(
+            estimate_output_bytes(&cfg, &with_cover),
+            estimate_output_bytes(&cfg, &without_cover)
+        );
+    }
+
+    /// 音频流缺 bit_rate 时，probe 与 FileInfo 两条路径按同一「容器 − 视频」回退，结果一致
+    #[test]
+    fn audio_fallback_consistent_between_paths() {
+        let mut cfg = base_config();
+        cfg.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 2000,
+            max_bitrate_kbps: None,
+        };
+        cfg.audio_settings.codec = "Copy".into();
+        // 容器 104857600B / 100s ≈ 8388608 bps，视频 8000000 bps → 音频回退 ≈ 388608 bps
+        let probe = json!({
+            "format": { "duration": "100.0", "size": "104857600" },
+            "streams": [
+                { "codec_type": "video", "bit_rate": "8000000", "width": 1920, "height": 1080 },
+                { "codec_type": "audio" },
+            ],
+        });
+        let info = FileInfo {
+            path: "C:\\in\\a.mp4".into(),
+            file_name: "a.mp4".into(),
+            file_size: 104_857_600,
+            duration: Some(100.0),
+            video_codec: Some("h264".into()),
+            audio_codec: Some("aac".into()),
+            width: Some(1920),
+            height: Some(1080),
+            frame_rate: Some(30.0),
+            bitrate: None,
+            audio_bitrate: Some(388_608), // 与 engine.rs fallback_audio_bps 一致
+            pixel_format: Some("yuv420p".into()),
+        };
+        assert_eq!(
+            estimate_output_bytes(&cfg, &probe),
+            estimate_output_bytes_from_info(&cfg, &info)
+        );
     }
 
     /// FileInfo 输入与 probe JSON 输入应共用同一推算核心，结果一致

@@ -158,6 +158,10 @@ fn get_available_encoders(ffmpeg_path: &PathBuf) -> AppResult<Vec<String>> {
 }
 
 /// Check if FFmpeg is ready
+///
+/// 仅测试使用（`mod tests` 里断言全局缓存就绪状态）；生产代码走
+/// `get_status_from_paths`，故 `#[cfg(test)]` 限定编译范围，消除 dead_code 警告。
+#[cfg(test)]
 pub fn is_ffmpeg_ready() -> bool {
     FFMPEG_PATH
         .lock()
