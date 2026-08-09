@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use crate::encoder::engine;
+use crate::encoder::estimate;
 use crate::error::{AppError, AppResult};
 
 // Re-export types for convenience
@@ -23,6 +24,8 @@ pub struct FileInfo {
     pub height: Option<u32>,
     pub frame_rate: Option<f64>,
     pub bitrate: Option<u64>,
+    /// 源音频流码率（bps）；音频 Copy 时预估输出体积用，缺失时由容器总码率近似
+    pub audio_bitrate: Option<u64>,
     pub pixel_format: Option<String>,
 }
 
@@ -132,4 +135,18 @@ pub async fn save_command_to_file(content: String, path: String) -> AppResult<()
         .map_err(|e| AppError::Io(e))?;
     log::info!("Saved command to file: {}", path);
     Ok(())
+}
+
+/// 按当前编码参数预估每个输入文件压缩后的输出体积（字节），编码页实时预览用。
+/// 纯算术计算、无 I/O（文件信息由前端 `probe_file` 探测后传入），参数变化时可
+/// 反复调用。探测信息不足（无时长 / 无码率）的对应项返回 `None`。
+#[tauri::command]
+pub fn estimate_output_sizes(
+    config: EncodeConfig,
+    files: Vec<FileInfo>,
+) -> Vec<Option<u64>> {
+    files
+        .iter()
+        .map(|f| estimate::estimate_output_bytes_from_info(&config, f))
+        .collect()
 }

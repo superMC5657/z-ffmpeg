@@ -199,6 +199,8 @@ export default function EncodingParams() {
                 placeholder="宽"
                 value={resolution?.width || ""}
                 onChange={(e) =>
+                  // 任一维度为 0 → 后端视为未设置分辨率（保持原始），预估回退不缩放；
+                  // 直接存对象（含 0），避免置 null 级联清空另一个输入框
                   setResolution({
                     width: parseInt(e.target.value) || 0,
                     height: resolution?.height || 0,

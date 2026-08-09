@@ -454,6 +454,23 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
             .get("bit_rate")
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<u64>().ok()),
+        audio_bitrate: audio_stream
+            .and_then(|s| s.get("bit_rate"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| {
+                // 仅当存在音频流时按容器总码率（size/duration）近似（视频-only 文件无音频流，不应误标）；
+                // 与 estimate.rs 音频 fallback 逻辑一致
+                if audio_stream.is_none() {
+                    return None;
+                }
+                let dur = duration?;
+                let size = format
+                    .get("size")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u64>().ok())?;
+                Some((size as f64 * 8.0 / dur) as u64)
+            }),
         pixel_format: video_stream
             .and_then(|s| s.get("pix_fmt"))
             .and_then(|v| v.as_str())
@@ -940,6 +957,49 @@ mod tests {
                 r"C:\in\movie.mkv",
             ]
         );
+    }
+
+    #[test]
+    fn parse_probe_result_extracts_audio_bitrate() {
+        let json = serde_json::json!({
+            "format": { "size": "104857600", "duration": "100.0", "bit_rate": "8000000" },
+            "streams": [
+                { "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
+                  "pix_fmt": "yuv420p", "r_frame_rate": "30/1" },
+                { "codec_type": "audio", "codec_name": "aac", "bit_rate": "192000" },
+            ],
+        });
+        let info = parse_probe_result(&json, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.audio_bitrate, Some(192_000));
+        assert_eq!(info.bitrate, Some(8_000_000));
+    }
+
+    #[test]
+    fn parse_probe_result_audio_bitrate_falls_back_to_container_rate() {
+        // 音频流不写 bit_rate：按容器 size/duration 近似（104857600*8/100 ≈ 8388608）
+        let json = serde_json::json!({
+            "format": { "size": "104857600", "duration": "100.0" },
+            "streams": [
+                { "codec_type": "video", "codec_name": "h264" },
+                { "codec_type": "audio", "codec_name": "aac" },
+            ],
+        });
+        let info = parse_probe_result(&json, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.audio_bitrate, Some(8_388_608));
+    }
+
+    #[test]
+    fn parse_probe_result_video_only_has_no_audio_bitrate() {
+        // 无音频流：不应把容器总码率误标为音频码率
+        let json = serde_json::json!({
+            "format": { "size": "104857600", "duration": "100.0", "bit_rate": "8000000" },
+            "streams": [
+                { "codec_type": "video", "codec_name": "h264" },
+            ],
+        });
+        let info = parse_probe_result(&json, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.audio_bitrate, None);
+        assert_eq!(info.audio_codec, None);
     }
 
 }

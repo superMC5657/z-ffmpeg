@@ -98,7 +98,7 @@ pub enum RateControl {
     Crf { value: u8 },
     #[serde(rename = "CQP")]
     Cqp { value: u32 },
-    #[serde(rename = "ABR")]
+    #[serde(rename = "ABR", rename_all = "camelCase")]
     Abr {
         bitrate_kbps: u32,
         max_bitrate_kbps: Option<u32>,
@@ -207,4 +207,66 @@ pub enum HwAccelDevice {
     VideoToolbox,
     #[serde(rename = "VAAPI")]
     VAAPI,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归：enum 级 `rename_all` 不会递归应用到 internally-tagged 变体字段，
+    /// CRF/CQP 字段名 `value` 恰好小写未暴露；ABR 的 `bitrate_kbps` 若不做
+    /// 变体级 camelCase 重命名，前端发来的 `bitrateKbps` 会反序列化失败，
+    /// 导致「生成 FFmpeg 命令」与「添加到队列」报错。
+    const ABR_CONFIG_JSON: &str = r#"{
+        "videoCodec": "H264",
+        "videoSettings": {
+            "rateControl": { "type": "ABR", "bitrateKbps": 5000 },
+            "encoderPreset": "medium",
+            "resolution": null,
+            "frameRate": null,
+            "pixelFormat": null,
+            "profile": null,
+            "additionalParams": []
+        },
+        "audioSettings": {
+            "codec": "AAC",
+            "bitrateKbps": 192,
+            "channels": 2,
+            "sampleRate": 48000
+        },
+        "containerFormat": "MP4",
+        "hwAccel": null
+    }"#;
+
+    #[test]
+    fn abr_deserialize_camel_case_from_frontend() {
+        // 前端 EncodingParams.tsx 实际发送：只有 bitrateKbps，无 maxBitrateKbps
+        let cfg: EncodeConfig = serde_json::from_str(ABR_CONFIG_JSON)
+            .expect("ABR camelCase 配置应能反序列化");
+        let args = cfg.video_settings.rate_control.to_args();
+        assert_eq!(args, vec!["-b:v", "5000k"]);
+    }
+
+    #[test]
+    fn abr_deserialize_with_max_bitrate() {
+        let json = ABR_CONFIG_JSON.replace(
+            "\"bitrateKbps\": 5000",
+            "\"bitrateKbps\": 5000, \"maxBitrateKbps\": 8000",
+        );
+        let cfg: EncodeConfig = serde_json::from_str(&json).expect("带 maxBitrateKbps 应能反序列化");
+        let args = cfg.video_settings.rate_control.to_args();
+        assert_eq!(args, vec!["-b:v", "5000k", "-maxrate", "8000k", "-bufsize", "16000k"]);
+    }
+
+    #[test]
+    fn abr_serializes_back_to_camel_case() {
+        // 队列 DB 持久化、预设导入导出依赖后端→前端的 camelCase 输出
+        let cfg: EncodeConfig = serde_json::from_str(ABR_CONFIG_JSON).unwrap();
+        let s = serde_json::to_string(&cfg.video_settings.rate_control).unwrap();
+        assert!(
+            s.contains("\"bitrateKbps\":5000"),
+            "ABR 序列化应为 camelCase: {s}"
+        );
+        assert!(!s.contains("bitrate_kbps"), "不得出现 snake_case: {s}");
+    }
 }

@@ -9,7 +9,12 @@ import type {
   RateControl,
   HwAccelConfig,
 } from "@/types";
-import { probeFile, startEncode, cancelEncode } from "@/lib/tauri";
+import { probeFile, startEncode, cancelEncode, estimateOutputSizes } from "@/lib/tauri";
+
+// 模块级防抖计时器：CRF slider 拖动等高频参数变化时合并为一次预估刷新
+let estimateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+// 预估请求序号：每次参数/文件列表变化时递增，丢弃在途的过期响应，避免旧参数覆盖新结果
+let estimateRequestSeq = 0;
 
 interface EncoderState {
   // File selection
@@ -56,6 +61,13 @@ interface EncoderState {
   applyConfig: (config: CodecConfig) => void;
   startEncode: (inputPath: string, outputPath: string) => Promise<string>;
   cancelEncode: (jobId: string) => Promise<void>;
+
+  /** 预估输出体积（字节），key = 输入文件 path；参数变化时防抖刷新 */
+  estimatedSizes: Record<string, number | null>;
+  /** 立即按当前参数刷新所有已探测文件的预估体积（后端纯算术，无 I/O） */
+  refreshEstimates: () => Promise<void>;
+  /** 参数变化后防抖（150ms）调度刷新预估 */
+  scheduleEstimateRefresh: () => void;
 }
 
 export const useEncoderStore = create<EncoderState>((set, get) => ({
@@ -74,6 +86,7 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
       height: null,
       frameRate: null,
       bitrate: null,
+      audioBitrate: null,
       pixelFormat: null,
       probing: true,
     }));
@@ -105,6 +118,7 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
               height: null,
               frameRate: null,
               bitrate: null,
+              audioBitrate: null,
               pixelFormat: null,
               probing: false,
               probeError: true,
@@ -117,46 +131,88 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
       }
     );
     await Promise.all(workers);
+    // 探测完成后按当前参数刷新预估体积
+    get().scheduleEstimateRefresh();
   },
 
-  removeFile: (index: number) =>
-    set((s) => ({ inputFiles: s.inputFiles.filter((_, i) => i !== index) })),
-  clearFiles: () => set({ inputFiles: [] }),
+  removeFile: (index: number) => {
+    const removed = get().inputFiles[index];
+    // 使在途预估请求失效，防止旧结果复活已删除文件的孤儿 key
+    estimateRequestSeq++;
+    set((s) => ({
+      inputFiles: s.inputFiles.filter((_, i) => i !== index),
+      // 同步清理该文件的预估项，避免孤儿 key 累积
+      estimatedSizes: removed
+        ? Object.fromEntries(Object.entries(s.estimatedSizes).filter(([p]) => p !== removed.path))
+        : s.estimatedSizes,
+    }));
+    get().scheduleEstimateRefresh();
+  },
+  clearFiles: () => {
+    estimateRequestSeq++;
+    set({ inputFiles: [], estimatedSizes: {} });
+  },
 
   // Codec settings
   videoCodec: "H264",
-  setVideoCodec: (codec) => set({ videoCodec: codec }),
+  setVideoCodec: (codec) => {
+    set({ videoCodec: codec });
+    get().scheduleEstimateRefresh();
+  },
 
   rateControl: { type: "CRF", value: 23 },
-  setRateControl: (rc) => set({ rateControl: rc }),
+  setRateControl: (rc) => {
+    set({ rateControl: rc });
+    get().scheduleEstimateRefresh();
+  },
 
   encoderPreset: "medium",
   setEncoderPreset: (preset) => set({ encoderPreset: preset }),
 
   resolution: null,
-  setResolution: (res) => set({ resolution: res }),
+  setResolution: (res) => {
+    set({ resolution: res });
+    // 分辨率影响 CRF/CQP 预估体积（像素面积缩放），需刷新
+    get().scheduleEstimateRefresh();
+  },
 
   frameRate: null,
-  setFrameRate: (fps) => set({ frameRate: fps }),
+  setFrameRate: (fps) => {
+    set({ frameRate: fps });
+    // 帧率影响 CRF/CQP 预估体积（帧数缩放），需刷新
+    get().scheduleEstimateRefresh();
+  },
 
   pixelFormat: null,
   setPixelFormat: (fmt) => set({ pixelFormat: fmt }),
 
   // Audio settings
   audioCodec: "AAC",
-  setAudioCodec: (codec) => set({ audioCodec: codec }),
+  setAudioCodec: (codec) => {
+    set({ audioCodec: codec });
+    get().scheduleEstimateRefresh();
+  },
   audioBitrate: 192,
-  setAudioBitrate: (br) => set({ audioBitrate: br }),
+  setAudioBitrate: (br) => {
+    set({ audioBitrate: br });
+    get().scheduleEstimateRefresh();
+  },
 
   // Output settings
   outputDir: "",
   setOutputDir: (dir) => set({ outputDir: dir }),
   containerFormat: "MP4",
-  setContainerFormat: (fmt) => set({ containerFormat: fmt }),
+  setContainerFormat: (fmt) => {
+    set({ containerFormat: fmt });
+    get().scheduleEstimateRefresh();
+  },
 
   // HW acceleration
   hwAccel: null,
-  setHwAccel: (config) => set({ hwAccel: config }),
+  setHwAccel: (config) => {
+    set({ hwAccel: config });
+    get().scheduleEstimateRefresh();
+  },
 
   // Actions
   isEncoding: false,
@@ -220,6 +276,7 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
     if (config.hwAccel != null) patch.hwAccel = config.hwAccel;
 
     set(patch);
+    get().scheduleEstimateRefresh();
   },
 
   startEncode: async (inputPath: string, outputPath: string) => {
@@ -233,5 +290,35 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
   cancelEncode: async (jobId: string) => {
     await cancelEncode(jobId);
     set({ isEncoding: false });
+  },
+
+  // ---- 预估体积（编码页实时预览） ----
+  estimatedSizes: {},
+  refreshEstimates: async () => {
+    const s = get();
+    // 探测中/失败的项无有效数据，后端会返回 null，直接跳过减少无谓 IPC
+    const files = s.inputFiles.filter((f) => !f.probing && !f.probeError);
+    if (files.length === 0) return;
+    const seq = ++estimateRequestSeq;
+    try {
+      const sizes = await estimateOutputSizes(s.buildConfig(), files);
+      // 期间参数/文件列表又变了：丢弃这次结果，避免旧参数覆盖新预估
+      if (seq !== estimateRequestSeq) return;
+      const map: Record<string, number | null> = { ...get().estimatedSizes };
+      files.forEach((f, i) => {
+        map[f.path] = sizes[i] ?? null;
+      });
+      set({ estimatedSizes: map });
+    } catch {
+      // 预估失败不影响主流程，静默忽略（下次参数变化会重试）
+    }
+  },
+  scheduleEstimateRefresh: () => {
+    // 参数/文件列表已变化：使在途预估请求失效，防止旧结果覆盖新预估
+    estimateRequestSeq++;
+    if (estimateRefreshTimer) clearTimeout(estimateRefreshTimer);
+    estimateRefreshTimer = setTimeout(() => {
+      get().refreshEstimates();
+    }, 150);
   },
 }));

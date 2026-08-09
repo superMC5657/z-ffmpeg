@@ -1,7 +1,7 @@
 import { X, FileVideo, Loader2 } from "lucide-react";
 import type { FileInfo as FileInfoType } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
-import { formatFileSize, formatDuration } from "@/lib/utils";
+import { formatFileSize, formatDuration, formatFileSizeCompact } from "@/lib/utils";
 
 interface FileInfoProps {
   file: FileInfoType;
@@ -10,6 +10,7 @@ interface FileInfoProps {
 
 export default function FileInfo({ file, index }: FileInfoProps) {
   const removeFile = useEncoderStore((s) => s.removeFile);
+  const estimatedSize = useEncoderStore((s) => s.estimatedSizes[file.path]);
 
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm">
@@ -43,6 +44,15 @@ export default function FileInfo({ file, index }: FileInfoProps) {
               {file.videoCodec && (
                 <span className="rounded-md bg-accent px-2 py-0.5 text-[13px] font-medium uppercase text-muted-foreground">
                   {file.videoCodec}
+                </span>
+              )}
+              {/* 预估输出体积：按当前编码参数推算，参数变化自动刷新 */}
+              {estimatedSize != null && (
+                <span
+                  title="按当前编码参数预估的输出体积（仅供参考）"
+                  className="rounded-md bg-primary/10 px-2 py-0.5 text-[13px] font-medium text-primary"
+                >
+                  预计 {formatFileSizeCompact(estimatedSize)}
                 </span>
               )}
               {file.probeError && (

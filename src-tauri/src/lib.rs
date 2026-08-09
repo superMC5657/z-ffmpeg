@@ -86,6 +86,7 @@ pub fn run() {
             commands::encode::cancel_encode,
             commands::encode::build_ffmpeg_commands,
             commands::encode::save_command_to_file,
+            commands::encode::estimate_output_sizes,
             commands::queue::add_to_queue,
             commands::queue::start_queue,
             commands::queue::remove_from_queue,

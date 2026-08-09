@@ -71,6 +71,8 @@ export interface FileInfo {
   height: number | null;
   frameRate: number | null;
   bitrate: number | null;
+  /** 源音频流码率（bps）；音频 Copy 时预估输出体积用 */
+  audioBitrate: number | null;
   pixelFormat: string | null;
   /** 前端专用:正在 ffprobe 探测中(占位项) */
   probing?: boolean;
