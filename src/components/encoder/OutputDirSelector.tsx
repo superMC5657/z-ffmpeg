@@ -1,8 +1,9 @@
-import { Folder, FolderOpen, X } from "lucide-react";
+import { FolderOpen, RotateCcw } from "lucide-react";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useToastStore } from "@/store/toastStore";
 import { isTauriRuntime } from "@/lib/utils";
 
+/** 输出目录选择（卡片外壳由父级 Card 提供） */
 export default function OutputDirSelector() {
   const outputDir = useEncoderStore((s) => s.outputDir);
   const setOutputDir = useEncoderStore((s) => s.setOutputDir);
@@ -27,40 +28,35 @@ export default function OutputDirSelector() {
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-[15px] font-semibold">输出设置</h2>
+    <div className="flex flex-wrap items-center gap-2.5">
+      <button
+        onClick={handleSelect}
+        disabled={!isTauriRuntime()}
+        className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-fill px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong disabled:opacity-50"
+      >
+        <FolderOpen className="h-4 w-4 text-secondary" />
+        选择目录
+      </button>
+
+      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg bg-fill/60 px-3">
+        <span
+          className={`truncate text-[12px] ${
+            outputDir ? "text-foreground" : "text-tertiary"
+          }`}
+          title={outputDir || undefined}
+        >
+          {outputDir || "默认：输出到源文件所在目录（文件名_encoded）"}
+        </span>
         {outputDir && (
           <button
             onClick={handleClear}
-            className="flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+            title="恢复默认"
+            className="ml-auto flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-secondary transition-colors hover:bg-fill-strong hover:text-foreground"
           >
-            <X className="h-3.5 w-3.5" />
+            <RotateCcw className="h-3 w-3" />
             恢复默认
           </button>
         )}
-      </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleSelect}
-          disabled={!isTauriRuntime()}
-          className="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-accent/60 px-4 py-2.5 text-[14px] font-medium transition-all hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <FolderOpen className="h-4 w-4" />
-          选择目录
-        </button>
-        <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-border bg-accent/40 px-3.5 py-2.5">
-          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span
-            className={`truncate text-[13px] ${
-              outputDir ? "text-foreground" : "text-muted-foreground"
-            }`}
-            title={outputDir || undefined}
-          >
-            {outputDir || "默认：输出到源文件所在目录（文件名_encoded）"}
-          </span>
-        </div>
       </div>
     </div>
   );

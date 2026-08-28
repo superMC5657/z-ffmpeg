@@ -1,43 +1,94 @@
 @import "tailwindcss";
 
-@theme {
-  --color-background: oklch(0.145 0 0);
-  --color-foreground: oklch(0.985 0 0);
-  --color-card: oklch(0.145 0 0);
-  --color-card-foreground: oklch(0.985 0 0);
-  --color-popover: oklch(0.145 0 0);
-  --color-popover-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.585 0.233 277.117);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-secondary: oklch(0.269 0 0);
-  --color-secondary-foreground: oklch(0.985 0 0);
-  --color-muted: oklch(0.269 0 0);
-  --color-muted-foreground: oklch(0.708 0 0);
-  --color-accent: oklch(0.269 0 0);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-destructive: oklch(0.704 0.191 22.216);
-  --color-border: oklch(0.269 0 0);
-  --color-input: oklch(0.269 0 0);
-  --color-ring: oklch(0.556 0 0);
-  --color-sidebar-background: oklch(0.13 0 0);
-  --color-sidebar-foreground: oklch(0.708 0 0);
-  --color-sidebar-primary: oklch(0.585 0.233 277.117);
-  --color-sidebar-primary-foreground: oklch(0.985 0 0);
-  --color-sidebar-accent: oklch(0.269 0 0);
-  --color-sidebar-accent-foreground: oklch(0.985 0 0);
-  --color-sidebar-border: oklch(0.269 0 0);
-  --color-sidebar-ring: oklch(0.556 0 0);
-  --color-success: oklch(0.65 0.2 140);
-  --color-warning: oklch(0.75 0.15 85);
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------
+   Apple 风格设计 token —— 语义层引用底层变量，随 .dark class 整体切换
+   ------------------------------------------------------------------ */
+@theme inline {
+  /* 表面 */
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-fill: var(--fill); /* 次级填充（输入框 / 按钮底 / track） */
+  --color-fill-strong: var(--fill-strong); /* hover / 更强填充 */
+
+  /* 文字 */
+  --color-foreground: var(--text);
+  --color-secondary: var(--text-2);
+  --color-tertiary: var(--text-3);
+
+  /* 线与强调 */
+  --color-hairline: var(--hairline);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+
+  /* 语义 */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
+
+  /* 材质 */
+  --color-sidebar: var(--sidebar);
+  --color-overlay: var(--overlay);
+
+  /* 阴影 */
+  --shadow-card: var(--elev-card);
+  --shadow-pop: var(--elev-pop);
+  --shadow-knob: 0 1px 3px rgba(0, 0, 0, 0.25), 0 3px 8px rgba(0, 0, 0, 0.12);
+
+  /* 圆角 */
+  --radius-card: 14px;
+  --radius-control: 9px;
 }
 
-/* Brand gradient (indigo -> violet) used for accents and primary actions */
-@utility bg-gradient-brand {
-  background-image: linear-gradient(
-    135deg,
-    oklch(0.55 0.23 277),
-    oklch(0.6 0.25 293)
-  );
+:root {
+  /* 浅色 —— Apple systemGray6 底 + 纯白表面 */
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --fill: rgba(120, 120, 128, 0.09);
+  --fill-strong: rgba(120, 120, 128, 0.16);
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --text-3: #aeaeb2;
+  --hairline: rgba(0, 0, 0, 0.1);
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --on-accent: #ffffff;
+  --success: #34c759;
+  --warning: #ff9f0a;
+  --destructive: #ff3b30;
+  --sidebar: rgba(243, 243, 245, 0.8);
+  --overlay: rgba(0, 0, 0, 0.32);
+  --elev-card: 0 0 0 0.5px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px -12px rgba(0, 0, 0, 0.08);
+  --elev-pop: 0 0 0 0.5px rgba(0, 0, 0, 0.03), 0 12px 40px -8px rgba(0, 0, 0, 0.18);
+
+  color-scheme: light;
+}
+
+.dark {
+  /* 深色 —— macOS 窗口分层灰 */
+  --bg: #1a1a1c;
+  --surface: #232326;
+  --fill: rgba(120, 120, 128, 0.24);
+  --fill-strong: rgba(120, 120, 128, 0.34);
+  --text: #f5f5f7;
+  --text-2: #98989d;
+  --text-3: #636366;
+  --hairline: rgba(255, 255, 255, 0.12);
+  --accent: #0a84ff;
+  --accent-hover: #409cff;
+  --on-accent: #ffffff;
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --destructive: #ff453a;
+  --sidebar: rgba(18, 18, 20, 0.72);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --elev-card: 0 0 0 0.5px rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --elev-pop: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 16px 48px -8px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
 }
 
 @layer base {
@@ -46,46 +97,148 @@
     margin: 0;
     padding: 0;
   }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+      "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+      "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
 }
 
-html,
-body,
-#root {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-  font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont,
-    'Segoe UI', Roboto, sans-serif;
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* Custom scrollbar */
+/* 滚动条：macOS overlay 风格 */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
-
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--color-muted-foreground);
-  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-2) 42%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-foreground);
+  background: color-mix(in srgb, var(--text-2) 65%, transparent);
+  background-clip: content-box;
 }
 
-/* Drag region for Tauri titlebar */
+/* Apple 风格滑块（CRF 等范围输入） */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--fill-strong);
+  outline-offset: 6px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0.5px solid rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-knob);
+  transition: transform 0.12s ease;
+}
+input[type="range"]::-webkit-slider-thumb:active {
+  transform: scale(1.08);
+}
+.dark input[type="range"]::-webkit-slider-thumb {
+  background: #f5f5f7;
+}
+
+/* Tauri 拖拽区 */
 .titlebar-drag-region {
   -webkit-app-region: drag;
 }
-
 .titlebar-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* 过渡：主题切换时全局柔和过渡（排除正在拖动的滑块） */
+html.theme-anim,
+html.theme-anim * {
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.15s ease !important;
+}
+
+/* 浮现动画：Toast 顶部滑入 / 对话框中心浮现 */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 0.28s cubic-bezier(0.25, 1, 0.4, 1);
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.animate-dialog-in {
+  animation: dialog-in 0.2s cubic-bezier(0.25, 1, 0.4, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

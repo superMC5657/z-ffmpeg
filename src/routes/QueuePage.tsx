@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { Layers } from "lucide-react";
 import QueuePanel from "@/components/queue/QueuePanel";
 import PageHeader from "@/components/layout/PageHeader";
 import { useQueueStore } from "@/store/queueStore";
@@ -32,9 +31,8 @@ export default function QueuePage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div>
       <PageHeader
-        icon={Layers}
         title="编码队列"
         description="管理批量编码任务，查看实时进度"
       />

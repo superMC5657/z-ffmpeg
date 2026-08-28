@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from "react";
-import { Upload, FolderOpen } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useToastStore } from "@/store/toastStore";
 import { open } from "@tauri-apps/plugin-dialog";
+import { cn } from "@/lib/utils";
 
 const FORMATS = ["MP4", "MKV", "WebM", "MOV", "AVI", "FLV", "TS"];
 
@@ -86,11 +87,12 @@ export default function FileSelector() {
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
       onClick={handleClick}
-      className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-10 transition-all duration-200 ${
+      className={cn(
+        "flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed py-8 transition-all duration-200",
         isDragOver
-          ? "scale-[1.01] border-primary bg-primary/5"
-          : "border-muted-foreground/25 hover:border-primary/40 hover:bg-accent/20"
-      }`}
+          ? "border-accent bg-accent/[0.06]"
+          : "border-hairline bg-fill/40 hover:border-accent/40 hover:bg-fill/70"
+      )}
     >
       <input
         ref={inputRef}
@@ -100,36 +102,29 @@ export default function FileSelector() {
         className="hidden"
         onChange={handleFileChange}
       />
-      <div className="flex flex-col items-center gap-3">
-        <div
-          className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-brand shadow-lg shadow-primary/25 transition-transform duration-200 ${
-            isDragOver ? "scale-110" : ""
-          }`}
-        >
-          {isDragOver ? (
-            <Upload className="h-6 w-6 text-white" />
-          ) : (
-            <FolderOpen className="h-6 w-6 text-white" />
-          )}
-        </div>
-        <div className="text-center">
-          <p className="text-sm font-medium">
-            {isDragOver ? "释放以添加文件" : "拖拽视频文件到此处"}
-          </p>
-          <p className="mt-1 text-[13px] text-muted-foreground">
-            或点击浏览文件 · 支持常见视频格式
-          </p>
-        </div>
-        <div className="flex flex-wrap justify-center gap-1.5">
-          {FORMATS.map((f) => (
-            <span
-              key={f}
-              className="rounded-md border border-border bg-accent/60 px-2 py-0.5 text-[13px] font-medium text-muted-foreground"
-            >
-              {f}
-            </span>
-          ))}
-        </div>
+      <div
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-[11px] bg-accent shadow-card transition-transform duration-200",
+          isDragOver ? "scale-110" : ""
+        )}
+      >
+        <Plus className="h-5 w-5 text-on-accent" strokeWidth={2.4} />
+      </div>
+      <p className="mt-3 text-[13px] font-medium">
+        {isDragOver ? "释放以添加文件" : "拖拽视频文件到此处"}
+      </p>
+      <p className="mt-0.5 text-[12px] text-secondary">
+        或点击浏览 · 支持常见视频格式
+      </p>
+      <div className="mt-3 flex flex-wrap justify-center gap-1">
+        {FORMATS.map((f) => (
+          <span
+            key={f}
+            className="rounded-md border border-hairline bg-surface px-1.5 py-0.5 text-[11px] font-medium text-tertiary"
+          >
+            {f}
+          </span>
+        ))}
       </div>
     </div>
   );

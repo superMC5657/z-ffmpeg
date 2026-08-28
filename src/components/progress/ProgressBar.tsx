@@ -8,6 +8,7 @@ import {
   formatDuration,
   estimateRemainingSeconds,
 } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface ProgressBarProps {
   /** 实时进度对象或后端快照中的数字百分比（0-100） */
@@ -23,6 +24,8 @@ interface ProgressBarProps {
   vmafScore?: number | null;
 }
 
+const TRACK = "h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong";
+
 export default function ProgressBar({ progress, status, estimatedSizeBytes = null, outputSizeBytes = null, inputSizeBytes = null, vmafScore = null }: ProgressBarProps) {
   const isLive = typeof progress === "object" && progress !== null;
   const pct = isLive ? (progress as EncodeProgress).percentage : (progress as number) ?? 0;
@@ -33,13 +36,15 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
 
   if (status === "Pending" || status === "Queued") {
     return (
-      <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-        <div className="h-1.5 flex-1 rounded-full bg-accent">
-          <div className="h-full w-0 rounded-full bg-primary" />
+      <div className="flex items-center gap-2.5 text-[11px] text-secondary">
+        <div className={TRACK}>
+          <div className="h-full w-0 rounded-full bg-accent" />
         </div>
-        {estimatedSizeBytes != null
-          ? <>等待中 · 预计 {formatFileSize(estimatedSizeBytes)}</>
-          : "等待中..."}
+        <span className="shrink-0">
+          {estimatedSizeBytes != null
+            ? <>等待中 · 预计 {formatFileSize(estimatedSizeBytes)}</>
+            : "等待中"}
+        </span>
       </div>
     );
   }
@@ -59,49 +64,46 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
     const enlarged =
       outputSizeBytes != null && inputSizeBytes != null && inputSizeBytes > 0 && outputSizeBytes > inputSizeBytes;
     return (
-      <div className={`flex items-center gap-2 text-[13px] ${enlarged ? "text-warning" : "text-success"}`}>
-        <div className="h-1.5 flex-1 rounded-full bg-accent">
+      <div className={cn("flex items-center gap-2.5 text-[11px]", enlarged ? "text-warning" : "text-success")}>
+        <div className={TRACK}>
           <div className="h-full w-full rounded-full bg-success" />
         </div>
-        {parts.join(" · ")}
+        <span className="shrink-0 font-medium tabular-nums">{parts.join(" · ")}</span>
       </div>
     );
   }
 
   if (status === "Failed" || status === "Cancelled") {
     return (
-      <div className="flex items-center gap-2 text-[13px] text-destructive">
-        <div className="h-1.5 flex-1 rounded-full bg-accent">
-          <div className="h-full rounded-full bg-destructive"
-            style={{ width: `${pct}%` }} />
+      <div className="flex items-center gap-2.5 text-[11px] text-destructive">
+        <div className={TRACK}>
+          <div
+            className="h-full rounded-full bg-destructive"
+            style={{ width: `${pct}%` }}
+          />
         </div>
-        {status === "Cancelled" ? "已取消" : "失败"}
+        <span className="shrink-0">{status === "Cancelled" ? "已取消" : "失败"}</span>
       </div>
     );
   }
 
+  // Encoding（实时）
   return (
     <div className="space-y-1">
-      <div className="flex items-center justify-between text-[13px]">
-        <span className="text-muted-foreground">
-          <span className="rounded-md bg-primary/10 px-2 py-0.5 font-mono text-[13px] font-semibold text-primary">
-            {pct.toFixed(1)}%
-          </span>
+      <div className="flex items-center justify-between gap-2 text-[11px] text-secondary tabular-nums">
+        <span className="font-semibold text-foreground">
+          {pct.toFixed(1)}%
         </span>
         {isLive && (
-          <span className="text-muted-foreground">
+          <span className="truncate">
             {formatFps((progress as EncodeProgress).fps)} · {formatSpeed((progress as EncodeProgress).speed)} · {formatBitrate((progress as EncodeProgress).bitrate)}
-            {etaSeconds != null && (
-              <>
-                {" "}· 预计剩余 {formatDuration(etaSeconds)}
-              </>
-            )}
+            {etaSeconds != null && <> · 剩余 {formatDuration(etaSeconds)}</>}
           </span>
         )}
       </div>
-      <div className="h-2 w-full rounded-full bg-accent">
+      <div className={TRACK}>
         <div
-          className="h-full rounded-full bg-gradient-brand transition-all duration-300"
+          className="h-full rounded-full bg-accent transition-[width] duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>

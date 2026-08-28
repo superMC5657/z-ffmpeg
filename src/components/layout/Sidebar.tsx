@@ -29,11 +29,11 @@ const navItems = [
 
 const FFMPEG_STATES: Record<string, { dot: string; text: string }> = {
   installed: { dot: "bg-success", text: "FFmpeg 已就绪" },
-  checking: { dot: "bg-warning animate-pulse", text: "正在检测..." },
-  downloading: { dot: "bg-blue-400 animate-pulse", text: "正在下载..." },
+  checking: { dot: "bg-warning animate-pulse", text: "正在检测…" },
+  downloading: { dot: "bg-accent animate-pulse", text: "正在下载…" },
   "not-installed": { dot: "bg-destructive", text: "FFmpeg 未安装" },
   error: { dot: "bg-destructive", text: "FFmpeg 异常" },
-  browser: { dot: "bg-muted-foreground/40", text: "浏览器预览模式" },
+  browser: { dot: "bg-tertiary", text: "浏览器预览模式" },
 };
 
 function FfmpegStatusFooter() {
@@ -85,8 +85,8 @@ function FfmpegStatusFooter() {
   const state = FFMPEG_STATES[key] ?? FFMPEG_STATES.error;
 
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-accent/40 px-2.5 py-2 text-xs text-sidebar-foreground">
-      <span className={cn("h-2 w-2 shrink-0 rounded-full", state.dot)} />
+    <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px] text-secondary">
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", state.dot)} />
       <span className="truncate">{state.text}</span>
     </div>
   );
@@ -96,9 +96,9 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="flex w-30 shrink-0 flex-col border-r border-border bg-sidebar-background">
-      {/* Navigation */}
-      <nav className="flex flex-1 flex-col items-center gap-3 pt-6">
+    <aside className="flex w-[190px] shrink-0 flex-col border-r border-hairline bg-sidebar backdrop-blur-2xl">
+      {/* System Settings 风格导航 */}
+      <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-5">
         {navItems.map(({ to, label, icon: Icon }) => {
           const isActive = to === "/"
             ? location.pathname === "/"
@@ -107,35 +107,28 @@ export default function Sidebar() {
             <NavLink
               key={to}
               to={to}
-              className="group relative flex w-full items-center justify-center"
+              className={cn(
+                "flex h-9 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] transition-colors",
+                isActive
+                  ? "bg-accent font-medium text-on-accent"
+                  : "text-foreground hover:bg-fill-strong"
+              )}
             >
-              {/* 内容:图标 + 文字紧凑居中,不再两端撑开 */}
-              <span
+              <Icon
                 className={cn(
-                  "relative flex w-4/5 items-center justify-center gap-3 py-2 transition-colors duration-150",
-                  isActive
-                    ? "text-primary"
-                    : "text-sidebar-foreground group-hover:text-sidebar-accent-foreground"
+                  "h-4 w-4 shrink-0",
+                  isActive ? "text-on-accent" : "text-secondary"
                 )}
-              >
-                {isActive && (
-                  <span className="absolute -left-2 top-1/2 h-9 w-1 -translate-y-1/2 rounded-r-full bg-primary" />
-                )}
-                <Icon
-                  className="h-9 w-9 shrink-0"
-                  strokeWidth={isActive ? 2.5 : 2}
-                />
-                <span className="text-[20px] font-semibold tracking-wide">
-                  {label}
-                </span>
-              </span>
+                strokeWidth={isActive ? 2.4 : 2}
+              />
+              {label}
             </NavLink>
           );
         })}
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border p-3">
+      <div className="border-t border-hairline px-1.5 py-2.5">
         <FfmpegStatusFooter />
       </div>
     </aside>

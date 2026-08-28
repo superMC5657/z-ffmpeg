@@ -9,8 +9,10 @@ export default function AppLayout() {
       <Titlebar />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-auto p-8">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-[940px] px-8 py-9">
+            <Outlet />
+          </div>
         </main>
       </div>
       <ToastHost />

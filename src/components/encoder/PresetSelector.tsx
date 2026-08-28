@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from "react";
-import { Bookmark } from "lucide-react";
 import type { HwAccelDevice } from "@/types";
 import { usePresetStore } from "@/store/presetStore";
 import { useSystemStore } from "@/store/systemStore";
 import { useEncoderStore } from "@/store/encoderStore";
+import AppleSelect from "@/components/layout/AppleSelect";
 
 export default function PresetSelector() {
   const presets = usePresetStore((s) => s.presets);
@@ -18,6 +18,7 @@ export default function PresetSelector() {
   }, []);
 
   const applyPreset = (presetId: string) => {
+    if (!presetId) return;
     const preset = presets.find((p) => p.id === presetId);
     if (!preset) return;
     usePresetStore.getState().selectPreset(presetId);
@@ -47,20 +48,19 @@ export default function PresetSelector() {
   }, [selectedPresetId, usablePresets]);
 
   return (
-    <div className="flex items-center gap-2">
-      <Bookmark className="h-4 w-4 text-muted-foreground" />
-      <select
-        value={selectedPresetId || ""}
-        onChange={(e) => applyPreset(e.target.value)}
-        className="rounded-md border border-border bg-accent px-3 py-2 text-[14px] focus:border-primary focus:outline-none"
-      >
-        <option value="">选择预设...</option>
-        {usablePresets.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.isBuiltin ? "📦" : "💾"} {p.name}
-          </option>
-        ))}
-      </select>
-    </div>
+    <AppleSelect
+      className="w-48"
+      value={selectedPresetId || ""}
+      onChange={(e) => applyPreset(e.target.value)}
+      aria-label="应用预设"
+    >
+      <option value="">选择预设…</option>
+      {usablePresets.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+          {p.isBuiltin ? "（内置）" : ""}
+        </option>
+      ))}
+    </AppleSelect>
   );
 }

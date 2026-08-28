@@ -17,19 +17,26 @@ export default function PresetPanel() {
 
   if (isLoading) {
     return (
-      <div className="py-16 text-center text-sm text-muted-foreground">加载中...</div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="h-32 animate-pulse rounded-[14px] border border-hairline bg-fill/50"
+          />
+        ))}
+      </div>
     );
   }
 
   if (presets.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/40 py-20">
-        <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent">
-          <SlidersHorizontal className="h-7 w-7 text-muted-foreground/50" />
+      <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-hairline py-16">
+        <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-fill">
+          <SlidersHorizontal className="h-5 w-5 text-tertiary" />
         </div>
-        <p className="text-sm font-medium text-foreground/80">暂无预设</p>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          导入预设 JSON 以快速复用编码配置
+        <p className="mt-3 text-[13px] font-medium">暂无预设</p>
+        <p className="mt-0.5 text-[12px] text-secondary">
+          导入预设 JSON，或在编码页保存当前配置为预设
         </p>
       </div>
     );

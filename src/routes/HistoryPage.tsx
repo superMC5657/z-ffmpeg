@@ -3,7 +3,6 @@ import {
   CheckCircle,
   XCircle,
   Ban,
-  Clock,
   History as HistoryIcon,
   Trash2,
   Loader2,
@@ -16,6 +15,7 @@ import {
 } from "@/lib/tauri";
 import { useToastStore } from "@/store/toastStore";
 import { formatFileSizeCompact } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface HistoryEntry {
   id: string;
@@ -34,10 +34,10 @@ interface HistoryEntry {
   error: string | null;
 }
 
-const statusIcons: Record<string, { icon: typeof CheckCircle; color: string; label: string }> = {
-  Completed: { icon: CheckCircle, color: "text-green-400", label: "完成" },
-  Failed: { icon: XCircle, color: "text-red-400", label: "失败" },
-  Cancelled: { icon: Ban, color: "text-gray-400", label: "已取消" },
+const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; label: string }> = {
+  Completed: { icon: CheckCircle, tint: "bg-success/12 text-success", label: "已完成" },
+  Failed: { icon: XCircle, tint: "bg-destructive/10 text-destructive", label: "失败" },
+  Cancelled: { icon: Ban, tint: "bg-fill text-secondary", label: "已取消" },
 };
 
 export default function HistoryPage() {
@@ -102,23 +102,9 @@ export default function HistoryPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-5xl space-y-8">
-        <PageHeader
-          icon={HistoryIcon}
-          title="编码历史"
-          description="查看已完成的编码任务记录"
-        />
-        <p className="text-sm text-muted-foreground">加载中...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div>
       <PageHeader
-        icon={HistoryIcon}
         title="编码历史"
         description="查看已完成的编码任务记录"
         action={
@@ -126,12 +112,12 @@ export default function HistoryPage() {
             <button
               onClick={handleClearAll}
               disabled={clearing}
-              className="flex items-center gap-1.5 rounded-md px-4 py-2 text-[14px] font-medium text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-surface px-4 text-[13px] font-medium text-secondary shadow-card ring-1 ring-hairline transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
             >
               {clearing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               )}
               清空历史
             </button>
@@ -139,40 +125,59 @@ export default function HistoryPage() {
         }
       />
 
-      {entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/40 py-20">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent">
-            <Clock className="h-7 w-7 text-muted-foreground/50" />
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-16 animate-pulse rounded-[10px] bg-fill/70" />
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-hairline py-16">
+          <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-fill">
+            <HistoryIcon className="h-5 w-5 text-tertiary" />
           </div>
-          <p className="text-sm font-medium text-foreground/80">暂无历史记录</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">
+          <p className="mt-3 text-[13px] font-medium">暂无历史记录</p>
+          <p className="mt-0.5 text-[12px] text-secondary">
             完成的编码任务将显示在这里
           </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {entries.map((entry) => {
+        <div className="overflow-hidden rounded-[14px] border border-hairline bg-surface shadow-card">
+          {entries.map((entry, i) => {
             const config = statusIcons[entry.status] || statusIcons.Failed;
             const Icon = config.icon;
             return (
               <div
                 key={entry.id}
-                className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition-all hover:border-primary/30 hover:shadow-md"
+                className={cn(
+                  "group flex items-center gap-3.5 px-3.5 py-3 transition-colors hover:bg-fill/40",
+                  i > 0 && "border-t border-hairline"
+                )}
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent">
-                  <Icon className={`h-4 w-4 ${config.color}`} />
+                <div
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]",
+                    config.tint
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium">
+                    <span className="truncate text-[13px] font-medium leading-5">
                       {entry.fileName}
                     </span>
-                    <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-medium bg-accent ${config.color}`}>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-4",
+                        config.tint
+                      )}
+                    >
                       {config.label}
                     </span>
                   </div>
-                  <div className="mt-1 flex gap-2 text-[13px] text-muted-foreground">
-                    <span>{formatDate(entry.createdAt)}</span>
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px] text-secondary tabular-nums">
+                    <span className="shrink-0">{formatDate(entry.createdAt)}</span>
                     {entry.status === "Completed" &&
                       entry.outputSize != null &&
                       (() => {
@@ -182,7 +187,12 @@ export default function HistoryPage() {
                             ? (1 - out / entry.inputSize) * 100
                             : null;
                         return (
-                          <span className={ratio != null && ratio < 0 ? "text-warning" : "text-green-400/80"}>
+                          <span
+                            className={cn(
+                              "shrink-0 font-medium",
+                              ratio != null && ratio < 0 ? "text-warning" : "text-success"
+                            )}
+                          >
                             {ratio != null
                               ? `${ratio >= 0 ? "↓" : "↑"}${Math.abs(ratio).toFixed(1)}% ${formatFileSizeCompact(out)}`
                               : formatFileSizeCompact(out)}
@@ -190,14 +200,18 @@ export default function HistoryPage() {
                         );
                       })()}
                     {entry.status === "Completed" && entry.vmafScore != null && (
-                      <span className="font-medium text-green-400">VMAF {entry.vmafScore.toFixed(1)}</span>
+                      <span className="shrink-0 font-medium text-success">
+                        VMAF {entry.vmafScore.toFixed(1)}
+                      </span>
                     )}
                     {entry.outputPath && (
-                      <span className="truncate">→ {entry.outputPath}</span>
+                      <span className="truncate text-tertiary" title={entry.outputPath}>
+                        → {entry.outputPath}
+                      </span>
                     )}
                   </div>
                   {entry.error && (
-                    <p className="mt-1 truncate text-[13px] text-red-400">
+                    <p className="mt-0.5 truncate text-[11px] text-destructive">
                       {entry.error}
                     </p>
                   )}
@@ -206,12 +220,12 @@ export default function HistoryPage() {
                   onClick={() => handleDelete(entry.id)}
                   disabled={deleting === entry.id}
                   title="删除该条历史"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/20 hover:text-destructive disabled:opacity-50"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-tertiary opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 disabled:opacity-50"
                 >
                   {deleting === entry.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   )}
                 </button>
               </div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SlidersHorizontal, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import PresetPanel from "@/components/preset/PresetPanel";
 import ImportPresetDialog from "@/components/preset/ImportPresetDialog";
 import PageHeader from "@/components/layout/PageHeader";
@@ -46,17 +46,16 @@ export default function PresetsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div>
       <PageHeader
-        icon={SlidersHorizontal}
         title="编码预设"
         description="保存和管理常用的编码配置，一键切换参数"
         action={
           <button
             onClick={handleImport}
-            className="flex items-center gap-1.5 rounded-lg bg-gradient-brand px-4 py-2.5 text-[14px] font-medium text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
           >
-            <Upload className="h-4 w-4" />
+            <Upload className="h-3.5 w-3.5" />
             导入预设
           </button>
         }

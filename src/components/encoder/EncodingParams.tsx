@@ -1,26 +1,38 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { EncoderPreset, AudioCodec } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
+import SegmentedControl from "@/components/layout/SegmentedControl";
+import AppleSelect from "@/components/layout/AppleSelect";
+import AppleInput from "@/components/layout/AppleInput";
 
 const PRESETS: { value: EncoderPreset; label: string }[] = [
-  { value: "ultrafast", label: "Ultrafast" },
+  { value: "ultrafast", label: "Ultrafast（最快）" },
   { value: "superfast", label: "Superfast" },
   { value: "veryfast", label: "Veryfast" },
   { value: "faster", label: "Faster" },
   { value: "fast", label: "Fast" },
-  { value: "medium", label: "Medium" },
+  { value: "medium", label: "Medium（均衡）" },
   { value: "slow", label: "Slow" },
   { value: "slower", label: "Slower" },
-  { value: "veryslow", label: "Veryslow" },
+  { value: "veryslow", label: "Veryslow（最佳）" },
 ];
 
 const AUDIO_CODECS: { value: AudioCodec; label: string }[] = [
   { value: "AAC", label: "AAC" },
   { value: "Opus", label: "Opus" },
-  { value: "Copy", label: "Copy (复制)" },
+  { value: "Copy", label: "Copy（复制源音频）" },
   { value: "None", label: "无音频" },
 ];
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <label className="shrink-0 text-[13px] text-secondary">{label}</label>
+      {children}
+    </div>
+  );
+}
 
 export default function EncodingParams() {
   const videoCodec = useEncoderStore((s) => s.videoCodec);
@@ -40,52 +52,63 @@ export default function EncodingParams() {
 
   const [showResolution, setShowResolution] = useState(false);
 
+  const presetHint = (() => {
+    if (hwAccel) {
+      switch (hwAccel.device) {
+        case "NVENC":
+          return "NVENC 预设映射为 p1-p7：Ultrafast→p1 … Veryslow→p7（p1 最快、p7 画质最佳）";
+        case "QSV":
+          return "QSV 预设支持 veryfast … veryslow 命名，直接生效";
+        case "AMF":
+          return "AMF 预设映射为 speed/balanced/quality：Ultrafast→speed … Veryslow→quality";
+        case "VAAPI":
+          return "VAAPI 使用 -compression_level 1-7：Ultrafast→7 … Veryslow→1（1 画质最佳）";
+        case "VideoToolbox":
+          return "VideoToolbox 不再支持 preset 参数，将使用编码器默认质量";
+      }
+    }
+    if (videoCodec === "AV1")
+      return "SVT-AV1 预设为数字 0-13：Ultrafast→13 … Veryslow→1（越小越慢、质量越高）";
+    if (videoCodec === "VP9")
+      return "VP9 使用 -cpu-used 0-8：Ultrafast→8 … Veryslow→0（越小越慢、质量越高）";
+    return null;
+  })();
+
   return (
     <div className="space-y-4">
-      {/* Rate Control */}
-      <div>
-        <label className="mb-2 block text-[13px] font-medium text-muted-foreground">
-          码率控制
-        </label>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() =>
-              setRateControl({ type: "CRF", value: rateControl.type === "CRF" ? rateControl.value : 23 })
-            }
-            className={`rounded-lg px-4 py-2 text-[14px] font-medium transition-all ${
-              rateControl.type === "CRF"
-                ? "bg-gradient-brand text-white shadow-md shadow-primary/20"
-                : "bg-accent/60 text-muted-foreground hover:bg-accent"
-            }`}
-          >
-            CRF (恒定质量)
-          </button>
-          <button
-            onClick={() =>
-              setRateControl({
-                type: "ABR",
-                bitrateKbps: rateControl.type === "ABR" ? rateControl.bitrateKbps : 5000,
-              })
-            }
-            className={`rounded-lg px-4 py-2 text-[14px] font-medium transition-all ${
-              rateControl.type === "ABR"
-                ? "bg-gradient-brand text-white shadow-md shadow-primary/20"
-                : "bg-accent/60 text-muted-foreground hover:bg-accent"
-            }`}
-          >
-            ABR (平均比特率)
-          </button>
-        </div>
-      </div>
+      {/* 码率控制（CQP 视作恒定质量同款 UI，仅硬件预设会带入） */}
+      <Row label="码率控制">
+        <SegmentedControl
+          value={rateControl.type === "CQP" ? "CRF" : rateControl.type}
+          onChange={(type) =>
+            setRateControl(
+              type === "CRF"
+                ? {
+                    type: "CRF",
+                    value: rateControl.type === "CRF" ? rateControl.value : 23,
+                  }
+                : {
+                    type: "ABR",
+                    bitrateKbps:
+                      rateControl.type === "ABR" ? rateControl.bitrateKbps : 5000,
+                  }
+            )
+          }
+          options={[
+            { value: "CRF", label: "恒定质量" },
+            { value: "ABR", label: "平均比特率" },
+          ]}
+        />
+      </Row>
 
       {/* CRF Slider */}
-      {rateControl.type === "CRF" && (
-        <div>
-          <div className="mb-1 flex items-center justify-between">
-            <label className="text-[13px] font-medium text-muted-foreground">
-              CRF 值
-            </label>
-            <span className="text-sm font-mono font-bold">{rateControl.value}</span>
+      {(rateControl.type === "CRF" || rateControl.type === "CQP") && (
+        <div className="px-0.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[13px] text-secondary">质量值（CRF）</span>
+            <span className="text-[15px] font-semibold tabular-nums">
+              {rateControl.value}
+            </span>
           </div>
           <input
             type="range"
@@ -95,15 +118,8 @@ export default function EncodingParams() {
             onChange={(e) =>
               setRateControl({ type: "CRF", value: parseInt(e.target.value) })
             }
-            className="w-full h-2 cursor-pointer appearance-none rounded-full bg-accent
-              [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
-              [&::-webkit-slider-thumb]:appearance-none
-              [&::-webkit-slider-thumb]:rounded-full
-              [&::-webkit-slider-thumb]:bg-primary
-              [&::-webkit-slider-thumb]:shadow-md
-              [&::-webkit-slider-thumb]:shadow-primary/40"
           />
-          <div className="mt-1 flex justify-between text-[13px] text-muted-foreground">
+          <div className="mt-1.5 flex justify-between text-[11px] text-tertiary">
             <span>无损</span>
             <span>高质量</span>
             <span>平衡</span>
@@ -114,64 +130,41 @@ export default function EncodingParams() {
 
       {/* ABR Input */}
       {rateControl.type === "ABR" && (
-        <div className="flex items-center gap-3">
-          <label className="text-[13px] font-medium text-muted-foreground">
-            目标比特率
-          </label>
-          <input
-            type="number"
-            value={rateControl.bitrateKbps}
-            onChange={(e) =>
-              setRateControl({
-                type: "ABR",
-                bitrateKbps: parseInt(e.target.value) || 0,
-              })
-            }
-            className="w-28 rounded-lg border border-border bg-accent/60 px-3 py-1.5 text-sm transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
-          />
-          <span className="text-[13px] text-muted-foreground">kbps</span>
-        </div>
+        <Row label="目标比特率">
+          <div className="flex items-center gap-2">
+            <AppleInput
+              type="number"
+              className="w-28 text-right"
+              value={rateControl.bitrateKbps}
+              onChange={(e) =>
+                setRateControl({
+                  type: "ABR",
+                  bitrateKbps: parseInt(e.target.value) || 0,
+                })
+              }
+            />
+            <span className="text-[13px] text-secondary">kbps</span>
+          </div>
+        </Row>
       )}
 
       {/* Encoder Preset */}
-      <div>
-        <label className="mb-2 block text-[13px] font-medium text-muted-foreground">
-          编码预设 (速度/质量)
-        </label>
-        <select
-          value={encoderPreset}
-          onChange={(e) => setEncoderPreset(e.target.value as EncoderPreset)}
-          className="w-full rounded-lg border border-border bg-accent/60 px-3.5 py-2 text-sm transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
-        >
-          {PRESETS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        {videoCodec === "AV1" && !hwAccel && (
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            SVT-AV1 预设为数字 0-13：Ultrafast→13 … Veryslow→1（越小越慢、质量越高）
-          </p>
-        )}
-        {videoCodec === "VP9" && !hwAccel && (
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            VP9 使用 -cpu-used 0-8：Ultrafast→8 … Veryslow→0（越小越慢、质量越高）
-          </p>
-        )}
-        {hwAccel && (
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {hwAccel.device === "NVENC" &&
-              "NVENC 预设映射为 p1-p7：Ultrafast→p1 … Veryslow→p7（p1 最快、p7 画质最佳）"}
-            {hwAccel.device === "QSV" &&
-              "QSV 预设支持 veryfast … veryslow 命名，直接生效"}
-            {hwAccel.device === "AMF" &&
-              "AMF 预设映射为 speed/balanced/quality：Ultrafast→speed … Veryslow→quality"}
-            {hwAccel.device === "VAAPI" &&
-              "VAAPI 使用 -compression_level 1-7：Ultrafast→7 … Veryslow→1（1 画质最佳）"}
-            {hwAccel.device === "VideoToolbox" &&
-              "VideoToolbox 不再支持 preset 参数，将使用编码器默认质量"}
-          </p>
+      <div className="space-y-1.5">
+        <Row label="速度预设">
+          <AppleSelect
+            className="w-52"
+            value={encoderPreset}
+            onChange={(e) => setEncoderPreset(e.target.value as EncoderPreset)}
+          >
+            {PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+          </AppleSelect>
+        </Row>
+        {presetHint && (
+          <p className="text-[12px] leading-5 text-secondary">{presetHint}</p>
         )}
       </div>
 
@@ -179,98 +172,94 @@ export default function EncodingParams() {
       <div>
         <button
           onClick={() => setShowResolution(!showResolution)}
-          className="flex items-center gap-1.5 text-[14px] font-medium text-muted-foreground hover:text-foreground"
+          aria-expanded={showResolution}
+          className="flex items-center gap-1 rounded-md text-[13px] text-secondary transition-colors hover:text-foreground"
         >
-          {showResolution ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
-          高级选项 (分辨率 · 帧率)
+          <ChevronRight
+            className={`h-3.5 w-3.5 transition-transform duration-200 ${
+              showResolution ? "rotate-90" : ""
+            }`}
+          />
+          高级选项（分辨率 · 帧率）
         </button>
         {showResolution && (
-          <div className="mt-3 space-y-3 pl-4">
-            <div className="flex items-center gap-3">
-              <label className="w-[3em] shrink-0 text-[13px] text-muted-foreground">
-                分辨率
-              </label>
-              <input
-                type="number"
-                placeholder="宽"
-                value={resolution?.width || ""}
-                onChange={(e) =>
-                  // 任一维度为 0 → 后端视为未设置分辨率（保持原始），预估回退不缩放；
-                  // 直接存对象（含 0），避免置 null 级联清空另一个输入框
-                  setResolution({
-                    width: parseInt(e.target.value) || 0,
-                    height: resolution?.height || 0,
-                  })
-                }
-                className="w-24 rounded-lg border border-border bg-accent/60 px-2 py-1.5 text-[13px] transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
-              />
-              <span className="text-[13px] text-muted-foreground">×</span>
-              <input
-                type="number"
-                placeholder="高"
-                value={resolution?.height || ""}
-                onChange={(e) =>
-                  setResolution({
-                    width: resolution?.width || 0,
-                    height: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="w-24 rounded-lg border border-border bg-accent/60 px-2 py-1.5 text-[13px] transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="w-[3em] shrink-0 text-[13px] text-muted-foreground">
-                帧率
-              </label>
-              <input
-                type="number"
-                placeholder="原始"
-                value={frameRate || ""}
-                onChange={(e) =>
-                  setFrameRate(e.target.value ? parseFloat(e.target.value) : null)
-                }
-                className="w-24 rounded-lg border border-border bg-accent/60 px-2 py-1.5 text-[13px] transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
-              />
-              <span className="text-[13px] text-muted-foreground">fps (留空=原始)</span>
-            </div>
+          <div className="mt-3 space-y-3 border-l border-hairline pl-4">
+            <Row label="分辨率">
+              <div className="flex items-center gap-1.5">
+                <AppleInput
+                  type="number"
+                  placeholder="宽"
+                  className="w-20 text-center"
+                  value={resolution?.width || ""}
+                  onChange={(e) =>
+                    // 任一维度为 0 → 后端视为未设置分辨率（保持原始），预估回退不缩放；
+                    // 直接存对象（含 0），避免置 null 级联清空另一个输入框
+                    setResolution({
+                      width: parseInt(e.target.value) || 0,
+                      height: resolution?.height || 0,
+                    })
+                  }
+                />
+                <span className="text-[13px] text-tertiary">×</span>
+                <AppleInput
+                  type="number"
+                  placeholder="高"
+                  className="w-20 text-center"
+                  value={resolution?.height || ""}
+                  onChange={(e) =>
+                    setResolution({
+                      width: resolution?.width || 0,
+                      height: parseInt(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+            </Row>
+            <Row label="帧率">
+              <div className="flex items-center gap-2">
+                <AppleInput
+                  type="number"
+                  placeholder="原始"
+                  className="w-20 text-center"
+                  value={frameRate || ""}
+                  onChange={(e) =>
+                    setFrameRate(e.target.value ? parseFloat(e.target.value) : null)
+                  }
+                />
+                <span className="text-[13px] text-secondary">fps（留空 = 原始）</span>
+              </div>
+            </Row>
           </div>
         )}
       </div>
 
       {/* Audio settings */}
-      <div className="border-t border-border pt-4">
-        <label className="mb-2 block text-[13px] font-medium text-muted-foreground">
-          音频设置
-        </label>
-        <div className="flex items-center gap-4">
-          <select
+      <Row label="音频">
+        <div className="flex items-center gap-2">
+          <AppleSelect
+            className="w-44"
             value={audioCodec}
             onChange={(e) => setAudioCodec(e.target.value as AudioCodec)}
-            className="rounded-lg border border-border bg-accent/60 px-3 py-1.5 text-sm transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
           >
             {AUDIO_CODECS.map((c) => (
               <option key={c.value} value={c.value}>
                 {c.label}
               </option>
             ))}
-          </select>
+          </AppleSelect>
           {audioCodec !== "Copy" && audioCodec !== "None" && (
-            <div className="flex items-center gap-2">
-              <input
+            <>
+              <AppleInput
                 type="number"
+                className="w-20 text-right"
                 value={audioBitrate}
                 onChange={(e) => setAudioBitrate(parseInt(e.target.value) || 0)}
-                className="w-24 rounded-lg border border-border bg-accent/60 px-2 py-1.5 text-[13px] transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none"
               />
-              <span className="text-[13px] text-muted-foreground">kbps</span>
-            </div>
+              <span className="text-[13px] text-secondary">kbps</span>
+            </>
           )}
         </div>
-      </div>
+      </Row>
     </div>
   );
 }

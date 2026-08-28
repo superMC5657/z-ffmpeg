@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Settings as SettingsIcon,
-  Layers,
-  Gauge,
-  RefreshCw,
-  Download,
-  Loader2,
-  CheckCircle2,
-} from "lucide-react";
+import { RefreshCw, Download, Loader2, CheckCircle2 } from "lucide-react";
 import {
   checkFfmpegStatus,
   downloadFfmpeg,
@@ -20,7 +12,11 @@ import { useSystemStore } from "@/store/systemStore";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore } from "@/store/toastStore";
 import PageHeader from "@/components/layout/PageHeader";
+import Card from "@/components/layout/Card";
+import AppleInput from "@/components/layout/AppleInput";
+import ThemeToggleButton from "@/components/layout/ThemeToggleButton";
 import { isTauriRuntime } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatusInfo | null>(null);
@@ -238,178 +234,192 @@ export default function SettingsPage() {
 
   if (loading || loadingHw) {
     return (
-      <div className="mx-auto max-w-5xl space-y-8">
-        <PageHeader
-          icon={SettingsIcon}
-          title="设置"
-          description="系统信息与应用配置"
-        />
-        <p className="text-sm text-muted-foreground">加载中...</p>
+      <div className="space-y-4">
+        <PageHeader title="设置" description="系统信息与应用配置" />
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-24 animate-pulse rounded-[14px] bg-fill/70" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <PageHeader
-        icon={SettingsIcon}
-        title="设置"
-        description="系统信息与应用配置"
-      />
+    <div className="space-y-4">
+      <PageHeader title="设置" description="系统信息与应用配置" />
+
+      {/* Appearance */}
+      <Card title="外观" description="浅色、深色或跟随系统，切换立即生效">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[13px] leading-5 text-secondary">
+            深浅主题在标题栏与设置页均可切换，跟随系统时自动适配外观变化。
+          </p>
+          <ThemeToggleButton />
+        </div>
+      </Card>
 
       {/* Queue Settings */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 flex items-center gap-2 text-[15px] font-semibold">
-          <Layers className="h-4 w-4 text-primary" />
-          队列设置
-        </h2>
-        <div className="flex flex-wrap items-center gap-4">
-          <div>
-            <label className="mb-1.5 block text-[13px] font-medium text-muted-foreground">
-              最大并发编码任务数
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={1}
-                max={16}
-                value={maxConcurrentLoaded ? maxConcurrent : ""}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  if (!Number.isNaN(v) && v >= 1 && v <= 16) {
-                    handleConcurrentChange(v);
-                  }
-                }}
-                placeholder={maxConcurrentLoaded ? undefined : "加载中..."}
-                disabled={!maxConcurrentLoaded || savingConcurrent}
-                className="w-24 rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50"
-              />
-              <span className="text-[13px] text-muted-foreground">
-                个任务同时编码 (1-16) {savingConcurrent ? "· 保存中..." : ""}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              与队列页同步：任一处修改立即生效并保存。建议根据 CPU/GPU 性能调整：硬件加速下 2-4 个即可占满显卡，软件编码可适当调高。
+      <Card title="队列设置">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium">最大并发编码任务数</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-secondary">
+              与队列页同步，任一处修改立即生效并保存。硬件加速下 2-4
+              个即可占满显卡，软件编码可适当调高。
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <AppleInput
+              type="number"
+              min={1}
+              max={16}
+              value={maxConcurrentLoaded ? maxConcurrent : ""}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!Number.isNaN(v) && v >= 1 && v <= 16) {
+                  handleConcurrentChange(v);
+                }
+              }}
+              placeholder={maxConcurrentLoaded ? undefined : "…"}
+              disabled={!maxConcurrentLoaded || savingConcurrent}
+              className="w-16 text-center"
+            />
+            {savingConcurrent && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-tertiary" />
+            )}
+          </div>
         </div>
-      </div>
+      </Card>
 
       {/* VMAF Settings */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 flex items-center gap-2 text-[15px] font-semibold">
-          <Gauge className="h-4 w-4 text-primary" />
-          VMAF 质量评估
-        </h2>
-        <div className="flex flex-wrap items-center gap-4">
-          <div>
-            <label className="mb-1.5 block text-[13px] font-medium text-muted-foreground">
-              采样段数
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={0}
-                max={32}
-                value={vmafSegmentsLoaded ? vmafSegments : ""}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value);
-                  if (!Number.isNaN(v) && v >= 0 && v <= 32) {
-                    handleVmafSegmentsChange(v);
-                  }
-                }}
-                placeholder={vmafSegmentsLoaded ? undefined : "加载中..."}
-                disabled={!vmafSegmentsLoaded || savingVmaf}
-                className="w-24 rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 focus:outline-none disabled:opacity-50"
-              />
-              <span className="text-[13px] text-muted-foreground">
-                段 × 5 秒 (0-32) {savingVmaf ? "· 保存中..." : ""}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              设为 <b>0</b>：全量对比（逐帧计算，结果最精确，但耗时长，与视频时长成正比）。<br />
-              设为 <b>N</b>：从整个视频均匀取 N 段 × 5 秒计算并取平均，几秒到几十秒完成。修改立即生效并保存，队列页「VMAF」按钮按此设置计算。
+      <Card title="VMAF 质量评估">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium">采样段数</p>
+            <p className="mt-0.5 text-[12px] leading-5 text-secondary">
+              设为 <b>0</b>：全量对比（逐帧计算，最精确但耗时长）。设为{" "}
+              <b>N</b>：均匀取 N 段 × 5 秒计算取平均，几秒到几十秒完成。队列页「VMAF」按钮按此设置计算。
             </p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <AppleInput
+              type="number"
+              min={0}
+              max={32}
+              value={vmafSegmentsLoaded ? vmafSegments : ""}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!Number.isNaN(v) && v >= 0 && v <= 32) {
+                  handleVmafSegmentsChange(v);
+                }
+              }}
+              placeholder={vmafSegmentsLoaded ? undefined : "…"}
+              disabled={!vmafSegmentsLoaded || savingVmaf}
+              className="w-16 text-center"
+            />
+            {savingVmaf && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-tertiary" />
+            )}
+          </div>
         </div>
-      </div>
+      </Card>
 
       {/* FFmpeg Status */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-[15px] font-semibold">FFmpeg 状态</h2>
-          {ffmpeg?.status === "not-installed" && !downloading && (
+      <Card
+        title="FFmpeg 状态"
+        action={
+          ffmpeg?.status === "not-installed" &&
+          !downloading && (
             <button
               onClick={handleDownloadFfmpeg}
-              className="flex items-center gap-2 rounded-lg bg-gradient-brand px-4 py-2 text-[13px] font-medium text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
             >
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
               下载 FFmpeg
             </button>
-          )}
-        </div>
+          )
+        }
+      >
         {ffmpeg && (
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2.5 text-[13px]">
             <div className="flex items-center gap-2">
-              <div className={`h-2.5 w-2.5 rounded-full ${ffmpeg.status === "installed" ? "bg-success" : "bg-destructive"}`} />
-              <span>{ffmpeg.status === "installed" ? "已安装" : "未安装"}</span>
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  ffmpeg.status === "installed" ? "bg-success" : "bg-destructive"
+                )}
+              />
+              <span className="font-medium">
+                {ffmpeg.status === "installed" ? "已安装" : "未安装"}
+              </span>
               {downloading && (
-                <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 text-secondary">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   正在下载并安装到本地...
                 </span>
               )}
             </div>
             {ffmpeg.version && (
-              <p className="text-[13px] text-muted-foreground">{ffmpeg.version}</p>
+              <p className="tabular-nums text-secondary">{ffmpeg.version}</p>
             )}
             {ffmpeg.path && (
-              <p className="text-[13px] text-muted-foreground truncate">路径: {ffmpeg.path}</p>
+              <p className="truncate text-secondary" title={ffmpeg.path}>
+                路径: {ffmpeg.path}
+              </p>
             )}
             {downloading && (
               <div className="flex items-center gap-3">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-accent">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong">
                   <div
-                    className="h-full rounded-full bg-gradient-brand transition-all duration-200"
+                    className="h-full rounded-full bg-accent transition-all duration-200"
                     style={{ width: `${downloadProgress ?? 0}%` }}
                   />
                 </div>
-                <span className="w-12 text-right text-[13px] text-muted-foreground">
+                <span className="w-10 text-right tabular-nums text-secondary">
                   {Math.round(downloadProgress ?? 0)}%
                 </span>
               </div>
             )}
             {downloadError && (
-              <p className="text-[13px] text-destructive break-all">{downloadError}</p>
+              <p className="break-all text-[12px] text-destructive">
+                {downloadError}
+              </p>
             )}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Hardware Accelerators */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 text-[15px] font-semibold">硬件加速器</h2>
+      <Card title="硬件加速器">
         <div className="grid gap-3 sm:grid-cols-2">
           {hwAccels.map((hw) => (
             <div
               key={hw.device}
-              className={`rounded-lg border p-3 ${
-                hw.available
-                  ? "border-success/30 bg-success/5"
-                  : "border-border bg-accent/30"
-              }`}
+              className={cn(
+                "rounded-[9px] p-3.5",
+                hw.available ? "bg-success/8" : "bg-fill"
+              )}
             >
               <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full ${hw.available ? "bg-success" : "bg-muted-foreground/30"}`} />
-                <span className="text-sm font-semibold">{hw.device}</span>
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    hw.available ? "bg-success" : "bg-tertiary"
+                  )}
+                />
+                <span className="text-[13px] font-semibold">{hw.device}</span>
               </div>
-              <p className="mt-1 text-[13px] text-muted-foreground">
+              <p className="mt-1.5 text-[12px] leading-5 text-secondary">
                 {hw.available ? hw.deviceName : "未检测到"}
               </p>
               {hw.supportedCodecs && hw.supportedCodecs.length > 0 && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
+                <div className="mt-2 flex flex-wrap gap-1">
                   {hw.supportedCodecs.map((c: {codec: string; encoder: string}) => (
-                    <span key={c.codec} className="rounded bg-accent px-2 py-0.5 text-[13px] text-muted-foreground">
+                    <span
+                      key={c.codec}
+                      className="rounded-md bg-surface px-2 py-0.5 text-[11px] font-medium text-secondary"
+                    >
                       {c.codec.toUpperCase()}
                     </span>
                   ))}
@@ -418,34 +428,34 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
+
       {/* Software Updates */}
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 text-[15px] font-semibold">软件更新</h2>
+      <Card title="软件更新">
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={handleCheckUpdate}
             disabled={updating || updateInfo.downloading}
-            className="flex items-center gap-2 rounded-lg border border-border bg-accent/60 px-4 py-2 text-[14px] font-medium transition-all hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98] disabled:cursor-default disabled:opacity-50"
           >
             {updating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <RefreshCw className="h-4 w-4" />
+              <RefreshCw className="h-3.5 w-3.5" />
             )}
             检查更新
           </button>
 
           {updateInfo.available && !updateInfo.downloading && !updateInfo.installed && (
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-[13px] text-muted-foreground">
+              <span className="text-[13px] text-secondary">
                 发现新版本 v{updateInfo.version}
               </span>
               <button
                 onClick={handleDownloadUpdate}
-                className="flex items-center gap-2 rounded-lg bg-gradient-brand px-4 py-2 text-[14px] font-medium text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 active:scale-95"
+                className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5" />
                 下载并安装
               </button>
             </div>
@@ -453,12 +463,12 @@ export default function SettingsPage() {
 
           {updateInfo.downloading && (
             <div className="flex min-w-56 flex-1 items-center gap-3">
-              <span className="text-[13px] text-muted-foreground">
+              <span className="shrink-0 tabular-nums text-[13px] text-secondary">
                 下载中 {updateInfo.progress}%
               </span>
-              <div className="h-2 flex-1 overflow-hidden rounded-full bg-accent">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong">
                 <div
-                  className="h-full rounded-full bg-gradient-brand transition-all duration-300"
+                  className="h-full rounded-full bg-accent transition-all duration-300"
                   style={{ width: `${updateInfo.progress}%` }}
                 />
               </div>
@@ -478,9 +488,7 @@ export default function SettingsPage() {
             !updateInfo.installed &&
             !updateInfo.error &&
             !updating && (
-              <span className="text-[13px] text-muted-foreground">
-                已是最新版本
-              </span>
+              <span className="text-[13px] text-secondary">已是最新版本</span>
             )}
 
           {updateInfo.error && (
@@ -489,7 +497,7 @@ export default function SettingsPage() {
             </span>
           )}
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

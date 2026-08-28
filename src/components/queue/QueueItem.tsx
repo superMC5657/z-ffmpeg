@@ -5,10 +5,27 @@ import { useQueueStore } from "@/store/queueStore";
 import { useToastStore } from "@/store/toastStore";
 import { computeVmaf } from "@/lib/tauri";
 import ProgressBar from "@/components/progress/ProgressBar";
+import { cn } from "@/lib/utils";
 
 interface QueueItemProps {
   job: EncodeJob;
 }
+
+const STATUS_PILL: Record<string, string> = {
+  Pending: "bg-warning/15 text-warning",
+  Encoding: "bg-accent/12 text-accent",
+  Completed: "bg-success/15 text-success",
+  Failed: "bg-destructive/12 text-destructive",
+  Cancelled: "bg-fill text-secondary",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  Pending: "等待中",
+  Encoding: "编码中",
+  Completed: "已完成",
+  Failed: "失败",
+  Cancelled: "已取消",
+};
 
 export default function QueueItem({ job }: QueueItemProps) {
   const removeJobs = useQueueStore((s) => s.removeJobs);
@@ -57,35 +74,37 @@ export default function QueueItem({ job }: QueueItemProps) {
     (job.progress && typeof job.progress === "object" ? job.progress.fileName : undefined) ||
     job.inputPath.split(/[/\\]/).pop();
 
-  const statusConfig: Record<string, { label: string; color: string }> = {
-    Pending: { label: "等待中", color: "bg-yellow-500/20 text-yellow-400" },
-    Encoding: { label: "编码中", color: "bg-blue-500/20 text-blue-400" },
-    Completed: { label: "完成", color: "bg-green-500/20 text-green-400" },
-    Failed: { label: "失败", color: "bg-red-500/20 text-red-400" },
-    Cancelled: { label: "已取消", color: "bg-gray-500/20 text-gray-400" },
-  };
-
-  const config = statusConfig[job.status] || { label: job.status, color: "bg-accent" };
-
   return (
-    <div className="group flex items-center gap-3 rounded-xl border border-border bg-card p-3 shadow-sm transition-all hover:border-primary/30 hover:shadow-md">
+    <div className="group flex items-center gap-3.5 px-3.5 py-3 transition-colors hover:bg-fill/40">
       {/* File icon */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/15">
-        <FileVideo className="h-5 w-5 text-primary" />
+      <div
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]",
+          job.status === "Completed"
+            ? "bg-success/12 text-success"
+            : job.status === "Failed"
+              ? "bg-destructive/10 text-destructive"
+              : "bg-accent/10 text-accent"
+        )}
+      >
+        <FileVideo className="h-4.5 w-4.5" />
       </div>
 
       {/* Job info */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">
-            {fileName}
-          </p>
-          <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[13px] font-medium ${config.color}`}>
-            {config.label}
+          <p className="truncate text-[13px] font-medium leading-5">{fileName}</p>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-4",
+              STATUS_PILL[job.status] ?? "bg-fill text-secondary"
+            )}
+          >
+            {STATUS_LABEL[job.status] ?? job.status}
           </span>
         </div>
         <div className="mt-1 flex items-center gap-2">
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <ProgressBar
               progress={job.progress ?? null}
               status={job.status}
@@ -101,41 +120,42 @@ export default function QueueItem({ job }: QueueItemProps) {
               onClick={handleComputeVmaf}
               disabled={vmafLoading}
               title={vmafButtonTitle}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-secondary transition-colors hover:bg-fill-strong hover:text-foreground disabled:opacity-50"
             >
-              <Gauge className={`h-4 w-4 ${vmafLoading ? "animate-spin" : ""}`} />
-              <span className="text-[13px]">{vmafLoading ? "计算中" : job.vmafScore != null ? "重算 VMAF" : "VMAF"}</span>
+              <Gauge className={cn("h-3.5 w-3.5", vmafLoading && "animate-spin")} />
+              {vmafLoading ? "计算中" : job.vmafScore != null ? "重算 VMAF" : "VMAF"}
             </button>
           )}
         </div>
       </div>
 
       {/* Actions (hover 显示) */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
         {job.status === "Failed" && (
           <button
             onClick={handleRetry}
             title="重新编码"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-fill-strong hover:text-foreground"
           >
-            <RotateCw className="h-4 w-4" />
+            <RotateCw className="h-3.5 w-3.5" />
           </button>
         )}
         {job.status === "Encoding" && (
           <button
             onClick={() => cancelJob(job.id)}
             title="取消编码（终止 ffmpeg 进程）"
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive"
           >
-            <Square className="h-4 w-4 fill-current" />
+            <Square className="h-3.5 w-3.5 fill-current" />
           </button>
         )}
         {(job.status === "Pending" || job.status === "Completed" || job.status === "Failed" || job.status === "Cancelled") && (
           <button
             onClick={() => removeJobs([job.id])}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+            title="移除任务"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>

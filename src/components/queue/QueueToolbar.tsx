@@ -1,6 +1,7 @@
 import { Layers, Trash2, Zap } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore } from "@/store/toastStore";
+import AppleSelect from "@/components/layout/AppleSelect";
 
 export default function QueueToolbar() {
   const clearCompleted = useQueueStore((s) => s.clearCompleted);
@@ -43,52 +44,45 @@ export default function QueueToolbar() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-sm">
+    <div className="flex flex-wrap items-center gap-2.5 rounded-[14px] border border-hairline bg-surface p-3 shadow-card">
       <button
         onClick={handleStart}
         disabled={!hasPending}
-        className={`flex items-center gap-1.5 rounded-md px-4 py-2.5 text-[14px] font-medium transition-colors ${
+        className={`flex h-9 items-center gap-1.5 rounded-[9px] px-4 text-[13px] font-medium transition-all active:scale-[0.98] ${
           hasPending
-            ? "bg-gradient-brand text-white shadow-md shadow-primary/25 hover:brightness-110"
-            : "cursor-not-allowed bg-accent/60 text-muted-foreground/50"
+            ? "bg-accent text-on-accent shadow-sm hover:bg-accent-hover"
+            : "cursor-default bg-fill text-tertiary"
         }`}
       >
-        <Zap className="h-4 w-4" />
+        <Zap className="h-3.5 w-3.5" />
         开始执行
       </button>
-
-      <div className="h-5 w-px bg-border" />
 
       <button
         onClick={clearCompleted}
         disabled={!hasCompleted}
-        className={`flex items-center gap-1.5 rounded-md px-4 py-2.5 text-[14px] font-medium transition-colors ${
-          hasCompleted
-            ? "text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-            : "cursor-not-allowed text-muted-foreground/40"
-        }`}
+        className="flex h-9 items-center gap-1.5 rounded-[9px] px-3.5 text-[13px] font-medium text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-secondary"
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="h-3.5 w-3.5" />
         清除已完成
       </button>
 
       {/* Concurrency control — shared with Settings page */}
       <div className="ml-auto flex items-center gap-2">
-        <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="text-[13px] text-muted-foreground">并发</span>
-        <select
+        <Layers className="h-3.5 w-3.5 text-tertiary" />
+        <span className="text-[12px] text-secondary">并发</span>
+        <AppleSelect
+          className="w-16"
           value={maxConcurrent}
           disabled={!maxConcurrentLoaded}
           onChange={(e) => handleConcurrentChange(parseInt(e.target.value))}
-          className="rounded-md border border-border bg-accent px-2.5 py-1.5 text-[14px] transition-colors hover:border-primary/40 focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           {Array.from({ length: 16 }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
               {n}
             </option>
           ))}
-        </select>
-        <span className="text-xs text-muted-foreground">同时编码</span>
+        </AppleSelect>
       </div>
     </div>
   );

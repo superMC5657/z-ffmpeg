@@ -71,67 +71,68 @@ export default function FfmpegCommandDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-xl border border-border bg-card p-5 shadow-2xl"
+        className="animate-dialog-in w-full max-w-2xl rounded-[14px] border border-hairline bg-surface p-5 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-bold">
+          <h2 className="text-[15px] font-semibold">
             FFmpeg 命令{count > 1 ? `（${count} 条）` : ""}
           </h2>
           <button
+            aria-label="关闭"
             onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-tertiary transition-colors hover:bg-fill-strong hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="max-h-80 space-y-3 overflow-auto rounded-lg border border-border bg-background/60 p-3.5">
+        <div className="max-h-80 space-y-3.5 overflow-auto rounded-[9px] bg-fill p-3.5">
           {entries.map((e, i) => (
-            <div key={i} className="space-y-1">
+            <div key={i} className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+                <span className="shrink-0 rounded-md bg-accent/12 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-accent">
                   {i + 1}/{count}
                 </span>
-                <span className="truncate text-xs font-medium text-muted-foreground">
+                <span className="truncate text-[12px] font-medium text-secondary">
                   {e.fileName}
                 </span>
               </div>
-              <pre className="whitespace-pre-wrap break-all font-mono text-[13px] leading-relaxed text-foreground/90">
+              <pre className="whitespace-pre-wrap break-all font-mono text-[12px] leading-relaxed text-foreground">
                 {e.command}
               </pre>
             </div>
           ))}
         </div>
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-md px-5 py-2.5 text-[14px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="h-9 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98]"
           >
             关闭
           </button>
           <button
             onClick={handleSaveFile}
             disabled={!isTauriRuntime() || saving}
-            className="flex items-center gap-1.5 rounded-md border border-border bg-accent/60 px-5 py-2.5 text-[14px] font-medium transition-all hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-fill"
           >
-            <FileDown className="h-4 w-4" />
+            <FileDown className="h-3.5 w-3.5" />
             {saving ? "保存中..." : "保存为文件"}
           </button>
           <button
             onClick={handleCopy}
-            className={`flex items-center gap-1.5 rounded-md px-5 py-2.5 text-[14px] font-medium transition-all ${
+            className={`flex h-9 items-center gap-1.5 rounded-[9px] px-4 text-[13px] font-medium shadow-sm transition-all active:scale-[0.98] ${
               copied
-                ? "bg-success/20 text-success"
-                : "bg-gradient-brand text-white shadow-md shadow-primary/25 hover:brightness-110"
+                ? "bg-success/15 text-success"
+                : "bg-accent text-on-accent hover:bg-accent-hover"
             }`}
           >
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "已复制" : "复制全部命令"}
           </button>
         </div>

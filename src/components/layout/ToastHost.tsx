@@ -5,39 +5,54 @@ import { cn } from "@/lib/utils";
 const styles = {
   success: {
     icon: CheckCircle2,
-    cls: "border-success/40 bg-card/95 text-success",
+    iconCls: "text-success",
+    chipCls: "bg-success/12",
   },
   error: {
     icon: XCircle,
-    cls: "border-destructive/40 bg-card/95 text-destructive",
+    iconCls: "text-destructive",
+    chipCls: "bg-destructive/12",
   },
   info: {
     icon: Info,
-    cls: "border-primary/40 bg-card/95 text-primary",
+    iconCls: "text-accent",
+    chipCls: "bg-accent/12",
   },
 } as const;
 
+/** macOS 通知风格 Toast：顶部右侧滑入的毛玻璃卡片 */
 export default function ToastHost() {
   const toasts = useToastStore((s) => s.toasts);
   const dismissToast = useToastStore((s) => s.dismissToast);
 
   return (
-    <div className="pointer-events-none fixed right-4 top-14 z-[100] flex w-72 flex-col gap-2">
+    <div className="pointer-events-none fixed right-4 top-12 z-[100] flex w-80 flex-col gap-2.5">
       {toasts.map((toast) => {
-        const { icon: Icon, cls } = styles[toast.type];
+        const { icon: Icon, iconCls, chipCls } = styles[toast.type];
         return (
           <div
             key={toast.id}
+            role="status"
             className={cn(
-              "pointer-events-auto flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm shadow-xl backdrop-blur",
-              cls
+              "animate-toast-in pointer-events-auto flex items-center gap-3 rounded-[14px] border border-hairline px-3.5 py-3 shadow-pop",
+              "bg-surface/85 backdrop-blur-xl"
             )}
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span className="flex-1 text-foreground">{toast.message}</span>
+            <span
+              className={cn(
+                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full",
+                chipCls
+              )}
+            >
+              <Icon className={cn("h-4 w-4", iconCls)} />
+            </span>
+            <span className="flex-1 text-[13px] leading-5 text-foreground">
+              {toast.message}
+            </span>
             <button
+              aria-label="关闭通知"
               onClick={() => dismissToast(toast.id)}
-              className="text-muted-foreground transition-colors hover:text-foreground"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-tertiary transition-colors hover:bg-fill-strong hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" />
             </button>
