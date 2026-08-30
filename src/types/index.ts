@@ -116,6 +116,8 @@ export interface EncodeResult {
   outputPath: string | null;
   outputSizeBytes: number | null;
   durationSeconds: number;
+  /** 结构化取消标记：后端显式区分"用户取消"与"失败" */
+  cancelled: boolean;
   error: string | null;
 }
 

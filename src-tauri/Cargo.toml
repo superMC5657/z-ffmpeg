@@ -30,13 +30,13 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "b
 zip = "4"
 thiserror = "2"
 log = "0.4"
-env_logger = "0.11"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 directories = "6"
 parking_lot = "0.12"
 sysinfo = "0.33"
 rusqlite = { version = "0.32", features = ["bundled"] }
+tauri-plugin-log = "2.9.0"
 
 [features]
 default = ["custom-protocol"]

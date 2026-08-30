@@ -46,7 +46,12 @@ export default function SettingsPage() {
     fetchHwAccels();
     checkFfmpegStatus()
       .then(setFfmpeg)
-      .catch(() => {})
+      .catch((e) => {
+        useToastStore.getState().showToast(
+          `获取 FFmpeg 状态失败: ${e instanceof Error ? e.message : String(e)}`,
+          "error"
+        );
+      })
       .finally(() => setLoading(false));
     fetchMaxConcurrent();
     fetchVmafSegments();
@@ -63,7 +68,14 @@ export default function SettingsPage() {
       setDownloading(false);
       setDownloadProgress(null);
       setDownloadError(null);
-      checkFfmpegStatus().then(setFfmpeg).catch(() => {});
+      checkFfmpegStatus()
+        .then(setFfmpeg)
+        .catch((e) => {
+          useToastStore.getState().showToast(
+            `获取 FFmpeg 状态失败: ${e instanceof Error ? e.message : String(e)}`,
+            "error"
+          );
+        });
     })
       .then((u) => unlisteners.push(u))
       .catch(() => {});

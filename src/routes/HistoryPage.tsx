@@ -6,6 +6,7 @@ import {
   History as HistoryIcon,
   Trash2,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import {
@@ -43,6 +44,7 @@ const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; labe
 export default function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
 
@@ -51,8 +53,15 @@ export default function HistoryPage() {
     try {
       const data = await getHistory();
       setEntries(data as HistoryEntry[]);
-    } catch {
+      setLoadError(null);
+    } catch (e) {
+      // 区分"加载失败"与"没有历史"：失败时展示错误并给出重试入口
       setEntries([]);
+      setLoadError(e instanceof Error ? e.message : String(e));
+      useToastStore.getState().showToast(
+        `加载历史记录失败: ${e instanceof Error ? e.message : String(e)}`,
+        "error"
+      );
     } finally {
       setLoading(false);
     }
@@ -130,6 +139,23 @@ export default function HistoryPage() {
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-16 animate-pulse rounded-[10px] bg-fill/70" />
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-destructive/40 py-16">
+          <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-destructive/10">
+            <XCircle className="h-5 w-5 text-destructive" />
+          </div>
+          <p className="mt-3 text-[13px] font-medium">加载历史记录失败</p>
+          <p className="mt-0.5 max-w-md break-all text-center text-[12px] text-secondary">
+            {loadError}
+          </p>
+          <button
+            onClick={refresh}
+            className="mt-4 flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98]"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            重试
+          </button>
         </div>
       ) : entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-hairline py-16">

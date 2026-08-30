@@ -20,6 +20,10 @@ struct ActiveProcess {
 /// Global registry: job_id -> running ffmpeg process
 static PROCESSES: OnceLock<Mutex<HashMap<String, ActiveProcess>>> = OnceLock::new();
 
+/// 编码失败时附加到错误信息中的 stderr 尾部行数（ffmpeg 把真正的报错原因
+/// 写在 stderr 末尾，完整输出太长，尾部几十行足够定位问题）。
+const STDERR_TAIL_LINES: usize = 50;
+
 /// Request cancellation of a running encode: set the cancel flag and kill
 /// the ffmpeg process immediately (works even when ffmpeg is not emitting output).
 pub fn cancel_process(job_id: &str) -> bool {
@@ -558,6 +562,7 @@ pub fn start_encode(
                 "outputPath": null,
                 "outputSizeBytes": null,
                 "durationSeconds": start_time.elapsed().as_secs_f64(),
+                "cancelled": true,
                 "error": "Cancelled by user"
             }),
         );
@@ -633,19 +638,25 @@ pub fn start_encode(
                 "outputPath": null,
                 "outputSizeBytes": null,
                 "durationSeconds": start_time.elapsed().as_secs_f64(),
+                "cancelled": true,
                 "error": "Cancelled by user"
             }),
         );
         return Ok(());
     }
 
-    // Drain stderr so ffmpeg never blocks on a full pipe; keep the lines
-    // available for future diagnostics.
+    // Drain stderr so ffmpeg never blocks on a full pipe; keep the last
+    // STDERR_TAIL_LINES lines for failure diagnostics (ffmpeg reports the
+    // actual error reason at the end of stderr).
     let stderr_thread = std::thread::spawn(move || {
-        use std::io::BufRead;
-        for line in BufReader::new(stderr).lines() {
-            let _ = line;
+        let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if tail.len() >= STDERR_TAIL_LINES {
+                tail.pop_front();
+            }
+            tail.push_back(line);
         }
+        tail
     });
 
     // Parse `-progress` reports from stdout. Each report is a block of
@@ -719,7 +730,11 @@ pub fn start_encode(
             .and_then(|mut proc| proc.child.wait().ok()),
         None => None,
     };
-    let _ = stderr_thread.join();
+    let stderr_tail: Vec<String> = stderr_thread
+        .join()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     let elapsed = start_time.elapsed();
 
@@ -734,6 +749,7 @@ pub fn start_encode(
                 "outputPath": null,
                 "outputSizeBytes": null,
                 "durationSeconds": elapsed.as_secs_f64(),
+                "cancelled": true,
                 "error": "Cancelled by user"
             }),
         );
@@ -757,6 +773,7 @@ pub fn start_encode(
                     "outputPath": output_path,
                     "outputSizeBytes": output_size,
                     "durationSeconds": elapsed.as_secs_f64(),
+                    "cancelled": false,
                     "error": null,
                 }),
             );
@@ -764,6 +781,16 @@ pub fn start_encode(
         _ => {
             let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
             log::error!("Encoding failed: {} (exit code: {})", job_id, exit_code);
+
+            // 附加 stderr 尾部，让用户能在 UI 直接看到 ffmpeg 的报错原因
+            let mut error = format!("FFmpeg exited with code {}", exit_code);
+            if !stderr_tail.is_empty() {
+                error.push_str(&format!(
+                    "\n\nFFmpeg 输出（最后 {} 行）：\n{}",
+                    stderr_tail.len(),
+                    stderr_tail.join("\n")
+                ));
+            }
 
             let _ = app_handle.emit(
                 "encode://complete",
@@ -774,7 +801,8 @@ pub fn start_encode(
                     "outputPath": null,
                     "outputSizeBytes": null,
                     "durationSeconds": elapsed.as_secs_f64(),
-                    "error": format!("FFmpeg exited with code {}", exit_code),
+                    "cancelled": false,
+                    "error": error,
                 }),
             );
         }

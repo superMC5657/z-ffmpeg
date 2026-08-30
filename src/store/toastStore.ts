@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { appLog } from "@/lib/log";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -19,6 +20,8 @@ let nextId = 1;
 export const useToastStore = create<ToastState>((set) => ({
   toasts: [],
   showToast: (message, type = "info") => {
+    // 错误类 toast 统一落一份到日志文件，方便事后排查
+    if (type === "error") appLog.error(message);
     const id = nextId++;
     set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
     setTimeout(() => {
