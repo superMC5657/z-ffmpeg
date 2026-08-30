@@ -22,23 +22,7 @@ import {
 import { useToastStore } from "@/store/toastStore";
 import { formatFileSizeCompact } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-
-interface HistoryEntry {
-  id: string;
-  inputPath: string;
-  outputPath: string;
-  fileName: string;
-  status: string;
-  /** VMAF 平均得分（0-100），计算过才有值 */
-  vmafScore: number | null;
-  /** 实际输出体积（字节），完成的任务才有值 */
-  outputSize: number | null;
-  /** 原始文件体积（字节），入队时读取，用于计算压缩率 */
-  inputSize: number | null;
-  createdAt: string;
-  completedAt: string | null;
-  error: string | null;
-}
+import type { HistoryEntry } from "@/types";
 
 const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; label: string }> = {
   Completed: { icon: CheckCircle, tint: "bg-success/12 text-success", label: "已完成" },
@@ -58,63 +42,77 @@ type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
 /** 每页条数 */
 const PAGE_SIZE = 20;
 
+/** 单一查询状态：page/status/search 一起变更、一起触发重新拉取 */
+interface HistoryQuery {
+  /** 0-based 页码 */
+  page: number;
+  status: StatusFilterValue;
+  search: string;
+}
+
 export default function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0); // 0-based
-  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("All");
+  const [query, setQuery] = useState<HistoryQuery>({
+    page: 0,
+    status: "All",
+    search: "",
+  });
+  // 搜索框的即时输入（受控值）；防抖后写入 query.search 才真正发起查询
   const [searchInput, setSearchInput] = useState("");
+  // 手动重刷标记（重试/删除/清空后 query 不变也需要重新拉取）
+  const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = async (opts?: {
-    page?: number;
-    status?: StatusFilterValue;
-    search?: string;
-  }) => {
-    const curPage = opts?.page ?? page;
-    const curStatus = opts?.status !== undefined ? opts.status : statusFilter;
-    const curSearch = opts?.search !== undefined ? opts.search : searchInput;
-    setLoading(true);
-    try {
-      const result = await getHistory({
-        limit: PAGE_SIZE,
-        offset: curPage * PAGE_SIZE,
-        status: curStatus === "All" ? undefined : curStatus,
-        search: curSearch || undefined,
-      });
-      setEntries(result.entries as HistoryEntry[]);
-      setTotal(result.total);
-      setLoadError(null);
-    } catch (e) {
-      // 区分"加载失败"与"没有历史"：失败时展示错误并给出重试入口
-      setEntries([]);
-      setTotal(0);
-      setLoadError(e instanceof Error ? e.message : String(e));
-      useToastStore.getState().showToast(
-        `加载历史记录失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // query 变化（翻页/筛选/搜索）或手动重刷时拉取；cancelled 标记防止
+  // 旧请求晚到覆盖新结果
   useEffect(() => {
-    refresh();
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const result = await getHistory({
+          limit: PAGE_SIZE,
+          offset: query.page * PAGE_SIZE,
+          status: query.status === "All" ? undefined : query.status,
+          search: query.search || undefined,
+        });
+        if (cancelled) return;
+        setEntries(result.entries);
+        setTotal(result.total);
+        setLoadError(null);
+      } catch (e) {
+        if (cancelled) return;
+        // 区分"加载失败"与"没有历史"：失败时展示错误并给出重试入口
+        setEntries([]);
+        setTotal(0);
+        setLoadError(e instanceof Error ? e.message : String(e));
+        useToastStore.getState().showToast(
+          `加载历史记录失败: ${e instanceof Error ? e.message : String(e)}`,
+          "error"
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [query, reloadKey]);
+
+  // 卸载时清理搜索防抖定时器
+  useEffect(() => {
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStatusChange = (value: StatusFilterValue) => {
-    setStatusFilter(value);
-    setPage(0);
-    refresh({ page: 0, status: value });
+    setQuery((q) => ({ ...q, page: 0, status: value }));
   };
 
   const handleSearchInput = (value: string) => {
@@ -122,16 +120,17 @@ export default function HistoryPage() {
     // 输入防抖，避免每个按键都打一次 IPC
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
-      setPage(0);
-      refresh({ page: 0, search: value });
+      setQuery((q) => ({ ...q, page: 0, search: value }));
     }, 300);
   };
 
   const handlePageChange = (newPage: number) => {
     if (newPage < 0 || newPage >= Math.max(1, Math.ceil(total / PAGE_SIZE))) return;
-    setPage(newPage);
-    refresh({ page: newPage });
+    setQuery((q) => ({ ...q, page: newPage }));
   };
+
+  /** query 不变时的强制重新拉取（重试/删除/清空后） */
+  const forceReload = () => setReloadKey((k) => k + 1);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -141,8 +140,8 @@ export default function HistoryPage() {
       await deleteHistory([id]);
       useToastStore.getState().showToast("历史记录已删除", "success");
       // 删除后当前页可能变空，回第一页重新拉取（总数也会同步刷新）
-      setPage(0);
-      await refresh({ page: 0 });
+      setQuery((q) => ({ ...q, page: 0 }));
+      forceReload();
     } catch (e) {
       useToastStore.getState().showToast(
         `删除失败: ${e instanceof Error ? e.message : String(e)}`,
@@ -158,8 +157,8 @@ export default function HistoryPage() {
     try {
       await clearHistory();
       useToastStore.getState().showToast("已清空全部历史记录", "success");
-      setPage(0);
-      await refresh({ page: 0 });
+      setQuery((q) => ({ ...q, page: 0 }));
+      forceReload();
     } catch (e) {
       useToastStore.getState().showToast(
         `清空失败: ${e instanceof Error ? e.message : String(e)}`,
@@ -204,7 +203,7 @@ export default function HistoryPage() {
       {/* 筛选与搜索栏 */}
       <div className="flex flex-wrap items-center gap-2">
         <SegmentedControl<StatusFilterValue>
-          value={statusFilter}
+          value={query.status}
           onChange={handleStatusChange}
           options={STATUS_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
         />
@@ -244,7 +243,7 @@ export default function HistoryPage() {
             {loadError}
           </p>
           <button
-            onClick={() => refresh({ page: 0 })}
+            onClick={forceReload}
             className="mt-4 flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98]"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -358,21 +357,21 @@ export default function HistoryPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-end gap-3 pt-3 text-[12px] text-secondary">
             <span className="tabular-nums">
-              共 {total} 条 · 第 {page + 1}/{totalPages} 页
+              共 {total} 条 · 第 {query.page + 1}/{totalPages} 页
             </span>
             <div className="flex items-center gap-1">
               <button
                 aria-label="上一页"
-                onClick={() => handlePageChange(page - 1)}
-                disabled={page === 0}
+                onClick={() => handlePageChange(query.page - 1)}
+                disabled={query.page === 0}
                 className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               <button
                 aria-label="下一页"
-                onClick={() => handlePageChange(page + 1)}
-                disabled={page >= totalPages - 1}
+                onClick={() => handlePageChange(query.page + 1)}
+                disabled={query.page >= totalPages - 1}
                 className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
               >
                 <ChevronRight className="h-3.5 w-3.5" />

@@ -5,6 +5,7 @@ import type {
   FileInfo,
   EncodeProgress,
   EncodeResult,
+  HistoryEntry,
   QueueStatus,
   Preset,
   SystemInfo,
@@ -158,7 +159,7 @@ export interface HistoryQuery {
 
 /** 分页历史结果：entries 为当前页，total 为筛选后总条数 */
 export interface HistoryPageResult {
-  entries: unknown[];
+  entries: HistoryEntry[];
   total: number;
 }
 

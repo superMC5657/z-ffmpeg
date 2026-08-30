@@ -179,6 +179,27 @@ export interface VmafResult {
 }
 
 // ============================================================
+// History
+// ============================================================
+
+export interface HistoryEntry {
+  id: string;
+  inputPath: string;
+  outputPath: string;
+  fileName: string;
+  status: string;
+  /** VMAF 平均得分（0-100），计算过才有值 */
+  vmafScore: number | null;
+  /** 实际输出体积（字节），完成的任务才有值 */
+  outputSize: number | null;
+  /** 原始文件体积（字节），入队时读取，用于计算压缩率 */
+  inputSize: number | null;
+  createdAt: string;
+  completedAt: string | null;
+  error: string | null;
+}
+
+// ============================================================
 // Presets
 // ============================================================
 

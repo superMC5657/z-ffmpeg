@@ -23,13 +23,13 @@ export function useEncodeEvents() {
 
     const unlistenComplete = onEncodeComplete((result) => {
       setIsEncoding(false);
-      // 结构化 cancelled 字段是主判断；旧版后端只发魔法字符串，
-      // 保留字符串匹配兼容一个版本周期
-      const isCancelled =
-        result.cancelled === true || result.error === "Cancelled by user";
       updateJobStatus(
         result.jobId,
-        isCancelled ? "Cancelled" : result.success ? "Completed" : "Failed",
+        result.cancelled
+          ? "Cancelled"
+          : result.success
+            ? "Completed"
+            : "Failed",
         result.error || undefined
       );
     });

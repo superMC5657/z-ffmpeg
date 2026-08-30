@@ -16,7 +16,8 @@ use crate::ffmpeg;
 // 参数/探测/进度解析已拆分到独立模块；这里统一再导出，
 // 既有调用方（commands、estimate 等）的 `engine::xxx` 路径无需修改。
 pub use super::args::{
-    build_ffmpeg_args, build_ffmpeg_command_line, derive_output_paths_unique,
+    build_ffmpeg_args, build_ffmpeg_command_line, derive_output_path,
+    derive_output_paths_unique,
 };
 pub use super::probe::{parse_probe_result, probe_file, probe_file_async};
 pub(crate) use super::probe::{fallback_audio_bps, find_main_video_stream};
@@ -34,6 +35,36 @@ static PROCESSES: OnceLock<Mutex<HashMap<String, ActiveProcess>>> = OnceLock::ne
 /// 编码失败时附加到错误信息中的 stderr 尾部行数（ffmpeg 把真正的报错原因
 /// 写在 stderr 末尾，完整输出太长，尾部几十行足够定位问题）。
 const STDERR_TAIL_LINES: usize = 50;
+
+/// `encode://complete` 事件的载荷，字段对齐前端 `src/types/index.ts` 的 EncodeResult。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodeResult {
+    pub job_id: String,
+    pub file_name: String,
+    pub success: bool,
+    pub output_path: Option<String>,
+    pub output_size_bytes: Option<u64>,
+    pub duration_seconds: f64,
+    pub cancelled: bool,
+    pub error: Option<String>,
+}
+
+impl EncodeResult {
+    /// 取消路径的统一载荷：三处取消分支（spawn 前 / spawn 中 / 运行中）共用。
+    fn cancelled(job_id: String, file_name: String, duration_seconds: f64) -> Self {
+        Self {
+            job_id,
+            file_name,
+            success: false,
+            output_path: None,
+            output_size_bytes: None,
+            duration_seconds,
+            cancelled: true,
+            error: Some("用户已取消".into()),
+        }
+    }
+}
 
 /// Request cancellation of a running encode: set the cancel flag and kill
 /// the ffmpeg process immediately (works even when ffmpeg is not emitting output).
@@ -82,16 +113,7 @@ pub fn start_encode(
         log::info!("Encoding cancelled before start: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
-            serde_json::json!({
-                "jobId": job_id,
-                "fileName": file_name,
-                "success": false,
-                "outputPath": null,
-                "outputSizeBytes": null,
-                "durationSeconds": start_time.elapsed().as_secs_f64(),
-                "cancelled": true,
-                "error": "Cancelled by user"
-            }),
+            EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
         );
         return Ok(());
     }
@@ -158,16 +180,7 @@ pub fn start_encode(
         log::info!("Encoding cancelled during probe/spawn: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
-            serde_json::json!({
-                "jobId": job_id,
-                "fileName": file_name,
-                "success": false,
-                "outputPath": null,
-                "outputSizeBytes": null,
-                "durationSeconds": start_time.elapsed().as_secs_f64(),
-                "cancelled": true,
-                "error": "Cancelled by user"
-            }),
+            EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
         );
         return Ok(());
     }
@@ -269,16 +282,7 @@ pub fn start_encode(
         log::info!("Encoding cancelled: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
-            serde_json::json!({
-                "jobId": job_id,
-                "fileName": file_name,
-                "success": false,
-                "outputPath": null,
-                "outputSizeBytes": null,
-                "durationSeconds": elapsed.as_secs_f64(),
-                "cancelled": true,
-                "error": "Cancelled by user"
-            }),
+            EncodeResult::cancelled(job_id, file_name, elapsed.as_secs_f64()),
         );
         return Ok(());
     }
@@ -293,16 +297,16 @@ pub fn start_encode(
 
             let _ = app_handle.emit(
                 "encode://complete",
-                serde_json::json!({
-                    "jobId": job_id,
-                    "fileName": file_name,
-                    "success": true,
-                    "outputPath": output_path,
-                    "outputSizeBytes": output_size,
-                    "durationSeconds": elapsed.as_secs_f64(),
-                    "cancelled": false,
-                    "error": null,
-                }),
+                EncodeResult {
+                    job_id,
+                    file_name,
+                    success: true,
+                    output_path: Some(output_path),
+                    output_size_bytes: Some(output_size),
+                    duration_seconds: elapsed.as_secs_f64(),
+                    cancelled: false,
+                    error: None,
+                },
             );
         }
         _ => {
@@ -310,7 +314,7 @@ pub fn start_encode(
             log::error!("Encoding failed: {} (exit code: {})", job_id, exit_code);
 
             // 附加 stderr 尾部，让用户能在 UI 直接看到 ffmpeg 的报错原因
-            let mut error = format!("FFmpeg exited with code {}", exit_code);
+            let mut error = format!("FFmpeg 以退出码 {} 退出", exit_code);
             if !stderr_tail.is_empty() {
                 error.push_str(&format!(
                     "\n\nFFmpeg 输出（最后 {} 行）：\n{}",
@@ -321,19 +325,58 @@ pub fn start_encode(
 
             let _ = app_handle.emit(
                 "encode://complete",
-                serde_json::json!({
-                    "jobId": job_id,
-                    "fileName": file_name,
-                    "success": false,
-                    "outputPath": null,
-                    "outputSizeBytes": null,
-                    "durationSeconds": elapsed.as_secs_f64(),
-                    "cancelled": false,
-                    "error": error,
-                }),
+                EncodeResult {
+                    job_id,
+                    file_name,
+                    success: false,
+                    output_path: None,
+                    output_size_bytes: None,
+                    duration_seconds: elapsed.as_secs_f64(),
+                    cancelled: false,
+                    error: Some(error),
+                },
             );
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EncodeResult;
+
+    #[test]
+    fn encode_result_serializes_camel_case_keys() {
+        let value = serde_json::to_value(EncodeResult {
+            job_id: "j1".into(),
+            file_name: "a.mp4".into(),
+            success: true,
+            output_path: Some("out.mp4".into()),
+            output_size_bytes: Some(1024),
+            duration_seconds: 1.5,
+            cancelled: false,
+            error: None,
+        })
+        .unwrap();
+
+        assert_eq!(value["jobId"], "j1");
+        assert_eq!(value["fileName"], "a.mp4");
+        assert_eq!(value["outputPath"], "out.mp4");
+        assert_eq!(value["outputSizeBytes"], 1024);
+        assert_eq!(value["durationSeconds"], 1.5);
+        assert_eq!(value["cancelled"], false);
+        assert!(value["error"].is_null());
+    }
+
+    #[test]
+    fn cancelled_constructor_marks_cancelled() {
+        let r = EncodeResult::cancelled("j1".into(), "a.mp4".into(), 2.0);
+
+        assert!(r.cancelled);
+        assert!(!r.success);
+        assert_eq!(r.output_path, None);
+        assert_eq!(r.output_size_bytes, None);
+        assert_eq!(r.error.as_deref(), Some("用户已取消"));
+    }
 }
