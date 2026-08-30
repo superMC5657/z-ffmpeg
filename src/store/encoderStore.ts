@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   FileInfo,
   CodecConfig,
@@ -70,7 +71,25 @@ interface EncoderState {
   scheduleEstimateRefresh: () => void;
 }
 
-export const useEncoderStore = create<EncoderState>((set, get) => ({
+// 编码参数的持久化键：重启后恢复上次的输出目录与编码参数，
+// 文件列表/进度/预估等运行态不持久化
+const PERSISTED_ENCODER_KEYS = [
+  "videoCodec",
+  "rateControl",
+  "encoderPreset",
+  "resolution",
+  "frameRate",
+  "pixelFormat",
+  "audioCodec",
+  "audioBitrate",
+  "outputDir",
+  "containerFormat",
+  "hwAccel",
+] as const;
+
+export const useEncoderStore = create<EncoderState>()(
+  persist(
+    (set, get) => ({
   // File selection
   inputFiles: [],
   addFiles: async (paths: string[]) => {
@@ -321,4 +340,16 @@ export const useEncoderStore = create<EncoderState>((set, get) => ({
       get().refreshEstimates();
     }, 150);
   },
-}));
+    }),
+    {
+      name: "zffmpeg-encoder-settings",
+      storage: createJSONStorage(() => localStorage),
+      // 只持久化编码参数与输出目录；文件列表/进度/预估是运行态，
+      // 重启后文件可能已移动，恢复它们反而造成困惑
+      partialize: (s) =>
+        Object.fromEntries(
+          PERSISTED_ENCODER_KEYS.map((k) => [k, s[k]])
+        ) as unknown as EncoderState,
+    }
+  )
+);

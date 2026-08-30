@@ -84,6 +84,16 @@ export async function startQueue(): Promise<void> {
   return invoke("start_queue");
 }
 
+/** 暂停队列自动调度：正在编码的任务继续，剩余 Pending 不再自动开始 */
+export async function pauseQueue(): Promise<void> {
+  return invoke("pause_queue");
+}
+
+/** 解除队列暂停，并立即拉起调度 */
+export async function resumeQueue(): Promise<void> {
+  return invoke("resume_queue");
+}
+
 export async function getQueueStatus(): Promise<QueueStatus> {
   return invoke<QueueStatus>("get_queue_status");
 }
@@ -138,8 +148,27 @@ export async function getBuiltinPresets(): Promise<Preset[]> {
 // History commands
 // ============================================================
 
-export async function getHistory(): Promise<unknown[]> {
-  return invoke<unknown[]>("get_history");
+/** 历史查询条件：全可选；limit 缺省 = 后端不分页，全量返回 */
+export interface HistoryQuery {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  search?: string;
+}
+
+/** 分页历史结果：entries 为当前页，total 为筛选后总条数 */
+export interface HistoryPageResult {
+  entries: unknown[];
+  total: number;
+}
+
+export async function getHistory(query?: HistoryQuery): Promise<HistoryPageResult> {
+  return invoke<HistoryPageResult>("get_history", {
+    limit: query?.limit ?? null,
+    offset: query?.offset ?? null,
+    status: query?.status ?? null,
+    search: query?.search ?? null,
+  });
 }
 
 export async function deleteHistory(ids: string[]): Promise<void> {

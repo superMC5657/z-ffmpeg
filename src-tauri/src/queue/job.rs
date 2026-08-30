@@ -153,4 +153,6 @@ pub struct QueueStatus {
     pub encoding: usize,
     pub completed: usize,
     pub failed: usize,
+    /// 队列级暂停：暂停后不再自动启动下一个任务（正在编码的任务不受影响）
+    pub paused: bool,
 }

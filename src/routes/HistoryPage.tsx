@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -7,8 +7,13 @@ import {
   Trash2,
   Loader2,
   RotateCcw,
+  Search,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
+import SegmentedControl from "@/components/layout/SegmentedControl";
 import {
   getHistory,
   deleteHistory,
@@ -41,22 +46,53 @@ const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; labe
   Cancelled: { icon: Ban, tint: "bg-fill text-secondary", label: "已取消" },
 };
 
+const STATUS_FILTERS = [
+  { value: "All", label: "全部" },
+  { value: "Completed", label: "已完成" },
+  { value: "Failed", label: "失败" },
+  { value: "Cancelled", label: "已取消" },
+] as const;
+
+type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
+
+/** 每页条数 */
+const PAGE_SIZE = 20;
+
 export default function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0); // 0-based
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("All");
+  const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = async () => {
+  const refresh = async (opts?: {
+    page?: number;
+    status?: StatusFilterValue;
+    search?: string;
+  }) => {
+    const curPage = opts?.page ?? page;
+    const curStatus = opts?.status !== undefined ? opts.status : statusFilter;
+    const curSearch = opts?.search !== undefined ? opts.search : searchInput;
     setLoading(true);
     try {
-      const data = await getHistory();
-      setEntries(data as HistoryEntry[]);
+      const result = await getHistory({
+        limit: PAGE_SIZE,
+        offset: curPage * PAGE_SIZE,
+        status: curStatus === "All" ? undefined : curStatus,
+        search: curSearch || undefined,
+      });
+      setEntries(result.entries as HistoryEntry[]);
+      setTotal(result.total);
       setLoadError(null);
     } catch (e) {
       // 区分"加载失败"与"没有历史"：失败时展示错误并给出重试入口
       setEntries([]);
+      setTotal(0);
       setLoadError(e instanceof Error ? e.message : String(e));
       useToastStore.getState().showToast(
         `加载历史记录失败: ${e instanceof Error ? e.message : String(e)}`,
@@ -69,14 +105,44 @@ export default function HistoryPage() {
 
   useEffect(() => {
     refresh();
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleStatusChange = (value: StatusFilterValue) => {
+    setStatusFilter(value);
+    setPage(0);
+    refresh({ page: 0, status: value });
+  };
+
+  const handleSearchInput = (value: string) => {
+    setSearchInput(value);
+    // 输入防抖，避免每个按键都打一次 IPC
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setPage(0);
+      refresh({ page: 0, search: value });
+    }, 300);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 0 || newPage >= Math.max(1, Math.ceil(total / PAGE_SIZE))) return;
+    setPage(newPage);
+    refresh({ page: newPage });
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleDelete = async (id: string) => {
     setDeleting(id);
     try {
       await deleteHistory([id]);
       useToastStore.getState().showToast("历史记录已删除", "success");
-      await refresh();
+      // 删除后当前页可能变空，回第一页重新拉取（总数也会同步刷新）
+      setPage(0);
+      await refresh({ page: 0 });
     } catch (e) {
       useToastStore.getState().showToast(
         `删除失败: ${e instanceof Error ? e.message : String(e)}`,
@@ -92,7 +158,8 @@ export default function HistoryPage() {
     try {
       await clearHistory();
       useToastStore.getState().showToast("已清空全部历史记录", "success");
-      await refresh();
+      setPage(0);
+      await refresh({ page: 0 });
     } catch (e) {
       useToastStore.getState().showToast(
         `清空失败: ${e instanceof Error ? e.message : String(e)}`,
@@ -134,6 +201,33 @@ export default function HistoryPage() {
         }
       />
 
+      {/* 筛选与搜索栏 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SegmentedControl<StatusFilterValue>
+          value={statusFilter}
+          onChange={handleStatusChange}
+          options={STATUS_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
+        />
+        <div className="relative ml-auto w-56">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-tertiary" />
+          <input
+            value={searchInput}
+            onChange={(e) => handleSearchInput(e.target.value)}
+            placeholder="搜索文件名…"
+            className="h-9 w-full rounded-[9px] bg-fill pl-8 pr-8 text-[13px] text-foreground outline-none placeholder:text-tertiary transition-shadow focus:ring-2 focus:ring-accent/30"
+          />
+          {searchInput && (
+            <button
+              aria-label="清除搜索"
+              onClick={() => handleSearchInput("")}
+              className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-tertiary hover:bg-fill-strong hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {loading ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
@@ -150,7 +244,7 @@ export default function HistoryPage() {
             {loadError}
           </p>
           <button
-            onClick={refresh}
+            onClick={() => refresh({ page: 0 })}
             className="mt-4 flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98]"
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -168,6 +262,7 @@ export default function HistoryPage() {
           </p>
         </div>
       ) : (
+        <>
         <div className="overflow-hidden rounded-[14px] border border-hairline bg-surface shadow-card">
           {entries.map((entry, i) => {
             const config = statusIcons[entry.status] || statusIcons.Failed;
@@ -258,6 +353,34 @@ export default function HistoryPage() {
             );
           })}
         </div>
+
+        {/* 分页 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-end gap-3 pt-3 text-[12px] text-secondary">
+            <span className="tabular-nums">
+              共 {total} 条 · 第 {page + 1}/{totalPages} 页
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                aria-label="上一页"
+                onClick={() => handlePageChange(page - 1)}
+                disabled={page === 0}
+                className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                aria-label="下一页"
+                onClick={() => handlePageChange(page + 1)}
+                disabled={page >= totalPages - 1}
+                className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

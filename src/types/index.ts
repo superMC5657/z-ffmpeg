@@ -167,6 +167,8 @@ export interface QueueStatus {
   encoding: number;
   completed: number;
   failed: number;
+  /** 队列级暂停：暂停后不再自动启动下一个任务（正在编码的不受影响） */
+  paused: boolean;
 }
 
 /** compute_vmaf 命令的返回（4 段 × 5 秒采样 VMAF 结果） */

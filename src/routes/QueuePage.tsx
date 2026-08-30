@@ -22,6 +22,8 @@ export default function QueuePage() {
 
     // Listen for queue updates from backend
     const unlisten = onQueueUpdated((status) => {
+      // 同步队列暂停状态（pause/resume/cancel 等操作都会触发该事件）
+      useQueueStore.setState({ paused: status.paused });
       setJobs(status.jobs);
     });
 

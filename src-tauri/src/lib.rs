@@ -95,6 +95,8 @@ pub fn run() {
             commands::queue::remove_from_queue,
             commands::queue::cancel_job,
             commands::queue::get_queue_status,
+            commands::queue::pause_queue,
+            commands::queue::resume_queue,
             commands::queue::clear_completed,
             commands::queue::retry_job,
             commands::queue::get_max_concurrent,

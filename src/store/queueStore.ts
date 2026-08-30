@@ -5,6 +5,8 @@ import {
   removeFromQueue,
   cancelJob,
   startQueue,
+  pauseQueue,
+  resumeQueue,
   getQueueStatus,
   clearCompleted,
   retryJob,
@@ -17,6 +19,8 @@ import {
 interface QueueState {
   jobs: EncodeJob[];
   isLoading: boolean;
+  /** 队列级暂停：暂停后不再自动启动下一个任务（正在编码的不受影响） */
+  paused: boolean;
 
   // Concurrency limit (shared by Queue page and Settings page)
   maxConcurrent: number;
@@ -32,6 +36,9 @@ interface QueueState {
 
   addJobs: (files: string[], config: CodecConfig, outputDir?: string | null) => Promise<void>;
   startJobs: () => Promise<void>;
+  /** 暂停/恢复队列自动调度 */
+  pauseJobs: () => Promise<void>;
+  resumeJobs: () => Promise<void>;
   removeJobs: (ids: string[]) => Promise<void>;
   cancelJob: (id: string) => Promise<void>;
   clearCompleted: () => Promise<void>;
@@ -46,6 +53,7 @@ interface QueueState {
 export const useQueueStore = create<QueueState>((set, get) => ({
   jobs: [],
   isLoading: false,
+  paused: false,
   maxConcurrent: 2,
   maxConcurrentLoaded: false,
   vmafSegments: 4,
@@ -91,6 +99,17 @@ export const useQueueStore = create<QueueState>((set, get) => ({
     await get().refreshQueue();
   },
 
+  pauseJobs: async () => {
+    await pauseQueue();
+    set({ paused: true });
+  },
+
+  resumeJobs: async () => {
+    await resumeQueue();
+    set({ paused: false });
+    await get().refreshQueue();
+  },
+
   removeJobs: async (ids) => {
     await removeFromQueue(ids);
     set((s) => ({ jobs: s.jobs.filter((j) => !ids.includes(j.id)) }));
@@ -127,6 +146,7 @@ export const useQueueStore = create<QueueState>((set, get) => ({
       const status = await getQueueStatus();
       set({
         jobs: status.jobs,
+        paused: status.paused,
         isLoading: false,
       });
     } catch {

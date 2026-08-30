@@ -24,6 +24,9 @@ pub struct QueueManager {
     /// Serializes `process_queue` loops so concurrent invocations (user button
     /// + auto-advance) can't over-spawn past max_concurrent.
     processing: tokio::sync::Mutex<()>,
+    /// 队列级暂停开关：true 时 can_start 恒为 false，不再自动启动新任务；
+    /// 正在编码的任务不受影响。仅运行态，不持久化（重启后默认恢复调度）。
+    paused: RwLock<bool>,
 }
 
 impl QueueManager {
@@ -81,6 +84,7 @@ impl QueueManager {
             db: StdMutex::new(db),
             cancel_flags: RwLock::new(HashMap::new()),
             processing: tokio::sync::Mutex::new(()),
+            paused: RwLock::new(false),
         }))
     }
 
@@ -356,7 +360,34 @@ impl QueueManager {
         let encoding = jobs.iter().filter(|j| j.status == JobStatus::Encoding).count();
         let completed = jobs.iter().filter(|j| j.status == JobStatus::Completed).count();
         let failed = jobs.iter().filter(|j| j.status == JobStatus::Failed).count();
-        QueueStatus { total: jobs.len(), pending, encoding, completed, failed, jobs: snapshots }
+        QueueStatus {
+            total: jobs.len(),
+            pending,
+            encoding,
+            completed,
+            failed,
+            paused: *self.paused.read(),
+            jobs: snapshots,
+        }
+    }
+
+    /// 队列级暂停：暂停自动调度（正在编码的任务继续到结束）。
+    pub fn pause_queue(&self) {
+        *self.paused.write() = true;
+        log::info!("Queue: paused (auto-advance disabled)");
+    }
+
+    /// 解除队列暂停。返回解除前的状态，方便调用方判断是否需要重新拉起调度。
+    pub fn resume_queue(&self) -> bool {
+        let was = std::mem::replace(&mut *self.paused.write(), false);
+        if was {
+            log::info!("Queue: resumed");
+        }
+        was
+    }
+
+    pub fn is_paused(&self) -> bool {
+        *self.paused.read()
     }
 
     /// 取任务的输入/输出路径（VMAF 计算需要原始与压缩后的成对文件）。
@@ -404,45 +435,97 @@ impl QueueManager {
     /// database. Unlike the in-memory queue — which only restores active jobs on
     /// startup — the DB keeps finished jobs, so history survives app restarts.
     pub fn history(&self) -> Vec<JobSnapshot> {
+        self.history_filtered(None, 0, None, None).0
+    }
+
+    /// 带筛选/搜索/分页的历史查询。`status` 过滤单个状态；`search` 对
+    /// input_path 做 LIKE 匹配（%/_ 转义）；`limit == None` 表示不分页。
+    /// 返回 (当前页条目, 匹配总数)，总数供前端计算页数。
+    pub fn history_filtered(
+        &self,
+        limit: Option<usize>,
+        offset: usize,
+        status: Option<&str>,
+        search: Option<&str>,
+    ) -> (Vec<JobSnapshot>, usize) {
         let db = self.db.lock().unwrap();
-        let mut stmt = match db.prepare(
+
+        // 动态拼 WHERE，参数按 ?N 顺序追加
+        let mut where_clauses = vec!["status IN ('Completed', 'Failed', 'Cancelled')".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(st) = status {
+            params.push(Box::new(st.to_string()));
+            where_clauses.push(format!("status = ?{}", params.len()));
+        }
+        if let Some(q) = search.filter(|s| !s.trim().is_empty()) {
+            // LIKE 通配符转义，用户输入按字面量匹配
+            let like = format!("%{}%", q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+            params.push(Box::new(like));
+            where_clauses.push(format!("input_path LIKE ?{} ESCAPE '\\'", params.len()));
+        }
+
+        let where_sql = where_clauses.join(" AND ");
+
+        // 匹配总数（分页前）
+        let total: usize = match db.prepare(&format!("SELECT COUNT(*) FROM jobs WHERE {where_sql}")) {
+            Ok(mut stmt) => stmt
+                .query_row(
+                    rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                .max(0) as usize,
+            Err(_) => 0,
+        };
+
+        let mut sql = format!(
             "SELECT id, input_path, output_path, status, progress,
                     input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail,
                     created_at, started_at, completed_at, error
-             FROM jobs WHERE status IN ('Completed', 'Failed', 'Cancelled')
+             FROM jobs WHERE {where_sql}
              ORDER BY completed_at DESC, created_at DESC"
-        ) {
+        );
+        if limit.is_some() {
+            sql.push_str(" LIMIT ? OFFSET ?");
+            params.push(Box::new(limit.unwrap() as i64));
+            params.push(Box::new(offset as i64));
+        }
+
+        let mut stmt = match db.prepare(&sql) {
             Ok(s) => s,
-            Err(_) => return vec![],
+            Err(_) => return (vec![], total),
         };
 
-        stmt.query_map([], |row| {
-            let input_path: String = row.get(1)?;
-            Ok(JobSnapshot {
-                id: row.get(0)?,
-                input_path: input_path.clone(),
-                output_path: row.get(2)?,
-                file_name: std::path::Path::new(&input_path)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string(),
-                status: row.get(3)?,
-                progress: row.get(4)?,
-                input_size: row.get(5)?,
-                estimated_output_size: row.get(6)?,
-                output_size: row.get(7)?,
-                vmaf_score: row.get(8)?,
-                vmaf_detail: row.get(9)?,
-                created_at: row.get(10)?,
-                started_at: row.get(11)?,
-                completed_at: row.get(12)?,
-                error: row.get(13)?,
+        let entries = stmt
+            .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+                let input_path: String = row.get(1)?;
+                Ok(JobSnapshot {
+                    id: row.get(0)?,
+                    input_path: input_path.clone(),
+                    output_path: row.get(2)?,
+                    file_name: std::path::Path::new(&input_path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string(),
+                    status: row.get(3)?,
+                    progress: row.get(4)?,
+                    input_size: row.get(5)?,
+                    estimated_output_size: row.get(6)?,
+                    output_size: row.get(7)?,
+                    vmaf_score: row.get(8)?,
+                    vmaf_detail: row.get(9)?,
+                    created_at: row.get(10)?,
+                    started_at: row.get(11)?,
+                    completed_at: row.get(12)?,
+                    error: row.get(13)?,
+                })
             })
-        })
-        .ok()
-        .map(|rows| rows.filter_map(|r| r.ok()).collect())
-        .unwrap_or_default()
+            .ok()
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default();
+
+        (entries, total)
     }
 
     fn dequeue_next(&self) -> Option<EncodeJob> {
@@ -457,7 +540,8 @@ impl QueueManager {
     }
 
     fn can_start(&self) -> bool {
-        *self.active_count.read() < *self.max_concurrent.read()
+        // 队列暂停时不启动任何新任务（正在编码的不受影响）
+        !self.is_paused() && *self.active_count.read() < *self.max_concurrent.read()
     }
 
     fn inc_active(&self) { *self.active_count.write() += 1; }
@@ -648,6 +732,61 @@ mod tests {
     }
 
     #[test]
+    fn history_filtered_supports_status_search_and_pagination() {
+        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("queue.db").to_string_lossy().to_string();
+
+        let manager = QueueManager::new(&db_path).unwrap();
+        let ids = manager.add_jobs(
+            vec![
+                ("C:\\in\\alpha.mp4".into(), "C:\\in\\alpha_encoded.mp4".into()),
+                ("C:\\in\\beta.mp4".into(), "C:\\in\\beta_encoded.mp4".into()),
+                ("C:\\in\\gamma.mp4".into(), "C:\\in\\gamma_encoded.mp4".into()),
+                ("C:\\in\\delta.mp4".into(), "C:\\in\\delta_encoded.mp4".into()),
+            ],
+            sample_config(),
+        );
+        manager.complete_job(&ids[0], true, None);
+        manager.complete_job(&ids[1], false, Some("boom".into()));
+        manager.complete_job(&ids[2], true, None);
+        manager.complete_job(&ids[3], true, None);
+
+        // 不带条件 = 与 history() 等价
+        let (all, total) = manager.history_filtered(None, 0, None, None);
+        assert_eq!(total, 4);
+        assert_eq!(all.len(), 4);
+
+        // 状态过滤
+        let (failed, total) = manager.history_filtered(None, 0, Some("Failed"), None);
+        assert_eq!(total, 1);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].status, "Failed");
+
+        // 搜索（文件名按字面量匹配，% 不当通配符）
+        let (hits, total) = manager.history_filtered(None, 0, None, Some("beta"));
+        assert_eq!(total, 1);
+        assert_eq!(hits[0].file_name, "beta.mp4");
+        let (_, wildcard_total) = manager.history_filtered(None, 0, None, Some("%"));
+        assert_eq!(wildcard_total, 0, "% 应被转义为字面量而非 LIKE 通配符");
+
+        // 分页：limit=2 offset=0 / offset=2
+        let (page0, total) = manager.history_filtered(Some(2), 0, None, None);
+        assert_eq!(total, 4);
+        assert_eq!(page0.len(), 2);
+        let (page1, total) = manager.history_filtered(Some(2), 2, None, None);
+        assert_eq!(total, 4);
+        assert_eq!(page1.len(), 2);
+        // 两页合起来覆盖全部 id
+        let mut seen: Vec<&str> = page0.iter().chain(page1.iter()).map(|j| j.id.as_str()).collect();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 4, "分页不应重复或丢失条目");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn complete_job_records_output_size_and_survives_restart() {
         let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -721,6 +860,36 @@ mod tests {
         let entry = hist.iter().find(|h| h.id == ids[0]).unwrap();
         assert_eq!(entry.vmaf_score, Some(91.25));
         assert!(entry.vmaf_detail.is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn queue_pause_blocks_scheduling_until_resume() {
+        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db_path = dir.join("queue.db").to_string_lossy().to_string();
+
+        let manager = QueueManager::new(&db_path).unwrap();
+        manager.add_jobs(
+            vec![("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into())],
+            sample_config(),
+        );
+
+        assert!(!manager.is_paused());
+        assert!(manager.can_start());
+        assert!(!manager.get_status().paused);
+
+        manager.pause_queue();
+        assert!(manager.is_paused());
+        assert!(manager.get_status().paused);
+        assert!(!manager.can_start(), "暂停后不应再启动新任务");
+        // Pending 任务本身不受影响，仍在队列中等待恢复
+        assert_eq!(manager.get_status().pending, 1);
+
+        manager.resume_queue();
+        assert!(!manager.is_paused());
+        assert!(manager.can_start(), "恢复后应能继续调度");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

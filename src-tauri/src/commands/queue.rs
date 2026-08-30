@@ -105,8 +105,40 @@ pub async fn get_queue_status(
         Some(queue) => Ok(queue.get_status()),
         None => Ok(QueueStatus {
             jobs: vec![], total: 0, pending: 0, encoding: 0, completed: 0, failed: 0,
+            paused: false,
         }),
     }
+}
+
+/// 暂停队列自动调度：正在编码的任务继续，剩余 Pending 不再自动开始。
+#[tauri::command]
+pub async fn pause_queue(
+    app_handle: tauri::AppHandle,
+    state: State<'_, crate::AppState>,
+) -> AppResult<()> {
+    if let Some(queue) = state.queue_manager.as_ref() {
+        queue.pause_queue();
+        let status = queue.get_status();
+        let _ = app_handle.emit("queue://updated", &status);
+    }
+    Ok(())
+}
+
+/// 解除队列暂停，并立即拉起调度处理剩余 Pending 任务。
+#[tauri::command]
+pub async fn resume_queue(
+    app_handle: tauri::AppHandle,
+    state: State<'_, crate::AppState>,
+) -> AppResult<()> {
+    if let Some(queue) = state.queue_manager.as_ref() {
+        let was = queue.resume_queue();
+        if was {
+            queue.process_queue(app_handle.clone());
+        }
+        let status = queue.get_status();
+        let _ = app_handle.emit("queue://updated", &status);
+    }
+    Ok(())
 }
 
 #[tauri::command]
