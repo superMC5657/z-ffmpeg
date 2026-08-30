@@ -4,6 +4,7 @@ import { usePresetStore } from "@/store/presetStore";
 import { useSystemStore } from "@/store/systemStore";
 import { useToastStore } from "@/store/toastStore";
 import { useEncoderStore } from "@/store/encoderStore";
+import ProGate from "@/components/license/ProGate";
 import { cn } from "@/lib/utils";
 
 interface PresetCardProps {
@@ -151,19 +152,21 @@ export default function PresetCard({ preset }: PresetCardProps) {
             删除
           </button>
         )}
-        <button
-          onClick={handleExport}
-          disabled={hwUnavailable}
-          className={cn(
-            "flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors",
-            hwUnavailable
-              ? "cursor-default text-tertiary"
-              : "ml-auto text-secondary hover:bg-fill-strong hover:text-foreground"
-          )}
-        >
-          <Download className="h-3 w-3" />
-          导出
-        </button>
+        <ProGate title="预设导出为 Pro 功能，点击激活">
+          <button
+            onClick={handleExport}
+            disabled={hwUnavailable}
+            className={cn(
+              "flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium transition-colors",
+              hwUnavailable
+                ? "cursor-default text-tertiary"
+                : "ml-auto text-secondary hover:bg-fill-strong hover:text-foreground"
+            )}
+          >
+            <Download className="h-3 w-3" />
+            导出
+          </button>
+        </ProGate>
       </div>
     </div>
   );

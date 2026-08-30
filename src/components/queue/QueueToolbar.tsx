@@ -1,6 +1,7 @@
 import { Layers, Pause, Play, Trash2, Zap } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore } from "@/store/toastStore";
+import { useLicenseStore, FREE_MAX_CONCURRENT } from "@/store/licenseStore";
 import AppleSelect from "@/components/layout/AppleSelect";
 
 export default function QueueToolbar() {
@@ -13,6 +14,10 @@ export default function QueueToolbar() {
   const maxConcurrent = useQueueStore((s) => s.maxConcurrent);
   const maxConcurrentLoaded = useQueueStore((s) => s.maxConcurrentLoaded);
   const updateMaxConcurrent = useQueueStore((s) => s.updateMaxConcurrent);
+  const isPro = useLicenseStore((s) => s.status?.pro === true);
+
+  // 免费版并发上限 2，Pro 解锁到 16（后端命令层同步收敛）
+  const concurrencyCap = isPro ? 16 : FREE_MAX_CONCURRENT;
 
   const hasPending = jobs.some((j) => j.status === "Pending");
   const hasCompleted = jobs.some(
@@ -107,16 +112,21 @@ export default function QueueToolbar() {
         <span className="text-[12px] text-secondary">并发</span>
         <AppleSelect
           className="w-16"
-          value={maxConcurrent}
+          value={Math.min(maxConcurrent, concurrencyCap)}
           disabled={!maxConcurrentLoaded}
           onChange={(e) => handleConcurrentChange(parseInt(e.target.value))}
         >
-          {Array.from({ length: 16 }, (_, i) => i + 1).map((n) => (
+          {Array.from({ length: concurrencyCap }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
               {n}
             </option>
           ))}
         </AppleSelect>
+        {!isPro && (
+          <span className="text-[11px] text-tertiary" title="Pro 版可解锁 1-16 并发">
+            （Pro 可到 16）
+          </span>
+        )}
       </div>
     </div>
   );

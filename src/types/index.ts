@@ -257,3 +257,26 @@ export interface FfmpegStatusInfo {
   downloadProgress: number | null;
   error: string | null;
 }
+
+// ============================================================
+// License（软糖铺授权，对齐后端 license/manager.rs 的 LicenseStatus）
+// ============================================================
+
+/** 授权状态：Free / Pro + 到期时间 + 离线宽限期标记 */
+export interface LicenseStatus {
+  pro: boolean;
+  /** 等级显示名（如"专业版"），未激活为 null */
+  levelLabel: string | null;
+  /** 购买邮箱，未激活为 null */
+  email: string | null;
+  /** 令牌到期时间（RFC3339），未激活为 null */
+  expiresAt: string | null;
+  /** 该等级功能特性列表 */
+  features: string[];
+  /** 是否处于离线宽限期（最近一次在线续验未成功） */
+  offline: boolean;
+  /** 已绑定的激活码（激活对话框回显），未激活为 null */
+  code: string | null;
+  /** 购买页链接（激活对话框「购买激活码」入口），未配置为 null */
+  buyUrl: string | null;
+}

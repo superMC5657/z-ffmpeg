@@ -21,6 +21,10 @@ pub async fn compute_vmaf(
     job_id: String,
     segments: usize,
 ) -> AppResult<VmafResult> {
+    // Pro 门控：VMAF 质量对比
+    state.license.ensure_pro("VMAF 质量对比")?;
+    crate::analytics::bump(&crate::analytics::COUNTERS.vmaf_runs, 1);
+
     let queue = state
         .queue_manager
         .as_ref()

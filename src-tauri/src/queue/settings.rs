@@ -6,24 +6,34 @@ use rusqlite::Connection;
 /// settings 表中已知的 key
 pub const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
 pub const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
+/// 埋点上报开关（1 = 开启，0 = 关闭，默认开启）
+pub const SETTINGS_KEY_ANALYTICS_ENABLED: &str = "analytics_enabled";
 
 /// Read a usize setting from the settings table.
 pub fn load_usize(db: &Connection, key: &str) -> Option<usize> {
-    let value: Option<String> = db
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            rusqlite::params![key],
-            |row| row.get(0),
-        )
-        .ok();
-    value?.trim().parse().ok()
+    load_string(db, key)?.trim().parse().ok()
+}
+
+/// Read a string setting from the settings table.
+pub fn load_string(db: &Connection, key: &str) -> Option<String> {
+    db.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        rusqlite::params![key],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 /// Persist a usize setting (insert or replace).
 pub fn save_usize(db: &Connection, key: &str, value: usize) {
+    save_string(db, key, &value.to_string())
+}
+
+/// Persist a string setting (insert or replace).
+pub fn save_string(db: &Connection, key: &str, value: &str) {
     let _ = db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-        rusqlite::params![key, value.to_string()],
+        rusqlite::params![key, value],
     );
 }
 

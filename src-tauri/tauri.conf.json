@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui-dev/nicegui/main/nicegui/static/tauri-v2/tauri.conf.json",
   "productName": "zffmpeg",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "identifier": "com.zffmpeg.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -69,6 +69,21 @@
       "windows": {
         "installMode": "passive"
       }
+    },
+    "softcandy": {
+      "apiBase": "http://127.0.0.1:8080",
+      "buyUrl": "http://localhost:5173/buy/zffmpeg",
+      "product": "zffmpeg",
+      "licenseLevel": "pro",
+      "licensePublicKeys": {
+        "pro": "MCowBQYDK2VwAyEA8iyzp5hUPaS34rJY612wbYi8G0wA9FoNI0tVsr2Wy+U="
+      },
+      "licenseFileName": "license.json",
+      "activatePath": "/api/v1/apps/zffmpeg/activate",
+      "verifyPath": "/api/v1/apps/zffmpeg/verify",
+      "deactivatePath": "/api/v1/apps/zffmpeg/deactivate",
+      "analyticsPath": "/api/v1/apps/zffmpeg/analytics",
+      "analyticsToken": "821b0391a205e39bb93fefc886c928a77f83dc67e9563cd4add3803070297e10"
     }
   }
 }

@@ -15,6 +15,17 @@ pub async fn add_to_queue(
 ) -> AppResult<Vec<String>> {
     log::info!("add_to_queue: {} files", files.len());
 
+    // Pro 门控：硬件加速 / 高级参数透传（后端强制，前端绕不过）
+    crate::commands::ensure_config_allowed(&state.license, &config)?;
+
+    // 埋点：入队规模、编码器分布、硬件加速使用
+    crate::analytics::bump(&crate::analytics::COUNTERS.files_added, files.len() as u64);
+    crate::analytics::bump(&crate::analytics::COUNTERS.jobs_added, files.len() as u64);
+    crate::analytics::record_codec(&codec_key(&config), files.len() as u64);
+    if config.hw_accel.is_some() {
+        crate::analytics::bump(&crate::analytics::COUNTERS.hw_accel_jobs, files.len() as u64);
+    }
+
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
 
@@ -173,16 +184,19 @@ pub async fn retry_job(
 }
 
 /// Get the current max concurrent encoding jobs limit.
+/// 免费版上限为 2（Pro 16）：读取时也收敛，避免历史设置值越界展示。
 #[tauri::command]
 pub async fn get_max_concurrent(
     state: State<'_, crate::AppState>,
 ) -> AppResult<usize> {
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
-    Ok(queue.max_concurrent())
+    let cap = concurrency_cap(&state.license);
+    Ok(queue.max_concurrent().min(cap))
 }
 
 /// Set the max concurrent encoding jobs limit (clamped to 1..=16, persisted).
+/// 免费版进一步 clamp 到 1..=2。
 #[tauri::command]
 pub async fn set_max_concurrent(
     state: State<'_, crate::AppState>,
@@ -190,5 +204,27 @@ pub async fn set_max_concurrent(
 ) -> AppResult<usize> {
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
-    Ok(queue.set_max_concurrent(value))
+    let cap = concurrency_cap(&state.license);
+    Ok(queue.set_max_concurrent(value.min(cap)))
+}
+
+/// 免费版 / Pro 的并发数上限
+fn concurrency_cap(license: &crate::license::LicenseManager) -> usize {
+    if license.is_pro() {
+        16
+    } else {
+        crate::license::config::FREE_MAX_CONCURRENT
+    }
+}
+
+/// 编码器埋点 key（小写，对齐上报示例负载的 codecs 结构）
+fn codec_key(config: &EncodeConfig) -> String {
+    match config.video_codec {
+        crate::encoder::codec::VideoCodec::H264 => "h264",
+        crate::encoder::codec::VideoCodec::H265 => "h265",
+        crate::encoder::codec::VideoCodec::AV1 => "av1",
+        crate::encoder::codec::VideoCodec::VP9 => "vp9",
+        crate::encoder::codec::VideoCodec::Copy => "copy",
+    }
+    .to_string()
 }

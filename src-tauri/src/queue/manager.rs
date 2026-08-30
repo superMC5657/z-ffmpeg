@@ -297,6 +297,7 @@ impl QueueManager {
                 job.status = JobStatus::Cancelled;
                 job.completed_at = Some(chrono::Utc::now().to_rfc3339());
                 self.save_job(job);
+                crate::analytics::bump(&crate::analytics::COUNTERS.encode_cancelled, 1);
             }
         }
 
@@ -324,6 +325,7 @@ impl QueueManager {
         job.progress = None;
         job.output_size = None;
         self.save_job(job);
+        crate::analytics::bump(&crate::analytics::COUNTERS.retries, 1);
         true
     }
 
@@ -335,6 +337,14 @@ impl QueueManager {
             }
             job.status = if success { JobStatus::Completed } else { JobStatus::Failed };
             job.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            crate::analytics::bump(
+                if success {
+                    &crate::analytics::COUNTERS.encode_completed
+                } else {
+                    &crate::analytics::COUNTERS.encode_failed
+                },
+                1,
+            );
             if success {
                 // 完成时读取实际输出体积（读不到则保留 None，仅影响展示）
                 job.output_size = std::fs::metadata(&job.output_path).ok().map(|m| m.len());

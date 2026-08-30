@@ -3,6 +3,8 @@ import { Check, Cpu } from "lucide-react";
 import type { HwAccelConfig } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useSystemStore } from "@/store/systemStore";
+import { useLicenseStore } from "@/store/licenseStore";
+import { ProBadge } from "@/components/license/ProGate";
 import { cn } from "@/lib/utils";
 
 /** 硬件加速选择（卡片外壳由父级 Card 提供，此处只输出内容） */
@@ -12,6 +14,8 @@ export default function HwAccelSelector() {
   const hwList = useSystemStore((s) => s.hwAccels);
   const loading = useSystemStore((s) => s.loading);
   const fetchHwAccels = useSystemStore((s) => s.fetchHwAccels);
+  const isPro = useLicenseStore((s) => s.status?.pro === true);
+  const setActivationOpen = useLicenseStore((s) => s.setActivationOpen);
 
   useEffect(() => {
     fetchHwAccels();
@@ -74,8 +78,12 @@ export default function HwAccelSelector() {
             <button
               key={hw.device}
               aria-pressed={selected}
-              // 再点一次已选中的项 → 取消选中(回到软件编码)
-              onClick={() =>
+              // Pro 门控：未激活时点击硬件加速项拉起激活对话框（后端命令层同步强制）
+              onClick={() => {
+                if (!isPro) {
+                  setActivationOpen(true);
+                  return;
+                }
                 setHwAccel(
                   selected
                     ? null
@@ -83,8 +91,8 @@ export default function HwAccelSelector() {
                         device: hw.device as HwAccelConfig["device"],
                         deviceIndex: null,
                       }
-                )
-              }
+                );
+              }}
               className={optionCls(selected)}
             >
               <div
@@ -103,6 +111,7 @@ export default function HwAccelSelector() {
                 <div className="flex items-center gap-1.5 text-[13px] font-medium">
                   <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" />
                   {hw.device}
+                  {!isPro && <ProBadge />}
                 </div>
                 <div className="mt-0.5 truncate text-[11px] leading-4 text-secondary" title={hw.deviceName || undefined}>
                   {hw.deviceName ||

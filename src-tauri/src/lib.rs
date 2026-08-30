@@ -3,6 +3,8 @@ mod encoder;
 mod queue;
 mod preset;
 mod ffmpeg;
+mod license;
+mod analytics;
 mod util;
 mod error;
 
@@ -10,6 +12,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tauri::Manager;
 use crate::ffmpeg::library::FfmpegStatus;
+use crate::license::LicenseManager;
 use crate::preset::manager::PresetManager;
 use crate::queue::QueueManager;
 
@@ -18,6 +21,7 @@ pub struct AppState {
     pub ffmpeg_status: Mutex<FfmpegStatus>,
     pub queue_manager: Option<Arc<QueueManager>>,
     pub preset_manager: Option<Arc<PresetManager>>,
+    pub license: Arc<LicenseManager>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,11 +79,20 @@ pub fn run() {
                 .map_err(|e| log::error!("Failed to init preset store: {:?}", e))
                 .ok();
 
+            // 授权管理：解析 tauri.conf.json → plugins.softcandy，
+            // 加载本地凭证 + 离线验签（失败 = 免费版）
+            let softcandy = license::config::SoftCandyConfig::from_tauri(app.config());
+            let license = Arc::new(LicenseManager::new(softcandy, &get_data_dir()));
+
             app.manage(AppState {
                 ffmpeg_status: Mutex::new(ffmpeg_status),
                 queue_manager: queue,
                 preset_manager,
+                license: license.clone(),
             });
+
+            // 启动后异步在线续验一次，之后每 24h 周期续验（网络失败走离线宽限期）
+            license.spawn_periodic_verify();
 
             Ok(())
         })
@@ -90,6 +103,12 @@ pub fn run() {
             commands::encode::build_ffmpeg_commands,
             commands::encode::save_command_to_file,
             commands::encode::estimate_output_sizes,
+            commands::license::get_license_status,
+            commands::license::activate_license,
+            commands::license::deactivate_license,
+            commands::analytics::track_event,
+            commands::analytics::get_analytics_enabled,
+            commands::analytics::set_analytics_enabled,
             commands::queue::add_to_queue,
             commands::queue::start_queue,
             commands::queue::remove_from_queue,
@@ -118,8 +137,14 @@ pub fn run() {
             commands::vmaf::get_vmaf_segments,
             commands::vmaf::set_vmaf_segments,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running zffmpeg");
+        .build(tauri::generate_context!())
+        .expect("error while building zffmpeg")
+        .run(|app_handle, event| {
+            // 正常退出时一次性上报会话聚合埋点（失败静默，最多等 3s）
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                analytics::report::report_on_exit(app_handle);
+            }
+        });
 }
 
 /// Get the path for the queue database

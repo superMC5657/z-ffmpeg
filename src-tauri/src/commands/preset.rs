@@ -171,8 +171,11 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
 
 /// Export a preset as a JSON string (name + description + config),
 /// so it can be re-imported later.
+/// Pro 功能：预设导入/导出。
 #[tauri::command]
 pub async fn export_preset(state: State<'_, crate::AppState>, id: String) -> AppResult<String> {
+    state.license.ensure_pro("预设导出")?;
+    crate::analytics::bump(&crate::analytics::COUNTERS.presets_exported, 1);
     preset_export_json(&state, &id)
 }
 
@@ -185,6 +188,10 @@ pub async fn export_preset_to_file(
     id: String,
     path: String,
 ) -> AppResult<String> {
+    // Pro 功能：预设导入/导出
+    state.license.ensure_pro("预设导出")?;
+    crate::analytics::bump(&crate::analytics::COUNTERS.presets_exported, 1);
+
     let json = preset_export_json(&state, &id)?;
     std::fs::write(&path, json)
         .map_err(|e| AppError::Io(e))?;
@@ -202,6 +209,10 @@ pub async fn import_preset(
     json: String,
     name: String,
 ) -> AppResult<Preset> {
+    // Pro 功能：预设导入/导出
+    state.license.ensure_pro("预设导入")?;
+    crate::analytics::bump(&crate::analytics::COUNTERS.presets_imported, 1);
+
     let value: serde_json::Value = serde_json::from_str(&json)?;
 
     let (config, description) = if let Some(c) = value.get("config") {

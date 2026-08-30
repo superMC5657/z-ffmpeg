@@ -5,6 +5,7 @@ import { useQueueStore } from "@/store/queueStore";
 import { useToastStore } from "@/store/toastStore";
 import { computeVmaf } from "@/lib/tauri";
 import ProgressBar from "@/components/progress/ProgressBar";
+import ProGate from "@/components/license/ProGate";
 import { cn } from "@/lib/utils";
 
 interface QueueItemProps {
@@ -114,17 +115,19 @@ export default function QueueItem({ job }: QueueItemProps) {
               vmafScore={job.vmafScore ?? null}
             />
           </div>
-          {/* VMAF 按钮 — 常显（不依赖 hover），与进度信息文字同排对齐 */}
+          {/* VMAF 按钮 — Pro 功能，未激活时锁定并引导激活 */}
           {job.status === "Completed" && (
-            <button
-              onClick={handleComputeVmaf}
-              disabled={vmafLoading}
-              title={vmafButtonTitle}
-              className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-secondary transition-colors hover:bg-fill-strong hover:text-foreground disabled:opacity-50"
-            >
-              <Gauge className={cn("h-3.5 w-3.5", vmafLoading && "animate-spin")} />
-              {vmafLoading ? "计算中" : job.vmafScore != null ? "重算 VMAF" : "VMAF"}
-            </button>
+            <ProGate title="VMAF 质量对比为 Pro 功能，点击激活">
+              <button
+                onClick={handleComputeVmaf}
+                disabled={vmafLoading}
+                title={vmafButtonTitle}
+                className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-secondary transition-colors hover:bg-fill-strong hover:text-foreground disabled:opacity-50"
+              >
+                <Gauge className={cn("h-3.5 w-3.5", vmafLoading && "animate-spin")} />
+                {vmafLoading ? "计算中" : job.vmafScore != null ? "重算 VMAF" : "VMAF"}
+              </button>
+            </ProGate>
           )}
         </div>
       </div>

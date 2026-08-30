@@ -103,6 +103,7 @@ pub async fn download_ffmpeg(
 
     match crate::ffmpeg::downloader::download_ffmpeg(&app, &state.ffmpeg_status).await {
         Ok(status) => {
+            crate::analytics::bump(&crate::analytics::COUNTERS.ffmpeg_downloaded, 1);
             let info = FfmpegStatusInfo {
                 status: "installed".into(),
                 version: status.version.clone(),

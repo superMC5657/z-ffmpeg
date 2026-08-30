@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { isTauriRuntime } from "@/lib/utils";
 import { useToastStore } from "@/store/toastStore";
 import { saveCommandToFile } from "@/lib/tauri";
+import ProGate from "@/components/license/ProGate";
 
 interface FfmpegCommandEntry {
   fileName: string;
@@ -116,14 +117,16 @@ export default function FfmpegCommandDialog({
           >
             关闭
           </button>
-          <button
-            onClick={handleSaveFile}
-            disabled={!isTauriRuntime() || saving}
-            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-fill"
-          >
-            <FileDown className="h-3.5 w-3.5" />
-            {saving ? "保存中..." : "保存为文件"}
-          </button>
+          <ProGate title="命令导出为文件是 Pro 功能，点击激活">
+            <button
+              onClick={handleSaveFile}
+              disabled={!isTauriRuntime() || saving}
+              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-fill"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+              {saving ? "保存中..." : "保存为文件"}
+            </button>
+          </ProGate>
           <button
             onClick={handleCopy}
             className={`flex h-9 items-center gap-1.5 rounded-[9px] px-4 text-[13px] font-medium shadow-sm transition-all active:scale-[0.98] ${

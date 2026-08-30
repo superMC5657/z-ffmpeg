@@ -11,6 +11,7 @@ import type {
   SystemInfo,
   FfmpegStatusInfo,
   VmafResult,
+  LicenseStatus,
 } from "@/types";
 
 // ============================================================
@@ -218,6 +219,44 @@ export async function checkFfmpegStatus(): Promise<FfmpegStatusInfo> {
 /** 下载 FFmpeg 到本地 ({data_dir}/zffmpeg/ffmpeg), 完成后返回最新状态 */
 export async function downloadFfmpeg(): Promise<FfmpegStatusInfo> {
   return invoke<FfmpegStatusInfo>("download_ffmpeg");
+}
+
+// ============================================================
+// License commands（软糖铺授权）
+// ============================================================
+
+/** 读取当前授权状态（Free / Pro + 到期时间 + 离线宽限期标记） */
+export async function getLicenseStatus(): Promise<LicenseStatus> {
+  return invoke<LicenseStatus>("get_license_status");
+}
+
+/** 激活：code + email 绑定当前设备；重复激活幂等（覆盖本地令牌） */
+export async function activateLicense(code: string, email: string): Promise<LicenseStatus> {
+  return invoke<LicenseStatus>("activate_license", { code, email });
+}
+
+/** 注销激活：解除设备绑定、释放一个名额，删除本地令牌并停用专业功能 */
+export async function deactivateLicense(): Promise<LicenseStatus> {
+  return invoke<LicenseStatus>("deactivate_license");
+}
+
+// ============================================================
+// Analytics commands（埋点开关 + UI 事件计数）
+// ============================================================
+
+/** 记录一个纯 UI 侧行为事件（页面导航、主题切换等后端看不到的行为） */
+export async function trackEvent(name: string): Promise<void> {
+  return invoke("track_event", { name });
+}
+
+/** 读取埋点上报开关（默认开启） */
+export async function getAnalyticsEnabled(): Promise<boolean> {
+  return invoke<boolean>("get_analytics_enabled");
+}
+
+/** 保存埋点上报开关（退出时上报据此决定是否发送） */
+export async function setAnalyticsEnabled(enabled: boolean): Promise<boolean> {
+  return invoke<boolean>("set_analytics_enabled", { enabled });
 }
 
 // ============================================================
