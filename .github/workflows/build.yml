@@ -8,7 +8,7 @@ on:
     tags: ["v*"]
 
 jobs:
-  # Check types and linting
+  # Check types, lint and run frontend tests
   check:
     runs-on: ubuntu-latest
     steps:
@@ -22,10 +22,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsc --noEmit
+      - run: pnpm lint
+      - run: pnpm test
+
+  # Rust unit tests
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Run Rust unit tests
+        run: cargo test --lib
+        working-directory: src-tauri
 
   # Build per platform
   build:
-    needs: check
+    needs: [check, rust-test]
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false

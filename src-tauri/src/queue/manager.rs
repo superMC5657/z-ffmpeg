@@ -10,7 +10,8 @@ use crate::error::AppResult;
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus, QueueStatus};
 
 const DEFAULT_MAX_CONCURRENT: usize = 2;
-const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
+use crate::queue::settings;
+use crate::queue::settings::SETTINGS_KEY_MAX_CONCURRENT;
 
 pub struct QueueManager {
     jobs: RwLock<VecDeque<EncodeJob>>,
@@ -90,22 +91,12 @@ impl QueueManager {
 
     /// Read a usize setting from the settings table.
     fn load_setting_usize(db: &Connection, key: &str) -> Option<usize> {
-        let value: Option<String> = db
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                rusqlite::params![key],
-                |row| row.get(0),
-            )
-            .ok();
-        value?.trim().parse().ok()
+        settings::load_usize(db, key)
     }
 
     fn save_setting_usize(&self, key: &str, value: usize) {
         let db = self.db.lock().unwrap();
-        let _ = db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
-            rusqlite::params![key, value.to_string()],
-        );
+        settings::save_usize(&db, key, value);
     }
 
     /// 读取一个 usize 设置项（settings 表），缺失时返回默认值。

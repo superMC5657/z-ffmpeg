@@ -4,9 +4,8 @@ use crate::encoder::vmaf::{
     self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
 };
 use crate::error::AppResult;
+use crate::queue::settings::SETTINGS_KEY_VMAF_SEGMENTS;
 
-/// VMAF 段数设置的 settings 表 key 与取值范围
-const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
 const MAX_VMAF_SEGMENTS: usize = 32;
 
 /// 计算已完成编码任务的 VMAF 质量得分。
