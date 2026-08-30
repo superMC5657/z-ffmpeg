@@ -17,6 +17,7 @@ pub fn build_payload(device_id: &str, license_status: &str, version: &str) -> Va
     let num = |ctr: &std::sync::atomic::AtomicU64| ctr.load(Ordering::Relaxed);
 
     let mut payload = json!({
+        // 字段顺序对齐接入指南 4.1 节示例负载（需 serde_json preserve_order）
         "deviceId": device_id,
         "licenseStatus": license_status,
         "version": version,
@@ -169,5 +170,23 @@ mod tests {
     fn pro_status_reflected() {
         let payload = build_payload("d", "pro", "1.0.0");
         assert_eq!(payload["licenseStatus"], "pro");
+    }
+
+    #[test]
+    fn payload_fields_follow_doc_order() {
+        // 回归：serde_json 默认 BTreeMap 会按字母序打乱键序，
+        // 开启 preserve_order 后应按指南 4.1 示例的书写顺序输出
+        let payload = build_payload("d", "free", "0.3.0");
+        let text = serde_json::to_string(&payload).unwrap();
+        let pos = |k: &str| text.find(&format!("\"{k}\":")).expect(k);
+        let order = ["deviceId", "licenseStatus", "version", "os", "arch", "sessionStart", "sessionEnd", "filesAdded", "encodeCompleted", "vmafRuns", "presets", "ffmpegDownloaded", "commandsExported"];
+        for pair in order.windows(2) {
+            assert!(
+                pos(pair[0]) < pos(pair[1]),
+                "字段 {} 应出现在 {} 之前: {text}",
+                pair[0],
+                pair[1]
+            );
+        }
     }
 }

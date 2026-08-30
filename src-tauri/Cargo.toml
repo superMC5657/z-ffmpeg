@@ -26,7 +26,8 @@ ed25519-dalek = "2"
 base64 = "0.22"
 
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: 埋点等手写 json! 负载按代码顺序输出（默认 BTreeMap 会按字母序打乱）
+serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["rt-multi-thread", "process", "sync", "time", "io-util", "fs"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking"] }
 zip = "4"
