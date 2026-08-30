@@ -45,54 +45,26 @@ pub async fn download_ffmpeg(
     let zip_path = install_dir.join("ffmpeg-download.zip");
     let temp_dir = install_dir.join(".ffmpeg-extract");
 
-    // 整个"逐源下载 → 解压到临时目录 → 验证 → 移动到位 → 读取状态"
-    // 流程全部在 blocking 线程上执行：任何一步(含 ffmpeg 子进程验证)
-    // 都不会卡住 async runtime。仅把纯内存操作(更新缓存/状态锁)留在
-    // async 线程做。
+    // 整个"逐源安装 → 读取状态"流程全部在 blocking 线程上执行：
+    // 任何一步(含 ffmpeg 子进程验证)都不会卡住 async runtime。
+    // 仅把纯内存操作(更新缓存/状态锁)留在 async 线程做。
     let app_clone = app.clone();
     let install_clone = install_dir.clone();
     let zip_dl = zip_path.clone();
     let temp_dl = temp_dir.clone();
     let result = tauri::async_runtime::spawn_blocking(
         move || -> AppResult<(PathBuf, PathBuf, FfmpegStatus)> {
-            // 1) 逐级下载:按优先级依次尝试每个源,直到有一个源能完成下载。
-            //    多个源仅用于"能否访问到 ffmpeg";连接/HTTP/传输失败才换
-            //    下一个可达的源,重试时始终从优先级最高的源重新开始。
-            download_zip(&app_clone, &zip_dl)?;
+            // 逐源完整安装：每个源走"下载 → 解压 → 移动 → 验证"全流程，
+            // 任一步失败(含代理返回 200 错误页导致 zip 无效)都换下一个源。
+            install_ffmpeg_from_sources(
+                &app_clone,
+                &zip_dl,
+                &temp_dl,
+                &install_clone,
+            )?;
 
-            // 2) 解压到临时目录。失败即整体失败(不换源重试),提示手动处理。
-            std::fs::create_dir_all(&temp_dl)?;
-            let (ffmpeg_tmp, ffprobe_tmp) = extract_binaries(&zip_dl, &temp_dl).map_err(|e| {
-                AppError::Ffmpeg(format!(
-                    "下载 FFmpeg 失败（压缩包无效：{e}），请重试，或手动下载 FFmpeg 并注册环境变量"
-                ))
-            })?;
-
-            // 3) Move into place (same volume; Windows rename doesn't overwrite).
-            //    任一文件移动失败即整体失败,并回滚已移动的文件,
-            //    避免 install 根下残留半安装状态。
             let ffmpeg_final = install_clone.join("ffmpeg.exe");
             let ffprobe_final = install_clone.join("ffprobe.exe");
-            if let Err(e) = replace_file(&ffmpeg_tmp, &ffmpeg_final) {
-                let _ = std::fs::remove_file(&ffmpeg_final);
-                return Err(e.into());
-            }
-            if let Err(e) = replace_file(&ffprobe_tmp, &ffprobe_final) {
-                let _ = std::fs::remove_file(&ffmpeg_final);
-                let _ = std::fs::remove_file(&ffprobe_final);
-                return Err(e.into());
-            }
-
-            // 4) 验证最终二进制可运行;失败则回滚已移动文件并整体报错,
-            //    绝不向 UI 报告 "installed",也不换源重试。
-            if let Err(e) = verify_binary(&ffmpeg_final) {
-                let _ = std::fs::remove_file(&ffmpeg_final);
-                let _ = std::fs::remove_file(&ffprobe_final);
-                return Err(AppError::Ffmpeg(format!(
-                    "下载 FFmpeg 失败（下载的文件无法运行：{e}），请重试，或手动下载 FFmpeg 并注册环境变量"
-                )));
-            }
-
             let status = library::get_status_from_paths(
                 ffmpeg_final.clone(),
                 Some(ffprobe_final.clone()),
@@ -125,47 +97,97 @@ fn replace_file(src: &Path, dest: &Path) -> AppResult<()> {
     Ok(())
 }
 
-/// 逐级下载:按优先级依次尝试每个源,直到有一个源能完成下载。
-/// 多个源仅用于"能否访问到 ffmpeg"——连接失败/HTTP 错误/传输中断
-/// 这类下载阶段失败才换下一个可达的源;解压/验证失败由调用方直接报错,
-/// 不在这里换源重试。重试时始终从优先级最高的源重新开始。
-fn download_zip(app: &tauri::AppHandle, dest: &Path) -> AppResult<()> {
+/// 逐源完整安装：按优先级依次尝试每个源，每个源走
+/// "下载 → 解压 → 移动到位 → 验证可运行"全流程，任一步失败
+/// （连接失败、HTTP 错误、传输中断、代理返回 200 错误页导致 zip
+/// 无效、二进制无法运行……）都视为该源失败，清理半成品后换下一个
+/// 源；全部失败时返回聚合错误（附每个源的原因）。
+fn install_ffmpeg_from_sources(
+    app: &tauri::AppHandle,
+    zip_path: &Path,
+    temp_dir: &Path,
+    install_dir: &Path,
+) -> AppResult<()> {
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| AppError::Ffmpeg(format!("创建下载客户端失败: {e}")))?;
 
-    download_zip_with_sources(FFMPEG_SOURCES, dest, &|url| {
-        download_from(&client, url, dest, app)
+    install_from_sources(FFMPEG_SOURCES, &|url| {
+        install_from_url(app, &client, url, zip_path, temp_dir, install_dir)
+    }, &|| {
+        // 丢弃该源的半成品（zip/临时目录/已移动的二进制），
+        // 让下一个源从零开始；已移动的二进制一并回滚，
+        // 避免 install 根下残留半安装状态。
+        let _ = std::fs::remove_file(zip_path);
+        let _ = std::fs::remove_dir_all(temp_dir);
+        let _ = std::fs::remove_file(install_dir.join("ffmpeg.exe"));
+        let _ = std::fs::remove_file(install_dir.join("ffprobe.exe"));
     })
 }
 
-/// 逐源回退的核心循环,与 HTTP 解耦,便于单元测试注入假下载器。
-/// `download_one` 返回 Err 即视为该源下载失败,清理半截文件后换下一个源;
-/// 全部失败时返回聚合错误(附每个源的原因)。
-fn download_zip_with_sources(
+/// 逐源回退的核心循环,与 HTTP/文件系统解耦,便于单元测试注入假安装器。
+/// `install_one` 返回 Err 即视为该源失败,调用 `cleanup_source` 清理半成品后
+/// 换下一个源;全部失败时返回聚合错误(附每个源的原因)。
+fn install_from_sources(
     sources: &[&str],
-    dest: &Path,
-    download_one: &dyn Fn(&str) -> AppResult<()>,
+    install_one: &dyn Fn(&str) -> AppResult<()>,
+    cleanup_source: &dyn Fn(),
 ) -> AppResult<()> {
     let mut errors: Vec<String> = Vec::new();
     for url in sources {
-        match download_one(url) {
+        match install_one(url) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 log::warn!("FFmpeg 下载源 {} 失败: {}", url, e);
                 errors.push(format!("{url}: {e}"));
-                // 丢弃半截文件,让下一个源从零开始
-                let _ = std::fs::remove_file(dest);
+                cleanup_source();
             }
         }
     }
 
     Err(AppError::Ffmpeg(format!(
-        "下载 FFmpeg 失败（无法访问任何下载源），请重试，或手动下载 FFmpeg 并注册环境变量\n{}",
+        "下载 FFmpeg 失败（所有下载源均失败），请重试，或手动下载 FFmpeg 并注册环境变量\n{}",
         errors.join("\n")
     )))
+}
+
+/// 单个源的完整安装流程：下载 → 解压 → 移动 → 验证，任一步失败即返回 Err。
+fn install_from_url(
+    app: &tauri::AppHandle,
+    client: &reqwest::blocking::Client,
+    url: &str,
+    zip_path: &Path,
+    temp_dir: &Path,
+    install_dir: &Path,
+) -> AppResult<()> {
+    // 1) 下载
+    download_from(client, url, zip_path, app)?;
+
+    // 2) 解压到临时目录
+    std::fs::create_dir_all(temp_dir)?;
+    let (ffmpeg_tmp, ffprobe_tmp) = extract_binaries(zip_path, temp_dir)?;
+
+    // 3) Move into place (same volume; Windows rename doesn't overwrite).
+    //    任一文件移动失败即整体失败,并回滚已移动的文件,
+    //    避免 install 根下残留半安装状态。
+    let ffmpeg_final = install_dir.join("ffmpeg.exe");
+    let ffprobe_final = install_dir.join("ffprobe.exe");
+    if let Err(e) = replace_file(&ffmpeg_tmp, &ffmpeg_final) {
+        let _ = std::fs::remove_file(&ffmpeg_final);
+        return Err(e.into());
+    }
+    if let Err(e) = replace_file(&ffprobe_tmp, &ffprobe_final) {
+        let _ = std::fs::remove_file(&ffmpeg_final);
+        let _ = std::fs::remove_file(&ffprobe_final);
+        return Err(e.into());
+    }
+
+    // 4) 验证最终二进制可运行;失败则报错,由回退循环清理并换下一个源,
+    //    绝不向 UI 报告 "installed"。
+    verify_binary(&ffmpeg_final)?;
+    Ok(())
 }
 
 /// Strictly verify that an ffmpeg binary starts and prints a version line.
@@ -494,25 +516,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- download_zip_with_sources (逐源回退) ----
+    // ---- install_from_sources (逐源回退) ----
 
     #[test]
-    fn sources_fall_back_to_next_on_download_failure() {
+    fn sources_fall_back_to_next_on_failure() {
         let dir = temp_dir("sources-fallback");
         let dest = dir.join("ffmpeg-download.zip");
         let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-        let result = download_zip_with_sources(
+        let result = install_from_sources(
             &["http://first", "http://second"],
-            &dest,
             &|url| {
                 calls.lock().unwrap().push(url.to_string());
                 if url == "http://first" {
-                    Err(AppError::Ffmpeg("连接失败".into()))
+                    Err(AppError::Ffmpeg("压缩包无效".into()))
                 } else {
                     std::fs::write(&dest, b"good").unwrap();
                     Ok(())
                 }
+            },
+            &|| {
+                let _ = std::fs::remove_file(&dest);
             },
         );
 
@@ -532,10 +556,10 @@ mod tests {
         let dir = temp_dir("sources-allfail");
         let dest = dir.join("ffmpeg-download.zip");
 
-        let err = download_zip_with_sources(
+        let err = install_from_sources(
             &["http://a", "http://b"],
-            &dest,
             &|_| Err(AppError::Ffmpeg("网络错误".into())),
+            &|| {},
         )
         .unwrap_err();
 
@@ -553,9 +577,8 @@ mod tests {
 
         // 第一个源写了一半就失败;回退循环必须清掉半截文件,
         // 第二个源从干净状态重新写
-        download_zip_with_sources(
+        install_from_sources(
             &["http://a", "http://b"],
-            &dest,
             &|url| {
                 if url == "http://a" {
                     std::fs::write(&dest, b"partial").unwrap();
@@ -564,6 +587,9 @@ mod tests {
                     std::fs::write(&dest, b"complete").unwrap();
                     Ok(())
                 }
+            },
+            &|| {
+                let _ = std::fs::remove_file(&dest);
             },
         )
         .unwrap();
@@ -579,11 +605,10 @@ mod tests {
         let dest = dir.join("ffmpeg-download.zip");
         let attempts: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
-        // 每次调用 download_zip_with_sources 都从第一个源开始尝试
+        // 每次调用 install_from_sources 都从第一个源开始尝试
         for _ in 0..2 {
-            let result = download_zip_with_sources(
+            let result = install_from_sources(
                 &["http://first", "http://second"],
-                &dest,
                 &|url| {
                     attempts.lock().unwrap().push(url.to_string());
                     if url == "http://first" {
@@ -593,6 +618,7 @@ mod tests {
                         Ok(())
                     }
                 },
+                &|| {},
             );
             assert!(result.is_ok());
         }
