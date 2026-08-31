@@ -1,6 +1,6 @@
 //! FFmpeg auto-download: fetch a Windows build, extract ffmpeg.exe /
-//! ffprobe.exe into `{data_dir}/zffmpeg/ffmpeg` (Roaming\zffmpeg\ffmpeg
-//! on Windows), verify it, and refresh the cached status.
+//! ffprobe.exe into {app_data_dir}/ffmpeg, verify it, and refresh the
+//! cached status.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ const FFMPEG_SOURCES: &[&str] = &[
 /// Guards against concurrent download invocations (e.g. page remounts).
 static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Download & install FFmpeg into {data_dir}/zffmpeg/ffmpeg, then refresh the
+/// Download & install FFmpeg into {app_data_dir}/ffmpeg, then refresh the
 /// cached status. Emits `ffmpeg://download-progress` (f64, 0-100) while
 /// downloading so the UI can show a progress bar.
 pub async fn download_ffmpeg(
@@ -39,7 +39,7 @@ pub async fn download_ffmpeg(
     // Serialize downloads so two calls can't clobber the same zip path.
     let _lock = DOWNLOAD_LOCK.lock().await;
 
-    let install_dir = library::local_install_dir();
+    let install_dir = library::local_install_dir(&crate::get_data_dir(app));
     std::fs::create_dir_all(&install_dir)?;
 
     let zip_path = install_dir.join("ffmpeg-download.zip");

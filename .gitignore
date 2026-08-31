@@ -31,4 +31,5 @@ src-tauri/target
 public/
 chrome*
 reasonix.toml
+.reasonix
 .zcode/

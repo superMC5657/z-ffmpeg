@@ -216,7 +216,7 @@ export async function checkFfmpegStatus(): Promise<FfmpegStatusInfo> {
   return invoke<FfmpegStatusInfo>("check_ffmpeg_status");
 }
 
-/** 下载 FFmpeg 到本地 ({data_dir}/zffmpeg/ffmpeg), 完成后返回最新状态 */
+/** 下载 FFmpeg 到本地 (app_data_dir/ffmpeg，跟随 identifier), 完成后返回最新状态 */
 export async function downloadFfmpeg(): Promise<FfmpegStatusInfo> {
   return invoke<FfmpegStatusInfo>("download_ffmpeg");
 }

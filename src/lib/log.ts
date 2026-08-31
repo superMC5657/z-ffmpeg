@@ -3,7 +3,7 @@ import { isTauriRuntime } from "@/lib/utils";
 
 /**
  * 前端日志：通过 tauri-plugin-log 写入后端统一的日志文件
- * （{data_dir}/zffmpeg/logs/）。浏览器预览模式下静默降级，
+ * （系统日志目录 app_log_dir，跟随 tauri.conf.json 的 identifier）。浏览器预览模式下静默降级，
  * 只打 console，避免报错。
  */
 export const appLog = {

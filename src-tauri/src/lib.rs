@@ -26,19 +26,16 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 日志走 tauri-plugin-log：stdout + {data_dir}/zffmpeg/logs/ 双目标，
-    // 前端也可通过 @tauri-apps/plugin-log 写入同一份日志文件。
-    // 注意必须在 Builder 上先挂 log 插件，因此 FFmpeg/队列/预设的初始化
-    // 移到了 setup 内，保证启动阶段的关键日志也能落盘。
-    let log_dir = get_log_dir();
-
+    // 日志走 tauri-plugin-log：stdout + 系统日志目录（app_log_dir，跟随
+    // tauri.conf.json 的 identifier）双目标，前端也可通过 @tauri-apps/plugin-log
+    // 写入同一份日志文件。注意必须在 Builder 上先挂 log 插件，因此 FFmpeg/
+    // 队列/预设的初始化移到了 setup 内，保证启动阶段的关键日志也能落盘。
     tauri::Builder::default()
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                        path: log_dir,
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
                         file_name: Some("zffmpeg".into()),
                     }),
                 ])
@@ -56,11 +53,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(move |app| {
+        .setup(|app| {
             log::info!("zffmpeg v{} starting...", app.package_info().version);
 
+            // 所有落盘数据的根目录：Tauri app_data_dir（跟随 tauri.conf.json
+            // 的 identifier，Windows = %APPDATA%\{identifier}）
+            let data_dir = get_data_dir(app.handle());
+
             // Initialize FFmpeg detection early
-            let ffmpeg_status = ffmpeg::library::init_ffmpeg();
+            let ffmpeg_status = ffmpeg::library::init_ffmpeg(&data_dir);
             log::info!(
                 "FFmpeg status: available={}, version={:?}",
                 ffmpeg_status.available,
@@ -68,13 +69,13 @@ pub fn run() {
             );
 
             // Determine queue database path and initialize queue manager
-            let queue_db_path = get_queue_db_path();
+            let queue_db_path = data_dir.join("queue.db").to_string_lossy().into_owned();
             let queue = QueueManager::new(&queue_db_path)
                 .map_err(|e| log::error!("Failed to init queue: {:?}", e))
                 .ok();
 
             // Determine preset database path and initialize preset manager
-            let preset_db_path = get_preset_db_path();
+            let preset_db_path = data_dir.join("presets.db").to_string_lossy().into_owned();
             let preset_manager = PresetManager::new(&preset_db_path)
                 .map_err(|e| log::error!("Failed to init preset store: {:?}", e))
                 .ok();
@@ -82,7 +83,7 @@ pub fn run() {
             // 授权管理：解析 tauri.conf.json → plugins.softcandy，
             // 加载本地凭证 + 离线验签（失败 = 免费版）
             let softcandy = license::config::SoftCandyConfig::from_tauri(app.config());
-            let license = Arc::new(LicenseManager::new(softcandy, &get_data_dir()));
+            let license = Arc::new(LicenseManager::new(softcandy, &data_dir));
 
             app.manage(AppState {
                 ffmpeg_status: Mutex::new(ffmpeg_status),
@@ -147,35 +148,15 @@ pub fn run() {
         });
 }
 
-/// Get the path for the queue database
-fn get_data_dir() -> std::path::PathBuf {
-    let data_dir = directories::BaseDirs::new()
-        .map(|d| d.data_dir().join("zffmpeg"))
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+/// Tauri app_data_dir（跟随 tauri.conf.json 的 identifier，Windows =
+/// %APPDATA%\{identifier}）。队列库、预设库、device.id/license.json、
+/// FFmpeg 本地安装目录都挂在它下面。
+pub(crate) fn get_data_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     std::fs::create_dir_all(&data_dir).ok();
     data_dir
-}
-
-/// Get the path for the queue database
-fn get_queue_db_path() -> String {
-    get_data_dir()
-        .join("queue.db")
-        .to_string_lossy()
-        .to_string()
-}
-
-/// Get the path for the preset database
-fn get_preset_db_path() -> String {
-    get_data_dir()
-        .join("presets.db")
-        .to_string_lossy()
-        .to_string()
-}
-
-/// Get the directory for log files ({data_dir}/zffmpeg/logs)
-fn get_log_dir() -> std::path::PathBuf {
-    let dir = get_data_dir().join("logs");
-    std::fs::create_dir_all(&dir).ok();
-    dir
 }

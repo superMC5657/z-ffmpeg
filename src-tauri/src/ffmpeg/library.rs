@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
 use crate::error::AppResult;
 
@@ -40,17 +40,14 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     })
 }
 
-/// Directory where the app installs FFmpeg: {data_dir}/zffmpeg/ffmpeg.
-/// On Windows data_dir = %APPDATA%\Roaming, i.e. Roaming\zffmpeg\ffmpeg.
-pub fn local_install_dir() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|d| d.data_dir().join("zffmpeg").join("ffmpeg"))
-        .unwrap_or_else(|| PathBuf::from(".").join("ffmpeg"))
+/// Directory where the app installs FFmpeg: {app_data_dir}/ffmpeg.
+pub fn local_install_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("ffmpeg")
 }
 
 /// Initialize FFmpeg detection. Called once at app startup.
-pub fn init_ffmpeg() -> FfmpegStatus {
-    let status = detect_ffmpeg().unwrap_or(FfmpegStatus {
+pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
+    let status = detect_ffmpeg(data_dir).unwrap_or(FfmpegStatus {
         available: false,
         version: None,
         ffmpeg_path: None,
@@ -67,7 +64,7 @@ pub fn init_ffmpeg() -> FfmpegStatus {
 }
 
 /// Detect FFmpeg installation on the system
-fn detect_ffmpeg() -> AppResult<FfmpegStatus> {
+fn detect_ffmpeg(data_dir: &Path) -> AppResult<FfmpegStatus> {
     // Try system PATH
     if let Some(ffmpeg_path) = find_in_path("ffmpeg") {
         let ffprobe_path = find_in_path("ffprobe");
@@ -75,7 +72,7 @@ fn detect_ffmpeg() -> AppResult<FfmpegStatus> {
     }
 
     // Try the local install directory (auto-downloaded by the app).
-    if let Some((ffmpeg_path, ffprobe_path)) = find_local_install(&local_install_dir()) {
+    if let Some((ffmpeg_path, ffprobe_path)) = find_local_install(&local_install_dir(data_dir)) {
         return get_status_from_paths(ffmpeg_path, Some(ffprobe_path));
     }
 
@@ -308,7 +305,8 @@ mod tests {
         let old_path = std::env::var_os("PATH");
         std::env::set_var("PATH", &dir);
 
-        let status = detect_ffmpeg().unwrap();
+        // 空 data_dir → 本地安装分支必然不命中,只走 PATH 分支
+        let status = detect_ffmpeg(&temp_dir("detect-empty-data")).unwrap();
         assert!(status.available);
         assert_eq!(
             status.ffmpeg_path.as_deref(),
@@ -326,15 +324,11 @@ mod tests {
 
     #[test]
     fn local_install_dir_under_data_dir() {
-        // 结构必须是 {data_dir}/zffmpeg/ffmpeg
-        let dir = local_install_dir();
-        let components: Vec<_> = dir.components().collect();
-        assert!(components.len() >= 2);
-        let tail: Vec<_> = components[components.len() - 2..]
-            .iter()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(tail, vec!["zffmpeg".to_string(), "ffmpeg".to_string()]);
+        // 结构必须是 {data_dir}/ffmpeg
+        let data_dir = temp_dir("install-dir");
+        let dir = local_install_dir(&data_dir);
+        assert_eq!(dir, data_dir.join("ffmpeg"));
+        let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]

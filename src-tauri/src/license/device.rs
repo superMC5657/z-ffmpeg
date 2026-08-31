@@ -1,4 +1,4 @@
-//! 设备标识（机器码）：首次运行生成 uuid v4 持久化到 `{data_dir}/zffmpeg/device.id`，
+//! 设备标识（机器码）：首次运行生成 uuid v4 持久化到 `{data_dir}/device.id`，
 //! 同一次安装内保持稳定（契约要求：deviceId 变化 = 换设备，会占用新名额）。
 
 use std::path::Path;
