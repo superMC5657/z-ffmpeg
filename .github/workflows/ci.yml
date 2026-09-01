@@ -49,6 +49,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # tauri::generate_context!() 在编译期要求 build.frontendDist("../dist") 存在
+      # (dist/ 被 gitignore,checkout 后没有),故先构建前端
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend (frontendDist for tauri::generate_context!)
+        run: pnpm build
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
