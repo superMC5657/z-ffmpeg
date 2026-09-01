@@ -64,7 +64,7 @@ export default function Titlebar() {
 
       {/* 居中应用名 */}
       <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-2">
-        <span className="text-[13px] font-semibold tracking-tight">zffmpeg</span>
+        <span className="text-[13px] font-semibold tracking-tight">ZFFmpeg</span>
         <span className="rounded-full bg-fill px-2 py-0.5 text-[10px] font-medium leading-none text-secondary tabular-nums">
           v{__APP_VERSION__}
         </span>

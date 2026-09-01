@@ -1,4 +1,4 @@
-# zffmpeg
+# z-ffmpeg
 
 FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 19 + TypeScript + Tailwind v4）。
 
@@ -13,7 +13,7 @@ FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 
 - **体积预估**：入队前与编码页实时预估输出体积（仅供参考的启发式推算）。
 - **VMAF 质量评分**：完成后对输出与原片做全量或采样 VMAF 对比，得分随历史持久化。
 - **编码历史**：按状态筛选、文件名搜索、分页浏览，记录压缩率与 VMAF 得分。
-- **FFmpeg 自动下载**：未检测到 FFmpeg 时可从镜像（国内加速优先）自动下载安装；日志与队列数据统一存放在 `{data_dir}/zffmpeg/`。
+- **FFmpeg 自动下载**：未检测到 FFmpeg 时可从镜像（国内加速优先）自动下载安装；日志与队列数据统一存放在 `{data_dir}/z-ffmpeg/`。
 - **自动更新**：内置更新器，国内镜像与 GitHub 双端点。
 
 ## 开发

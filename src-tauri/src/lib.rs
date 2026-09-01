@@ -36,7 +36,7 @@ pub fn run() {
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: Some("zffmpeg".into()),
+                        file_name: Some("z-ffmpeg".into()),
                     }),
                 ])
                 .level(log::LevelFilter::Info)
@@ -54,7 +54,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            log::info!("zffmpeg v{} starting...", app.package_info().version);
+            log::info!("z-ffmpeg v{} starting...", app.package_info().version);
 
             // 所有落盘数据的根目录：Tauri app_data_dir（跟随 tauri.conf.json
             // 的 identifier，Windows = %APPDATA%\{identifier}）
@@ -139,7 +139,7 @@ pub fn run() {
             commands::vmaf::set_vmaf_segments,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building zffmpeg")
+        .expect("error while building z-ffmpeg")
         .run(|app_handle, event| {
             // 正常退出时一次性上报会话聚合埋点（失败静默，最多等 3s）
             if let tauri::RunEvent::ExitRequested { .. } = event {

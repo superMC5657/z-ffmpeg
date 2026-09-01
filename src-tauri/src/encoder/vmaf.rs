@@ -273,7 +273,7 @@ pub fn compute_vmaf_sampled(
     // 探测参考视频规格（失真视频可能已缩放/改帧率，一律对齐到参考）
     let info = probe_video_info(reference)?;
 
-    let work_dir = std::env::temp_dir().join("zffmpeg_vmaf").join(work_id);
+    let work_dir = std::env::temp_dir().join("z-ffmpeg_vmaf").join(work_id);
     std::fs::create_dir_all(&work_dir)
         .map_err(|e| AppError::Ffmpeg(format!("创建 VMAF 临时目录失败: {}", e)))?;
     // 任何退出路径（含错误）都会清理临时目录

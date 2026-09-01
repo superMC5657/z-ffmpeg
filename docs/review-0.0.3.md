@@ -1,6 +1,6 @@
-# Code Review — zffmpeg 0.0.3 (`e65aa50..6f2a2ee`)
+# Code Review — z-ffmpeg 0.0.3 (`e65aa50..6f2a2ee`)
 
-Reviewed the FFmpeg auto-download feature commit (mirror fallback chain, zip extraction, install into `{data_dir}/zffmpeg/ffmpeg`, status refresh, and Settings page UI wiring). The refactor and UI wiring are sound and the code compiles against the locked dependency versions, but the new download feature has real defects in its failure handling: mirror fallback is skipped when extraction fails, and an unrunnable downloaded binary is reported as installed. These are non-blocking for existing functionality but should be fixed before the feature is relied upon.
+Reviewed the FFmpeg auto-download feature commit (mirror fallback chain, zip extraction, install into `{data_dir}/z-ffmpeg/ffmpeg`, status refresh, and Settings page UI wiring). The refactor and UI wiring are sound and the code compiles against the locked dependency versions, but the new download feature has real defects in its failure handling: mirror fallback is skipped when extraction fails, and an unrunnable downloaded binary is reported as installed. These are non-blocking for existing functionality but should be fixed before the feature is relied upon.
 
 ## Findings
 

@@ -1,0 +1,59 @@
+# CI:前端/类型检查与后端测试
+# 触发:仅发布 tag(v*)
+# 注:发布打包流水线见 release-tauri.yml
+name: CI
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-quality:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Vitest
+        run: pnpm test
+
+      - name: Typecheck & Build
+        run: pnpm build
+
+  # Rust 测试
+  rust-tests:
+    name: Rust tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml

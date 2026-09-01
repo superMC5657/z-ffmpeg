@@ -1,4 +1,4 @@
-# Code Review — zffmpeg 0.0.2 (`57191e0..6a76b26`)
+# Code Review — z-ffmpeg 0.0.2 (`57191e0..6a76b26`)
 
 Reviewed the 0.0.2 commit. The commit correctly addresses the previously documented gaps (output-path dedup, preset application, history retention, retry button, faststart, progress-type alignment) and the added Rust tests are sound, but the new cancellation mechanism leaves a real window where a cancelled job's ffmpeg child is never killed and still writes output, and the preset application regressed to unguarded field reads for malformed imported presets.
 

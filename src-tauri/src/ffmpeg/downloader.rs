@@ -341,7 +341,7 @@ mod tests {
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "zffmpeg-test-{}-{}",
+            "z-ffmpeg-test-{}-{}",
             tag,
             uuid::Uuid::new_v4()
         ));

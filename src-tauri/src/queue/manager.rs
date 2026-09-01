@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn history_survives_restart() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -701,7 +701,7 @@ mod tests {
 
     #[test]
     fn history_can_be_deleted_and_cleared() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -734,7 +734,7 @@ mod tests {
 
     #[test]
     fn history_filtered_supports_status_search_and_pagination() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -789,7 +789,7 @@ mod tests {
 
     #[test]
     fn complete_job_records_output_size_and_survives_restart() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
         let out_path = dir.join("out.mp4");
@@ -824,7 +824,7 @@ mod tests {
 
     #[test]
     fn vmaf_paths_and_score_fall_back_to_db_for_finished_jobs() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn queue_pause_blocks_scheduling_until_resume() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn max_concurrent_is_persisted_and_clamped() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -922,7 +922,7 @@ mod tests {
 
     #[test]
     fn clear_completed_keeps_history_records() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn remove_jobs_keeps_history_records_and_drops_pending_db_rows() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -997,7 +997,7 @@ mod tests {
 
     #[test]
     fn cancelled_pending_job_is_never_dequeued() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn retry_job_requeues_failed_and_cancelled() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_qtest_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 

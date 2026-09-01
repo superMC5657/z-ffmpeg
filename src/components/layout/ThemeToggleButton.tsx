@@ -16,7 +16,7 @@ export default function ThemeToggleButton({ compact = false }: { compact?: boole
   useEffect(() => {
     // 多处控件共享同一偏好：监听 storage 变化保持同步
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "zffmpeg-theme") setPref(getStoredPref());
+      if (e.key === "z-ffmpeg-theme") setPref(getStoredPref());
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

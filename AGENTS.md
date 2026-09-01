@@ -1,4 +1,4 @@
-# zffmpeg
+# z-ffmpeg
 
 FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 19 + TS + Tailwind v4）。
 
@@ -14,7 +14,7 @@ cd src-tauri && cargo test   # Rust 单元测试
 pnpm exec tsc --noEmit # TS 类型检查
 ```
 
-CI（tag 推送时）跑 tsc + eslint + vitest + cargo test，全过才构建。
+CI（tag 推送时）跑 tsc + eslint + vitest + cargo test；发布流水线 `release-tauri.yml`（同样 tag 触发）与 CI 并行跑，发布不等待质量门。
 
 ## 架构
 

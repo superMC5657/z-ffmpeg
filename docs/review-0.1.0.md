@@ -1,4 +1,4 @@
-# Code Review — zffmpeg 0.1.0 (`cd91b32..5f2561e`)
+# Code Review — z-ffmpeg 0.1.0 (`cd91b32..5f2561e`)
 
 Reviewed the encode-page output-size preview commit ("编码选择页面显示预测视频大小"). The core preview-estimate feature is sound: the queue and preview paths share the same computation core, the ABR serde rename fixes a real frontend/backend mismatch, all Rust unit tests pass, and `tsc --noEmit` succeeds. The two findings below are edge-case accuracy issues in a heuristic explicitly labeled "仅供参考" and do not block the change.
 

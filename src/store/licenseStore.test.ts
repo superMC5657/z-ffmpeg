@@ -34,7 +34,7 @@ const proStatus: LicenseStatus = {
   features: ["pro"],
   offline: false,
   code: "SDX4-K9TP-2M7Q-W3HZ",
-  buyUrl: "http://localhost:5173/buy/zffmpeg",
+  buyUrl: "http://localhost:5173/buy/z-ffmpeg",
 };
 
 describe("licenseStore", () => {

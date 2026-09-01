@@ -28,7 +28,7 @@ mod tests {
 
     #[test]
     fn device_id_is_stable_and_persisted() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
 
         let first = get_or_create_device_id(&dir);

@@ -168,7 +168,7 @@ mod tests {
         serde_json::json!({
             "iss": "soft-candy",
             "sub": "SDX4-K9TP-2M7Q-W3HZ",
-            "app": "zffmpeg",
+            "app": "z-ffmpeg",
             "level": "pro",
             "levelLabel": "专业版",
             "deviceId": device,
@@ -201,7 +201,7 @@ mod tests {
     fn valid_token_passes() {
         let (signing, public) = make_keypair();
         let token = sign_jwt(&signing, &claims_json("device-0001", 2000));
-        let claims = verify_license_token(&token, &public, "device-0001", "zffmpeg", "pro", 1000).unwrap();
+        let claims = verify_license_token(&token, &public, "device-0001", "z-ffmpeg", "pro", 1000).unwrap();
         assert_eq!(claims.email.as_deref(), Some("buyer@example.com"));
         assert_eq!(claims.level.as_deref(), Some("pro"));
     }
@@ -211,7 +211,7 @@ mod tests {
         let (signing, public) = make_keypair();
         let token = sign_jwt(&signing, &claims_json("device-0001", 1000));
         assert!(matches!(
-            verify_license_token(&token, &public, "device-0001", "zffmpeg", "pro", 1000),
+            verify_license_token(&token, &public, "device-0001", "z-ffmpeg", "pro", 1000),
             Err(JwtError::Expired)
         ));
     }
@@ -221,7 +221,7 @@ mod tests {
         let (signing, public) = make_keypair();
         let token = sign_jwt(&signing, &claims_json("device-0001", 2000));
         assert!(matches!(
-            verify_license_token(&token, &public, "device-0002", "zffmpeg", "pro", 1000),
+            verify_license_token(&token, &public, "device-0002", "z-ffmpeg", "pro", 1000),
             Err(JwtError::Mismatch(_))
         ));
     }
@@ -234,7 +234,7 @@ mod tests {
         let last = token.pop().unwrap();
         token.push(if last == 'A' { 'B' } else { 'A' });
         assert!(matches!(
-            verify_license_token(&token, &public, "device-0001", "zffmpeg", "pro", 1000),
+            verify_license_token(&token, &public, "device-0001", "z-ffmpeg", "pro", 1000),
             Err(JwtError::InvalidSignature) | Err(JwtError::Malformed)
         ));
     }
@@ -243,7 +243,7 @@ mod tests {
     fn malformed_token_rejected() {
         let (_, public) = make_keypair();
         assert!(matches!(
-            verify_license_token("not-a-jwt", &public, "d", "zffmpeg", "pro", 0),
+            verify_license_token("not-a-jwt", &public, "d", "z-ffmpeg", "pro", 0),
             Err(JwtError::Malformed)
         ));
     }

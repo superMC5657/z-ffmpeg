@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capability for zffmpeg",
+  "description": "Default capability for z-ffmpeg",
   "windows": ["main"],
   "permissions": [
     "core:default",

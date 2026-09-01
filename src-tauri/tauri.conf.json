@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui-dev/nicegui/main/nicegui/static/tauri-v2/tauri.conf.json",
-  "productName": "zffmpeg",
-  "version": "0.3.0",
+  "productName": "ZFFmpeg",
+  "version": "0.1.0",
   "identifier": "com.zffmpeg.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "zffmpeg - 快速视频编码",
+        "title": "ZFFmpeg - 快速视频编码",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
@@ -63,8 +63,8 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyRUJERDNDQTE5RTU0RkMKUldUOFZKNmhQTjNyVWt3WjJxRnJleU9HbjlURHR6bDJ5WlpVY0RLamxveGYvRDF0NHBjQmRna1gK",
       "endpoints": [
-        "https://gh-proxy.com/https://github.com/superMC5657/zffmpeg/releases/latest/download/latest-cn.json",
-        "https://github.com/superMC5657/zffmpeg/releases/latest/download/latest.json"
+        "https://gh-proxy.com/https://github.com/superMC5657/z-ffmpeg-release/releases/latest/download/latest.json",
+        "https://github.com/superMC5657/z-ffmpeg-release/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
@@ -72,18 +72,18 @@
     },
     "softcandy": {
       "apiBase": "http://127.0.0.1:8080",
-      "buyUrl": "http://localhost:5173/buy/zffmpeg",
-      "product": "zffmpeg",
+      "buyUrl": "http://localhost:5173/buy/z-ffmpeg",
+      "product": "z-ffmpeg",
       "licenseLevel": "pro",
       "licensePublicKeys": {
-        "pro": "MCowBQYDK2VwAyEA8iyzp5hUPaS34rJY612wbYi8G0wA9FoNI0tVsr2Wy+U="
+        "pro": "MCowBQYDK2VwAyEAXCLUL7r+Zan2lhSIuO6VcsyKzNvOulv1W/zUUoAYKKU="
       },
       "licenseFileName": "license.json",
-      "activatePath": "/api/v1/apps/zffmpeg/activate",
-      "verifyPath": "/api/v1/apps/zffmpeg/verify",
-      "deactivatePath": "/api/v1/apps/zffmpeg/deactivate",
-      "analyticsPath": "/api/v1/apps/zffmpeg/analytics",
-      "analyticsToken": "0333d7fcd2e0b3bb8605bda63a426b612654b55578541d71d19f4f07e9ff8d71"
+      "activatePath": "/api/v1/apps/z-ffmpeg/activate",
+      "verifyPath": "/api/v1/apps/z-ffmpeg/verify",
+      "deactivatePath": "/api/v1/apps/z-ffmpeg/deactivate",
+      "analyticsPath": "/api/v1/apps/z-ffmpeg/analytics",
+      "analyticsToken": "1ff0e5046df7373c0e97508dcf5fab8d5af5e05d06bc67d13f58e6a587affce2"
     }
   }
 }

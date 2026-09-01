@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn insert_load_get_delete_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("zffmpeg_test_{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("z-ffmpeg_test_{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("presets.db").to_string_lossy().to_string();
 

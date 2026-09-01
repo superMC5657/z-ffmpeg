@@ -1,4 +1,4 @@
-# 代码审查 — zffmpeg 0.0.1（`68a1d43..57191e0`）
+# 代码审查 — z-ffmpeg 0.0.1（`68a1d43..57191e0`）
 
 审查了完整的 “0.0.1” 重写（后端 `encoder`、`queue`、`preset`、`commands`；前端 `stores`、`routes`、`components`）。已验证 `cargo check`、`tsc --noEmit` 与 `pnpm build` 均通过。
 

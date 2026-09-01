@@ -1,4 +1,4 @@
-# Code Review — zffmpeg 0.0.1 (`68a1d43..57191e0`)
+# Code Review — z-ffmpeg 0.0.1 (`68a1d43..57191e0`)
 
 Reviewed the full "0.0.1" rewrite (backend `encoder`, `queue`, `preset`, `commands`; frontend `stores`, `routes`, `components`). Verified `cargo check`, `tsc --noEmit`, and `pnpm build` all pass.
 

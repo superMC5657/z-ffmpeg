@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""zffmpeg 图标生成脚本。
+"""z-ffmpeg 图标生成脚本。
 
 设计:品牌渐变(indigo -> violet,精确复刻 src/index.css 的 bg-gradient-brand)
 圆角方形背景 + 居中白色播放三角(视频编码主题)+ 左上柔和高光。

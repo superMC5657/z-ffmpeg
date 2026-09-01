@@ -342,7 +342,7 @@ export const useEncoderStore = create<EncoderState>()(
   },
     }),
     {
-      name: "zffmpeg-encoder-settings",
+      name: "z-ffmpeg-encoder-settings",
       storage: createJSONStorage(() => localStorage),
       // 只持久化编码参数与输出目录；文件列表/进度/预估是运行态，
       // 重启后文件可能已移动，恢复它们反而造成困惑

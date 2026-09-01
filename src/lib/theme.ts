@@ -1,6 +1,6 @@
 export type ThemePref = "light" | "dark" | "system";
 
-const STORAGE_KEY = "zffmpeg-theme";
+const STORAGE_KEY = "z-ffmpeg-theme";
 const media = window.matchMedia("(prefers-color-scheme: dark)");
 
 export function getStoredPref(): ThemePref {

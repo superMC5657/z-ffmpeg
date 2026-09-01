@@ -1,4 +1,4 @@
-# Code Review — zffmpeg 0.0.4 (`6f2a2ee..b2fe0f9`)
+# Code Review — z-ffmpeg 0.0.4 (`6f2a2ee..b2fe0f9`)
 
 Reviewed the VMAF scoring and output-size estimation commit (per-job VMAF compute with full/sampled modes persisted to DB, size estimate computed at enqueue time, and queue/History UI wiring). The patch compiles, all new Rust tests pass, the frontend type-checks, and no existing behavior is broken; the two findings below are non-blocking functional gaps in the new features rather than regressions or blockers.
 

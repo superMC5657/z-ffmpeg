@@ -142,30 +142,30 @@ mod tests {
         let cfg = config_from_json(
             r#"{
                 "apiBase": "http://127.0.0.1:8080",
-                "buyUrl": "http://localhost:5173/buy/zffmpeg",
-                "product": "zffmpeg",
+                "buyUrl": "http://localhost:5173/buy/z-ffmpeg",
+                "product": "z-ffmpeg",
                 "licenseLevel": "pro",
                 "licensePublicKeys": { "pro": "HHvVDoB7i1gMlCH7PreE2h2lovqa+taR6mb756xpmyE=" },
                 "licenseFileName": "license.json",
-                "activatePath": "/api/v1/apps/zffmpeg/activate",
-                "verifyPath": "/api/v1/apps/zffmpeg/verify",
-                "deactivatePath": "/api/v1/apps/zffmpeg/deactivate",
-                "analyticsPath": "/api/v1/apps/zffmpeg/analytics",
+                "activatePath": "/api/v1/apps/z-ffmpeg/activate",
+                "verifyPath": "/api/v1/apps/z-ffmpeg/verify",
+                "deactivatePath": "/api/v1/apps/z-ffmpeg/deactivate",
+                "analyticsPath": "/api/v1/apps/z-ffmpeg/analytics",
                 "analyticsToken": "98f6e02b"
             }"#,
         );
         assert_eq!(cfg.api_base, "http://127.0.0.1:8080");
-        assert_eq!(cfg.product, "zffmpeg");
+        assert_eq!(cfg.product, "z-ffmpeg");
         assert_eq!(cfg.license_level, "pro");
         assert!(cfg.level_public_key().is_some());
         assert!(cfg.online_enabled());
         assert_eq!(
             cfg.activate_url(),
-            "http://127.0.0.1:8080/api/v1/apps/zffmpeg/activate"
+            "http://127.0.0.1:8080/api/v1/apps/z-ffmpeg/activate"
         );
         assert_eq!(
             cfg.analytics_url(),
-            "http://127.0.0.1:8080/api/v1/apps/zffmpeg/analytics"
+            "http://127.0.0.1:8080/api/v1/apps/z-ffmpeg/analytics"
         );
     }
 
@@ -186,13 +186,13 @@ mod tests {
 
     #[test]
     fn missing_key_means_no_key() {
-        let cfg = config_from_json(r#"{ "product": "zffmpeg" }"#);
+        let cfg = config_from_json(r#"{ "product": "z-ffmpeg" }"#);
         assert_eq!(cfg.level_public_key(), None);
     }
 
     #[test]
     fn empty_api_base_means_offline() {
-        let cfg = config_from_json(r#"{ "product": "zffmpeg" }"#);
+        let cfg = config_from_json(r#"{ "product": "z-ffmpeg" }"#);
         assert!(!cfg.online_enabled());
     }
 
