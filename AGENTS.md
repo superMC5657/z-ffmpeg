@@ -18,11 +18,14 @@ CI（tag 推送时）跑 tsc + eslint + vitest + cargo test；发布流水线 `r
 
 ## 架构
 
-- `src-tauri/src/commands/` — Tauri IPC 处理器（encode/queue/preset/system/history），全部在 `lib.rs` 注册。
+- `src-tauri/src/commands/` — Tauri IPC 处理器（encode/queue/preset/system/history/analytics/license/vmaf），全部在 `lib.rs` 注册。
 - `src-tauri/src/encoder/` — 编码引擎：`engine.rs`（ffmpeg 子进程生命周期 + 进度循环 + 取消）、`args.rs`（参数/输出路径构建）、`probe.rs`（ffprobe 探测 + FileInfo 解析）、`progress.rs`（进度结构与 -progress 解析）、`codec.rs`、`hw_accel.rs`、`estimate.rs`（体积预估）、`vmaf.rs`。
 - `src-tauri/src/queue/` — `QueueManager`：SQLite 队列、自动推进、并发、重试；`settings.rs` 为 settings 表存储层。DB 在 `{app_data_dir}/queue.db`（Tauri appDataDir，Windows = `%APPDATA%\com.zffmpeg.app`）。
 - `src-tauri/src/preset/` — 内置预设（`commands/preset.rs`，18 个只读）+ 自定义预设（presets.db，JSON 导入导出）。
 - `src-tauri/src/ffmpeg/` — `library.rs` PATH 检测、`mod.rs` 的 `hidden_command()`（Windows 隐藏控制台窗口）。
+- `src-tauri/src/license/` — 软糖铺授权：激活/续验/注销客户端、JWT 等级公钥验签与离线降级（接入契约见 `docs/soft-candy-integration-guide.md`，本地笔记见 `docs/soft-candy-zffmpeg-notes.md`）。
+- `src-tauri/src/analytics/` — 埋点会话记录与上报（负载字段顺序对齐接入契约 4.1 示例，有测试锁定）。
+- `src-tauri/src/util/` — 通用工具（`platform.rs` 平台判定）。
 - 前端：`src/routes/` 5 页面、`src/store/`（Zustand）、`src/hooks/useEncodeEvents.ts`、`src/lib/tauri.ts`。
 
 ## 约定
