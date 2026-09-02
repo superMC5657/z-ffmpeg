@@ -40,6 +40,9 @@ sysinfo = "0.33"
 rusqlite = { version = "0.32", features = ["bundled"] }
 tauri-plugin-log = "2.9.0"
 
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

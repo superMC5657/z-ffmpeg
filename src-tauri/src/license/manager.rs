@@ -89,7 +89,7 @@ pub struct LicenseManager {
 
 impl LicenseManager {
     pub fn new(config: SoftCandyConfig, data_dir: &Path) -> Self {
-        let device_id = device::get_or_create_device_id(data_dir);
+        let device_id = device::device_id();
         let manager = LicenseManager {
             config,
             data_dir: data_dir.to_path_buf(),
