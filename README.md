@@ -20,7 +20,7 @@ FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 
 
 ```bash
 pnpm install          # 安装依赖
-pnpm tauri dev        # 开发模式（vite :1420）
+pnpm tauri dev        # 开发模式（vite :1430）
 pnpm tauri build      # 生产构建
 pnpm test             # 前端测试（vitest）
 pnpm lint             # eslint

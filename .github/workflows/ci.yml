@@ -1,5 +1,6 @@
-# CI:前端/类型检查与后端测试
-# 触发:仅发布 tag(v*)
+# CI:前端/类型检查
+# 触发:仅发布 tag(v*), 日常开发检查在本地,
+# 打 tag 发布时才在 CI 全量检查)
 # 注:发布打包流水线见 release-tauri.yml
 name: CI
 
@@ -33,38 +34,17 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm lint
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
 
-      - name: Vitest
-        run: pnpm test
-
-      - name: Typecheck & Build
-        run: pnpm build
-
-  # Rust 测试
+  # Rust 测试（browse 大小写/路径语义、授权验签、缓存/解码行为）
+  # 跑在 windows-latest:应用仅发 Windows 包,大小写不敏感/winreg 等语义
+  # 只在 Windows 下成立;test-images/ 已入库,测试资产随仓库走
   rust-tests:
     name: Rust tests
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-
-      # tauri::generate_context!() 在编译期要求 build.frontendDist("../dist") 存在
-      # (dist/ 被 gitignore,checkout 后没有),故先构建前端
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Build frontend (frontendDist for tauri::generate_context!)
-        run: pnpm build
 
       - uses: dtolnay/rust-toolchain@stable
 

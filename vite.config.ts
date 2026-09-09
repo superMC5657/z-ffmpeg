@@ -35,7 +35,7 @@ export default defineConfig({
     strictPort: true,
     // Allow Tauri to access the dev server
     host: true,
-    port: 1420,
+    port: 1430,
   },
 
   // Env variables starting with TAURI_ will be exposed to tauri's source code
