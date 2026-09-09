@@ -49,7 +49,9 @@ struct ProInfo {
     email: String,
     level_label: Option<String>,
     expires_at: String,
-    /// 令牌到期时间（Unix 秒），is_pro 快速判断用
+    /// 令牌到期时间（Unix 秒），is_pro 快速判断用。注意：仅 release 构建读取
+    /// （debug 下 is_pro 短路 true），debug 构建的 dead_code warning 属预期。
+    #[cfg_attr(debug_assertions, allow(dead_code))]
     exp: i64,
     features: Vec<String>,
     /// 是否处于离线宽限期（最近一次在线验证失败 / 尚未在线验证）

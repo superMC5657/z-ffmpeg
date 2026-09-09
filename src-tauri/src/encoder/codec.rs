@@ -128,10 +128,24 @@ impl RateControl {
     }
 }
 
+/// 音频编码器（此前为自由字符串，拼写错误要到 ffmpeg 运行时才暴露；
+/// 收敛为枚举后与前端 `AudioCodec` 联合类型一一对应， wire 格式不变）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AudioCodec {
+    #[serde(rename = "AAC")]
+    Aac,
+    #[serde(rename = "Opus")]
+    Opus,
+    #[serde(rename = "Copy")]
+    Copy,
+    #[serde(rename = "None")]
+    None,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSettings {
-    pub codec: String, // "AAC", "Opus", "Copy", "None"
+    pub codec: AudioCodec,
     pub bitrate_kbps: u32,
     pub channels: u32,
     pub sample_rate: u32,
@@ -139,27 +153,22 @@ pub struct AudioSettings {
 
 impl AudioSettings {
     pub fn to_args(&self) -> Vec<String> {
-        match self.codec.as_str() {
-            "Copy" => vec!["-c:a".into(), "copy".into()],
-            "None" => vec!["-an".into()],
-            _ => {
-                let codec = match self.codec.as_str() {
-                    "AAC" => "aac",
-                    "Opus" => "libopus",
-                    other => other,
-                };
-                vec![
-                    "-c:a".into(),
-                    codec.into(),
-                    "-b:a".into(),
-                    format!("{}k", self.bitrate_kbps),
-                    "-ac".into(),
-                    self.channels.to_string(),
-                    "-ar".into(),
-                    self.sample_rate.to_string(),
-                ]
-            }
-        }
+        let codec = match &self.codec {
+            AudioCodec::Copy => return vec!["-c:a".into(), "copy".into()],
+            AudioCodec::None => return vec!["-an".into()],
+            AudioCodec::Aac => "aac",
+            AudioCodec::Opus => "libopus",
+        };
+        vec![
+            "-c:a".into(),
+            codec.into(),
+            "-b:a".into(),
+            format!("{}k", self.bitrate_kbps),
+            "-ac".into(),
+            self.channels.to_string(),
+            "-ar".into(),
+            self.sample_rate.to_string(),
+        ]
     }
 }
 
@@ -256,6 +265,21 @@ mod tests {
         let cfg: EncodeConfig = serde_json::from_str(&json).expect("带 maxBitrateKbps 应能反序列化");
         let args = cfg.video_settings.rate_control.to_args();
         assert_eq!(args, vec!["-b:v", "5000k", "-maxrate", "8000k", "-bufsize", "16000k"]);
+    }
+
+    /// 音频 codec 收敛为枚举后，前端发来的 "AAC"/"Opus"/"Copy"/"None"
+    /// 字符串必须原样兼容（wire 格式不变），非法值必须直接报错而非透传给 ffmpeg。
+    #[test]
+    fn audio_codec_deserializes_frontend_strings() {
+        for (json, expected) in [
+            ("\"AAC\"", AudioCodec::Aac),
+            ("\"Opus\"", AudioCodec::Opus),
+            ("\"Copy\"", AudioCodec::Copy),
+            ("\"None\"", AudioCodec::None),
+        ] {
+            assert_eq!(serde_json::from_str::<AudioCodec>(json).unwrap(), expected);
+        }
+        assert!(serde_json::from_str::<AudioCodec>("\"MP3\"").is_err());
     }
 
     #[test]

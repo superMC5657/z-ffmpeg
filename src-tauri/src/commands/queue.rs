@@ -1,7 +1,7 @@
 use tauri::{Emitter, State};
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::estimate;
-use crate::encoder::engine;
+use crate::encoder::{args, probe};
 use crate::queue::QueueStatus;
 use crate::error::AppResult;
 
@@ -32,7 +32,7 @@ pub async fn add_to_queue(
     // Build (input, output) pairs. Output paths are deduplicated within the
     // batch so two inputs with the same basename don't silently overwrite
     // each other (ffmpeg runs with `-y`).
-    let outputs = engine::derive_output_paths_unique(&files, &config, output_dir.as_deref());
+    let outputs = args::derive_output_paths_unique(&files, &config, output_dir.as_deref());
     let pairs: Vec<(String, String)> = files.iter().cloned().zip(outputs).collect();
 
     // 入队前探测每个输入文件，预估压缩后的输出体积（Pending 状态即可展示）。
@@ -43,7 +43,7 @@ pub async fn add_to_queue(
         let input = input.clone();
         let config = config.clone();
         probes.spawn(async move {
-            let est = match engine::probe_file_async(&input).await {
+            let est = match probe::probe_file_async(&input).await {
                 Ok(json) => estimate::estimate_output_bytes(&config, &json),
                 Err(_) => None,
             };
@@ -60,8 +60,7 @@ pub async fn add_to_queue(
     let ids = queue.add_jobs_estimated(pairs, estimates, config);
 
     // Emit updated queue state
-    let status = queue.get_status();
-    let _ = app_handle.emit("queue://updated", &status);
+    emit_queue(&app_handle, queue);
 
     Ok(ids)
 }
@@ -178,8 +177,7 @@ pub async fn retry_job(
     if retried {
         queue.process_queue(app_handle.clone());
     }
-    let status = queue.get_status();
-    let _ = app_handle.emit("queue://updated", &status);
+    emit_queue(&app_handle, queue);
     Ok(retried)
 }
 
@@ -215,6 +213,12 @@ fn concurrency_cap(license: &crate::license::LicenseManager) -> usize {
     } else {
         crate::license::config::FREE_MAX_CONCURRENT
     }
+}
+
+/// 队列变更后统一广播快照（7 个命令此前重复同一两行）
+pub(crate) fn emit_queue(app: &tauri::AppHandle, queue: &crate::queue::QueueManager) {
+    let status = queue.get_status();
+    let _ = app.emit("queue://updated", &status);
 }
 
 /// 编码器埋点 key（小写，对齐上报示例负载的 codecs 结构）

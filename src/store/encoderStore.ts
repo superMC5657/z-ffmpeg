@@ -87,6 +87,29 @@ const PERSISTED_ENCODER_KEYS = [
   "hwAccel",
 ] as const;
 
+/** 探测占位/失败项构造（addFiles 内两处重复同一 12 字段字面量，收敛到此） */
+function filePlaceholder(
+  path: string,
+  state: { probing: boolean; probeError?: boolean }
+): FileInfo {
+  return {
+    path,
+    fileName: path.split(/[/\\]/).pop() || path,
+    fileSize: 0,
+    duration: null,
+    videoCodec: null,
+    audioCodec: null,
+    width: null,
+    height: null,
+    frameRate: null,
+    bitrate: null,
+    audioBitrate: null,
+    pixelFormat: null,
+    probing: state.probing,
+    ...(state.probeError !== undefined ? { probeError: state.probeError } : {}),
+  };
+}
+
 export const useEncoderStore = create<EncoderState>()(
   persist(
     (set, get) => ({
@@ -94,21 +117,9 @@ export const useEncoderStore = create<EncoderState>()(
   inputFiles: [],
   addFiles: async (paths: string[]) => {
     // 1) 立即插入"分析中"占位项,界面即时响应;全部探测完才渲染会造成卡顿感
-    const placeholders: FileInfo[] = paths.map((path) => ({
-      path,
-      fileName: path.split(/[/\\]/).pop() || path,
-      fileSize: 0,
-      duration: null,
-      videoCodec: null,
-      audioCodec: null,
-      width: null,
-      height: null,
-      frameRate: null,
-      bitrate: null,
-      audioBitrate: null,
-      pixelFormat: null,
-      probing: true,
-    }));
+    const placeholders: FileInfo[] = paths.map((path) =>
+      filePlaceholder(path, { probing: true })
+    );
     set((s) => ({ inputFiles: [...s.inputFiles, ...placeholders] }));
 
     // 2) 小并发探测(上限 4),每个完成后立即按 path 更新对应项;
@@ -120,28 +131,12 @@ export const useEncoderStore = create<EncoderState>()(
       async () => {
         while (cursor < paths.length) {
           const path = paths[cursor++];
-          const fileName = path.split(/[/\\]/).pop() || path;
           let info: FileInfo;
           try {
             info = { ...(await probeFile(path)), probing: false, probeError: false };
           } catch {
             // 探测失败:保留占位信息,标记 probeError 供 UI 降级显示
-            info = {
-              path,
-              fileName,
-              fileSize: 0,
-              duration: null,
-              videoCodec: null,
-              audioCodec: null,
-              width: null,
-              height: null,
-              frameRate: null,
-              bitrate: null,
-              audioBitrate: null,
-              pixelFormat: null,
-              probing: false,
-              probeError: true,
-            };
+            info = filePlaceholder(path, { probing: false, probeError: true });
           }
           set((s) => ({
             inputFiles: s.inputFiles.map((f) => (f.path === path ? info : f)),

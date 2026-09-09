@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { HwAccelDevice, HwAccelInfo } from "@/types";
-import { detectHwAccel } from "@/lib/tauri";
+import { getSystemInfo } from "@/lib/tauri";
 
 /** 模块级共享的进行中检测 Promise,保证并发调用只检测一次 */
 let fetchPromise: Promise<void> | null = null;
@@ -31,7 +31,7 @@ export const useSystemStore = create<SystemState>((set, get) => ({
     set({ loading: true });
     fetchPromise = (async () => {
       try {
-        const info = await detectHwAccel();
+        const info = await getSystemInfo();
         set({ hwAccels: info.hwAccels, loaded: true });
       } catch {
         // 检测失败时视为不可用(保守处理),硬件预设将被禁用

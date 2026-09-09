@@ -86,13 +86,12 @@ pub fn build_ffmpeg_args(
 /// - VideoToolbox: modern FFmpeg (5.0+) removed `-preset` entirely, so the
 ///   option is omitted.
 fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
+    use crate::encoder::codec::HwAccelDevice;
+
     let name = &config.video_settings.encoder_preset;
 
-    match config.hw_accel.as_ref() {
-        Some(crate::encoder::codec::HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::NVENC,
-            ..
-        }) => {
+    match config.hw_accel.as_ref().map(|h| &h.device) {
+        Some(HwAccelDevice::NVENC) => {
             // NVENC: p1 = fastest, p7 = best quality.
             let p = match name.as_str() {
                 "ultrafast" | "superfast" => "p1",
@@ -106,17 +105,11 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
             };
             vec!["-preset".into(), p.into()]
         }
-        Some(crate::encoder::codec::HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::QSV,
-            ..
-        }) => {
+        Some(HwAccelDevice::QSV) => {
             // QSV accepts the veryfast..veryslow names directly.
             vec!["-preset".into(), name.clone()]
         }
-        Some(crate::encoder::codec::HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::AMF,
-            ..
-        }) => {
+        Some(HwAccelDevice::AMF) => {
             // AMF uses -quality (or the synonym -preset): speed / balanced / quality.
             let q = match name.as_str() {
                 "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" => "speed",
@@ -126,10 +119,7 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
             };
             vec!["-quality".into(), q.into()]
         }
-        Some(crate::encoder::codec::HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::VAAPI,
-            ..
-        }) => {
+        Some(HwAccelDevice::VAAPI) => {
             // VAAPI: -compression_level, 1 = slowest/best quality, 7 = fastest.
             let lvl = match name.as_str() {
                 "ultrafast" => "7",
@@ -143,10 +133,7 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
             };
             vec!["-compression_level".into(), lvl.into()]
         }
-        Some(crate::encoder::codec::HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::VideoToolbox,
-            ..
-        }) => {
+        Some(HwAccelDevice::VideoToolbox) => {
             // VideoToolbox dropped -preset in FFmpeg 5.0; omit it entirely.
             vec![]
         }
@@ -199,12 +186,7 @@ pub fn derive_output_path(input: &str, config: &EncodeConfig, output_dir: Option
         _ => path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf(),
     };
 
-    let ext = match config.container_format {
-        crate::encoder::codec::ContainerFormat::MP4 => "mp4",
-        crate::encoder::codec::ContainerFormat::MKV => "mkv",
-        crate::encoder::codec::ContainerFormat::WebM => "webm",
-        crate::encoder::codec::ContainerFormat::MOV => "mov",
-    };
+    let ext = config.container_format.extension();
 
     parent.join(format!("{}_encoded.{}", stem, ext))
         .to_string_lossy()
@@ -271,7 +253,7 @@ pub fn build_ffmpeg_command_line(
 mod tests {
     use super::*;
     use crate::encoder::codec::{
-        EncodeConfig, HwAccelConfig, HwAccelDevice, RateControl, Resolution,
+        AudioCodec, EncodeConfig, HwAccelConfig, HwAccelDevice, RateControl, Resolution,
     };
 
     fn sample_config() -> EncodeConfig {
@@ -448,12 +430,12 @@ mod tests {
     #[test]
     fn build_args_audio_copy_and_none() {
         let mut copy = sample_config();
-        copy.audio_settings.codec = "Copy".into();
+        copy.audio_settings.codec = AudioCodec::Copy;
         let args = build_ffmpeg_args(&copy, "in.mp4", "out.mp4");
         assert_args_contain(&args, &["-c:a", "copy"]);
 
         let mut none = sample_config();
-        none.audio_settings.codec = "None".into();
+        none.audio_settings.codec = AudioCodec::None;
         let args = build_ffmpeg_args(&none, "in.mp4", "out.mp4");
         assert!(args.contains(&"-an".to_string()), "{args:?}");
         assert!(!args.contains(&"-c:a".to_string()), "{args:?}");

@@ -5,12 +5,12 @@ use serde_json::{json, Value};
 
 use super::config::HTTP_TIMEOUT_SECS;
 
-/// 服务端返回的授权响应（activate 成功）
+/// 服务端返回的授权响应（activate 成功）。等级显示名以 JWT 内
+/// `levelLabel` claim 为准（验签覆盖），响应体同名字段无人消费，已删除。
 #[derive(Debug, Clone)]
 pub struct ActivateResponse {
     pub license: String,
     pub expires_at: String,
-    pub level_label: Option<String>,
 }
 
 /// 服务端返回的续验响应（verify 成功）
@@ -128,10 +128,6 @@ pub fn activate(
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        level_label: value
-            .get("levelLabel")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
     })
 }
 

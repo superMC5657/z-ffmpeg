@@ -554,7 +554,6 @@ mod tests {
     #[test]
     fn sources_fail_aggregates_all_errors() {
         let dir = temp_dir("sources-allfail");
-        let dest = dir.join("ffmpeg-download.zip");
 
         let err = install_from_sources(
             &["http://a", "http://b"],

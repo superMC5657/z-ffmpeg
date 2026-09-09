@@ -7,7 +7,6 @@ use crate::encoder::codec::EncodeConfig;
 pub enum JobStatus {
     Pending,
     Encoding,
-    Paused,
     Completed,
     Failed,
     Cancelled,
@@ -18,7 +17,6 @@ impl JobStatus {
         match self {
             JobStatus::Pending => "Pending",
             JobStatus::Encoding => "Encoding",
-            JobStatus::Paused => "Paused",
             JobStatus::Completed => "Completed",
             JobStatus::Failed => "Failed",
             JobStatus::Cancelled => "Cancelled",
@@ -29,7 +27,6 @@ impl JobStatus {
         match s {
             "Pending" => JobStatus::Pending,
             "Encoding" => JobStatus::Encoding,
-            "Paused" => JobStatus::Paused,
             "Completed" => JobStatus::Completed,
             "Failed" => JobStatus::Failed,
             "Cancelled" => JobStatus::Cancelled,

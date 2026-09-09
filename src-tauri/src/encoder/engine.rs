@@ -13,14 +13,10 @@ use crate::encoder::progress::EncodeProgress;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
 
-// 参数/探测/进度解析已拆分到独立模块；这里统一再导出，
-// 既有调用方（commands、estimate 等）的 `engine::xxx` 路径无需修改。
-pub use super::args::{
-    build_ffmpeg_args, build_ffmpeg_command_line, derive_output_path,
-    derive_output_paths_unique,
-};
-pub use super::probe::{parse_probe_result, probe_file, probe_file_async};
-pub(crate) use super::probe::{fallback_audio_bps, find_main_video_stream};
+// 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
+// 本模块只保留进程生命周期管理（start/cancel）与进度循环。
+use super::args::build_ffmpeg_args;
+use super::probe::probe_file;
 use super::progress::{compute_percentage, parse_bitrate_kbps};
 
 /// A running ffmpeg process, registered so it can be forcibly killed.

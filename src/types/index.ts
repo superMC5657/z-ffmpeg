@@ -128,7 +128,6 @@ export interface EncodeResult {
 export type JobStatus =
   | "Pending"
   | "Encoding"
-  | "Paused"
   | "Completed"
   | "Failed"
   | "Cancelled";
@@ -256,6 +255,25 @@ export interface FfmpegStatusInfo {
   path: string | null;
   downloadProgress: number | null;
   error: string | null;
+}
+
+// ============================================================
+// History 查询（对齐后端 history_filtered：全可选；limit 缺省 = 不分页）
+// 原定义散落在 lib/tauri.ts，收敛到此；HistoryPage 的本地同名类型已
+// 更名为 HistoryFilter，避免与 IPC 查询形状混淆。
+// ============================================================
+
+export interface HistoryQuery {
+  limit?: number;
+  offset?: number;
+  status?: string;
+  search?: string;
+}
+
+/** 分页历史结果：entries 为当前页，total 为筛选后总条数 */
+export interface HistoryPageResult {
+  entries: HistoryEntry[];
+  total: number;
 }
 
 // ============================================================

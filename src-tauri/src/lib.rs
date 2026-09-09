@@ -127,7 +127,6 @@ pub fn run() {
             commands::preset::export_preset_to_file,
             commands::preset::import_preset,
             commands::preset::get_builtin_presets,
-            commands::system::detect_hw_accel,
             commands::system::get_system_info,
             commands::system::check_ffmpeg_status,
             commands::system::download_ffmpeg,

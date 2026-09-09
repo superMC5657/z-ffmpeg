@@ -5,7 +5,8 @@ import type {
   FileInfo,
   EncodeProgress,
   EncodeResult,
-  HistoryEntry,
+  HistoryQuery,
+  HistoryPageResult,
   QueueStatus,
   Preset,
   SystemInfo,
@@ -150,20 +151,6 @@ export async function getBuiltinPresets(): Promise<Preset[]> {
 // History commands
 // ============================================================
 
-/** 历史查询条件：全可选；limit 缺省 = 后端不分页，全量返回 */
-export interface HistoryQuery {
-  limit?: number;
-  offset?: number;
-  status?: string;
-  search?: string;
-}
-
-/** 分页历史结果：entries 为当前页，total 为筛选后总条数 */
-export interface HistoryPageResult {
-  entries: HistoryEntry[];
-  total: number;
-}
-
 export async function getHistory(query?: HistoryQuery): Promise<HistoryPageResult> {
   return invoke<HistoryPageResult>("get_history", {
     limit: query?.limit ?? null,
@@ -204,10 +191,7 @@ export async function setVmafSegments(value: number): Promise<number> {
 // System commands
 // ============================================================
 
-export async function detectHwAccel(): Promise<SystemInfo> {
-  return invoke<SystemInfo>("detect_hw_accel");
-}
-
+/** 系统信息唯一入口（后端已合并原 detect_hw_accel 重复命令） */
 export async function getSystemInfo(): Promise<SystemInfo> {
   return invoke<SystemInfo>("get_system_info");
 }
@@ -263,61 +247,49 @@ export async function setAnalyticsEnabled(enabled: boolean): Promise<boolean> {
 // Event listeners
 // ============================================================
 
+/** 事件订阅统一出口（6 个监听此前重复同一 listen+payload 解包样板） */
+function onEvent<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
+  return listen<T>(event, (e) => handler(e.payload));
+}
+
 export function onEncodeProgress(
   handler: (progress: EncodeProgress) => void
 ): Promise<UnlistenFn> {
-  return listen<EncodeProgress>("encode://progress", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<EncodeProgress>("encode://progress", handler);
 }
 
 export function onEncodeComplete(
   handler: (result: EncodeResult) => void
 ): Promise<UnlistenFn> {
-  return listen<EncodeResult>("encode://complete", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<EncodeResult>("encode://complete", handler);
 }
 
 export function onEncodeError(
   handler: (error: { jobId: string; error: string }) => void
 ): Promise<UnlistenFn> {
-  return listen<{ jobId: string; error: string }>(
-    "encode://error",
-    (event) => {
-      handler(event.payload);
-    }
-  );
+  return onEvent<{ jobId: string; error: string }>("encode://error", handler);
 }
 
 export function onQueueUpdated(
   handler: (status: QueueStatus) => void
 ): Promise<UnlistenFn> {
-  return listen<QueueStatus>("queue://updated", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<QueueStatus>("queue://updated", handler);
 }
 
 export function onFfmpegDownloadProgress(
   handler: (percentage: number) => void
 ): Promise<UnlistenFn> {
-  return listen<number>("ffmpeg://download-progress", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<number>("ffmpeg://download-progress", handler);
 }
 
 export function onFfmpegReady(
   handler: (info: FfmpegStatusInfo) => void
 ): Promise<UnlistenFn> {
-  return listen<FfmpegStatusInfo>("ffmpeg://ready", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<FfmpegStatusInfo>("ffmpeg://ready", handler);
 }
 
 export function onFfmpegError(
   handler: (info: FfmpegStatusInfo) => void
 ): Promise<UnlistenFn> {
-  return listen<FfmpegStatusInfo>("ffmpeg://error", (event) => {
-    handler(event.payload);
-  });
+  return onEvent<FfmpegStatusInfo>("ffmpeg://error", handler);
 }

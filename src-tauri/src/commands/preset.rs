@@ -6,29 +6,29 @@ fn builtin_presets() -> Vec<Preset> {
     vec![
         // --- H.264 Software ---
         p("builtin-h264-fast", "H.264 快速", "ultrafast, CRF 23 — 最快编码",
-            "H264", "ultrafast", "CRF", 23, "MP4", "AAC", false),
+            "H264", "ultrafast", "CRF", 23, "MP4", "AAC"),
         p("builtin-h264-balanced", "H.264 平衡", "medium, CRF 23 — 通用编码",
-            "H264", "medium", "CRF", 23, "MP4", "AAC", false),
+            "H264", "medium", "CRF", 23, "MP4", "AAC"),
         p("builtin-h264-hq", "H.264 高质量", "slow, CRF 18, high profile — 高画质存档",
-            "H264", "slow", "CRF", 18, "MP4", "AAC", false),
+            "H264", "slow", "CRF", 18, "MP4", "AAC"),
         p("builtin-h264-archive", "H.264 无损存档", "veryslow, CRF 0 — 最大画质",
-            "H264", "veryslow", "CRF", 0, "MKV", "Opus", false),
+            "H264", "veryslow", "CRF", 0, "MKV", "Opus"),
 
         // --- H.265 Software ---
         p("builtin-h265-fast", "H.265 快速", "fast, CRF 28 — HEVC 快速",
-            "H265", "fast", "CRF", 28, "MKV", "AAC", false),
+            "H265", "fast", "CRF", 28, "MKV", "AAC"),
         p("builtin-h265-balanced", "H.265 平衡", "medium, CRF 24 — HEVC 通用",
-            "H265", "medium", "CRF", 24, "MKV", "AAC", false),
+            "H265", "medium", "CRF", 24, "MKV", "AAC"),
         p("builtin-h265-hq", "H.265 高质量", "slower, CRF 20, main10 — HEVC 高画质",
-            "H265", "slower", "CRF", 20, "MKV", "Opus", false),
+            "H265", "slower", "CRF", 20, "MKV", "Opus"),
 
         // --- AV1 ---
         p("builtin-av1", "AV1 通用", "preset 6, CRF 30 — SVT-AV1",
-            "AV1", "medium", "CRF", 30, "MKV", "Opus", false),
+            "AV1", "medium", "CRF", 30, "MKV", "Opus"),
 
         // --- VP9 ---
         p("builtin-vp9", "VP9 Web", "CRF 30 — Web 优化",
-            "VP9", "medium", "CRF", 30, "WebM", "Opus", false),
+            "VP9", "medium", "CRF", 30, "WebM", "Opus"),
 
         // --- NVENC ---
         hw_p("builtin-nvenc-h264", "NVENC H.264", "h264_nvenc — NVIDIA GPU 加速",
@@ -58,11 +58,21 @@ fn builtin_presets() -> Vec<Preset> {
     ]
 }
 
+/// 预设共用的音频配置（9 个软件预设 + 9 个硬件预设此前重复同一字面量）
+fn audio_json(codec: &str) -> serde_json::Value {
+    serde_json::json!({
+        "codec": codec,
+        "bitrateKbps": 192,
+        "channels": 2,
+        "sampleRate": 48000
+    })
+}
+
 /// Helper for software presets
 fn p(
     id: &str, name: &str, desc: &str,
     codec: &str, preset: &str, rc: &str, value: u32,
-    container: &str, audio: &str, _hq: bool,
+    container: &str, audio: &str,
 ) -> Preset {
     Preset {
         id: id.into(),
@@ -79,12 +89,7 @@ fn p(
                 "profile": null,
                 "additionalParams": []
             },
-            "audioSettings": {
-                "codec": audio,
-                "bitrateKbps": 192,
-                "channels": 2,
-                "sampleRate": 48000
-            },
+            "audioSettings": audio_json(audio),
             "containerFormat": container,
             "hwAccel": null
         }),
@@ -111,12 +116,7 @@ fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &st
                 "profile": null,
                 "additionalParams": []
             },
-            "audioSettings": {
-                "codec": "AAC",
-                "bitrateKbps": 192,
-                "channels": 2,
-                "sampleRate": 48000
-            },
+            "audioSettings": audio_json("AAC"),
             "containerFormat": if codec == "AV1" { "MKV" } else { "MP4" },
             "hwAccel": { "device": device, "deviceIndex": null }
         }),

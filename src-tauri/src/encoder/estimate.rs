@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::commands::encode::FileInfo;
-use crate::encoder::codec::{EncodeConfig, RateControl, VideoCodec};
-use crate::encoder::engine::{fallback_audio_bps, find_main_video_stream};
+use crate::encoder::codec::{AudioCodec, EncodeConfig, RateControl, VideoCodec};
+use crate::encoder::probe::{fallback_audio_bps, find_main_video_stream};
 
 /// 预估压缩后的输出体积（字节）。
 ///
@@ -143,39 +143,37 @@ fn estimate_bytes(
     source_audio_kbps: Option<f64>,
     scale: f64,
 ) -> Option<u64> {
+    // 视频流直接复制时码率设置不生效，体积基本不变（三种码控共用同一出口）
+    if matches!(config.video_codec, VideoCodec::Copy) {
+        return input_kbps_to_bytes(input_kbps, duration);
+    }
     let video_kbps = match &config.video_settings.rate_control {
         RateControl::Abr { bitrate_kbps, .. } => {
-            // 视频流直接复制时 ABR 码率不生效，体积基本不变，退化为输入平均码率
-            if matches!(config.video_codec, VideoCodec::Copy) {
-                return input_kbps_to_bytes(input_kbps, duration);
-            }
             // ABR 固定码率：分辨率/帧率只影响画质，不改变体积，不应用 scale
             *bitrate_kbps as f64
         }
         RateControl::Crf { value } => {
-            // 视频流直接复制时体积基本不变，退化为输入平均码率
-            if matches!(config.video_codec, VideoCodec::Copy) {
-                return input_kbps_to_bytes(input_kbps, duration);
-            }
-            let ratio = 2f64.powf((18.0 - *value as f64) / 6.0) * 0.8;
-            (input_kbps * codec_factor(&config.video_codec) * ratio * scale).max(1.0)
+            scaled_crf_kbps(input_kbps, &config.video_codec, *value as f64, scale)
         }
         RateControl::Cqp { value } => {
-            if matches!(config.video_codec, VideoCodec::Copy) {
-                return input_kbps_to_bytes(input_kbps, duration);
-            }
-            let ratio = 2f64.powf((18.0 - *value as f64) / 6.0) * 0.8;
-            (input_kbps * codec_factor(&config.video_codec) * ratio * scale).max(1.0)
+            scaled_crf_kbps(input_kbps, &config.video_codec, *value as f64, scale)
         }
     };
 
-    let audio_kbps = match config.audio_settings.codec.as_str() {
-        "None" => 0.0,
-        "Copy" => source_audio_kbps.unwrap_or(0.0),
+    let audio_kbps = match config.audio_settings.codec {
+        AudioCodec::None => 0.0,
+        AudioCodec::Copy => source_audio_kbps.unwrap_or(0.0),
         _ => config.audio_settings.bitrate_kbps as f64,
     };
 
     input_kbps_to_bytes(video_kbps + audio_kbps, duration)
+}
+
+/// CRF/CQP 外推：输入码率 × 编码器因子 × 质量比 × 分辨率/帧率缩放。
+/// CRF 与 CQP 共用同一经验公式（CRF 每 +6 码率约减半，CRF 18 为基准 ×0.8）。
+fn scaled_crf_kbps(input_kbps: f64, codec: &VideoCodec, value: f64, scale: f64) -> f64 {
+    let ratio = 2f64.powf((18.0 - value) / 6.0) * 0.8;
+    (input_kbps * codec_factor(codec) * ratio * scale).max(1.0)
 }
 
 /// 编码器相对 H.264 的压缩因子（同质量下体积更小）
@@ -254,7 +252,7 @@ mod tests {
                 additional_params: vec![],
             },
             audio_settings: AudioSettings {
-                codec: "AAC".into(),
+                codec: AudioCodec::Aac,
                 bitrate_kbps: 128,
                 channels: 2,
                 sample_rate: 44100,
@@ -379,7 +377,7 @@ mod tests {
             bitrate_kbps: 2000,
             max_bitrate_kbps: None,
         };
-        cfg.audio_settings.codec = "Copy".into();
+        cfg.audio_settings.codec = AudioCodec::Copy;
         // 容器 104857600B / 100s ≈ 8388608 bps，视频 8000000 bps → 音频回退 ≈ 388608 bps
         let probe = json!({
             "format": { "duration": "100.0", "size": "104857600" },
@@ -529,7 +527,7 @@ mod tests {
             bitrate_kbps: 2000,
             max_bitrate_kbps: None,
         };
-        cfg.audio_settings.codec = "Copy".into();
+        cfg.audio_settings.codec = AudioCodec::Copy;
         let info = FileInfo {
             path: "C:\\in\\a.mp4".into(),
             file_name: "a.mp4".into(),
@@ -582,7 +580,7 @@ mod tests {
     #[test]
     fn no_audio_reduces_estimate() {
         let mut cfg = base_config();
-        cfg.audio_settings.codec = "None".into();
+        cfg.audio_settings.codec = AudioCodec::None;
         let est = estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000));
         assert!(est.is_some());
     }

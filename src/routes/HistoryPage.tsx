@@ -42,8 +42,8 @@ type StatusFilterValue = (typeof STATUS_FILTERS)[number]["value"];
 /** 每页条数 */
 const PAGE_SIZE = 20;
 
-/** 单一查询状态：page/status/search 一起变更、一起触发重新拉取 */
-interface HistoryQuery {
+/** 本地视图筛选状态（改名避让 IPC 的 HistoryQuery：此类型含 page，彼类型含 limit/offset） */
+interface HistoryFilter {
   /** 0-based 页码 */
   page: number;
   status: StatusFilterValue;
@@ -53,7 +53,7 @@ interface HistoryQuery {
 export default function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [query, setQuery] = useState<HistoryQuery>({
+  const [query, setQuery] = useState<HistoryFilter>({
     page: 0,
     status: "All",
     search: "",

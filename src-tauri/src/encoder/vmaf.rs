@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::encoder::engine;
+use crate::encoder::probe;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
 
@@ -78,7 +78,7 @@ struct VideoInfo {
 
 /// 用 ffprobe 读取视频基础信息
 fn probe_video_info(path: &str) -> AppResult<VideoInfo> {
-    let json = engine::probe_file(path)?;
+    let json = probe::probe_file(path)?;
     let format = json
         .get("format")
         .ok_or_else(|| AppError::Ffmpeg("No format info".into()))?;

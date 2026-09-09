@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use crate::encoder::engine;
-use crate::encoder::estimate;
+use crate::encoder::{args, estimate, probe};
 use crate::error::{AppError, AppResult};
 
 // Re-export types for convenience
@@ -44,8 +44,8 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     }
 
     // Use ffprobe to get detailed info (async — doesn't block the runtime)
-    let json = engine::probe_file_async(&file_path).await?;
-    let info = engine::parse_probe_result(&json, &file_path)?;
+    let json = probe::probe_file_async(&file_path).await?;
+    let info = probe::parse_probe_result(&json, &file_path)?;
     Ok(info)
 }
 
@@ -125,11 +125,11 @@ pub async fn build_ffmpeg_commands(
     // Pro 门控与编码入口保持一致（预览/复制免费，含 Pro 能力的配置需授权）
     crate::commands::ensure_config_allowed(&_state.license, &config)?;
 
-    let outputs = engine::derive_output_paths_unique(&files, &config, output_dir.as_deref());
+    let outputs = args::derive_output_paths_unique(&files, &config, output_dir.as_deref());
     let cmds: Vec<String> = files
         .iter()
         .zip(outputs.iter())
-        .map(|(f, out)| engine::build_ffmpeg_command_line(&config, f, out))
+        .map(|(f, out)| args::build_ffmpeg_command_line(&config, f, out))
         .collect();
     log::info!("Built {} ffmpeg command preview(s)", cmds.len());
     Ok(cmds)

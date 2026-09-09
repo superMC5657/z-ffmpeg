@@ -1,4 +1,4 @@
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::encoder::vmaf::{
     self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
@@ -81,8 +81,7 @@ pub async fn compute_vmaf(
     queue.set_vmaf_score(&job_id, result.average_score, Some(detail.to_string()));
 
     // 刷新队列展示
-    let status = queue.get_status();
-    let _ = app_handle.emit("queue://updated", &status);
+    super::queue::emit_queue(&app_handle, queue);
 
     Ok(result)
 }
