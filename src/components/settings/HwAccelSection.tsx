@@ -9,7 +9,7 @@ export default function HwAccelSection() {
 
   useEffect(() => {
     fetchHwAccels();
-  }, []);
+  }, [fetchHwAccels]);
 
   return (
     <Card title="硬件加速器">

@@ -19,7 +19,7 @@ export default function HwAccelSelector() {
 
   useEffect(() => {
     fetchHwAccels();
-  }, []);
+  }, [fetchHwAccels]);
 
   if (loading) {
     return (

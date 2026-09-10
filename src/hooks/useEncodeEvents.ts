@@ -1,7 +1,12 @@
 import { useEffect } from "react";
 import { useQueueStore } from "@/store/queueStore";
 import { useEncoderStore } from "@/store/encoderStore";
-import { onEncodeProgress, onEncodeComplete, onEncodeError } from "@/lib/tauri";
+import {
+  onEncodeProgress,
+  onEncodeComplete,
+  onEncodeError,
+  onQueueUpdated,
+} from "@/lib/tauri";
 import { isTauriRuntime } from "@/lib/utils";
 
 /**
@@ -39,10 +44,16 @@ export function useEncodeEvents() {
       updateJobStatus(jobId, "Failed", error);
     });
 
+    const unlistenQueue = onQueueUpdated((status) => {
+      useQueueStore.setState({ paused: status.paused });
+      useQueueStore.getState().setJobs(status.jobs);
+    });
+
     return () => {
       unlistenProgress.then((fn) => fn());
       unlistenComplete.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      unlistenQueue.then((fn) => fn());
     };
   }, [updateProgress, updateJobStatus, setIsEncoding]);
 }

@@ -15,7 +15,7 @@ export default function PresetSelector() {
   useEffect(() => {
     fetchPresets();
     fetchHwAccels();
-  }, []);
+  }, [fetchPresets, fetchHwAccels]);
 
   const applyPreset = (presetId: string) => {
     if (!presetId) return;

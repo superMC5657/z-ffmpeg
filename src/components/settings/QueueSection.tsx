@@ -18,7 +18,7 @@ export default function QueueSection() {
 
   useEffect(() => {
     fetchMaxConcurrent();
-  }, []);
+  }, [fetchMaxConcurrent]);
 
   const handleConcurrentChange = async (value: number) => {
     setSavingConcurrent(true);

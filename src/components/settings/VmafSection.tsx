@@ -15,7 +15,7 @@ export default function VmafSection() {
 
   useEffect(() => {
     fetchVmafSegments();
-  }, []);
+  }, [fetchVmafSegments]);
 
   const handleVmafSegmentsChange = async (value: number) => {
     setSavingVmaf(true);

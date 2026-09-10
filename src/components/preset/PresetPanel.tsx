@@ -13,7 +13,7 @@ export default function PresetPanel() {
   useEffect(() => {
     fetchPresets();
     fetchHwAccels();
-  }, []);
+  }, [fetchPresets, fetchHwAccels]);
 
   if (isLoading) {
     return (
