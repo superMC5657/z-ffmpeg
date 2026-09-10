@@ -88,7 +88,6 @@ pub fn start_encode(
     cancel: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let ffmpeg_path = ffmpeg::get_ffmpeg_path()
-        .or_else(|| ffmpeg::get_ffprobe_path())
         .ok_or(AppError::FfmpegNotFound)?;
 
     let file_name = std::path::Path::new(&input_path)
@@ -173,6 +172,7 @@ pub fn start_encode(
             let _ = proc.child.kill();
             let _ = proc.child.wait();
         }
+        let _ = std::fs::remove_file(&output_path);
         log::info!("Encoding cancelled during probe/spawn: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
@@ -275,6 +275,7 @@ pub fn start_encode(
     let elapsed = start_time.elapsed();
 
     if cancel.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(&output_path);
         log::info!("Encoding cancelled: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
@@ -304,10 +305,14 @@ pub fn start_encode(
                     error: None,
                 },
             );
+            Ok(())
         }
         _ => {
             let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
             log::error!("Encoding failed: {} (exit code: {})", job_id, exit_code);
+
+            // Clean up partial output file on error
+            let _ = std::fs::remove_file(&output_path);
 
             // 附加 stderr 尾部，让用户能在 UI 直接看到 ffmpeg 的报错原因
             let mut error = format!("FFmpeg 以退出码 {} 退出", exit_code);
@@ -329,13 +334,13 @@ pub fn start_encode(
                     output_size_bytes: None,
                     duration_seconds: elapsed.as_secs_f64(),
                     cancelled: false,
-                    error: Some(error),
+                    error: Some(error.clone()),
                 },
             );
+
+            Err(AppError::EncodingFailed(error))
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

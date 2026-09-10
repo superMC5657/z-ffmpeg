@@ -30,8 +30,7 @@ pub struct HwCodecInfo {
 /// then apply platform / CPU constraints (e.g. QSV needs an Intel CPU,
 /// VideoToolbox only exists on macOS, NVENC/AMF not on macOS).
 pub fn detect_all(cpu_brand: &str, platform: &str) -> Vec<HwAccelInfo> {
-    let ffmpeg_path = ffmpeg::get_ffmpeg_path()
-        .or_else(|| ffmpeg::get_ffprobe_path());
+    let ffmpeg_path = ffmpeg::get_ffmpeg_path();
 
     let available_encoders = match ffmpeg_path {
         Some(path) => query_encoders(&path),

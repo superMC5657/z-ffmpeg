@@ -28,7 +28,6 @@ fn parse_ffprobe_stdout(stdout: &[u8]) -> AppResult<serde_json::Value> {
 /// Run ffprobe to get file information (blocking — call from spawn_blocking contexts).
 pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
     let ffprobe = ffmpeg::get_ffprobe_path()
-        .or_else(|| ffmpeg::get_ffmpeg_path())
         .ok_or(AppError::FfmpegNotFound)?;
 
     let output = ffmpeg::hidden_command(ffprobe)
@@ -42,7 +41,6 @@ pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
 /// Run ffprobe asynchronously — never blocks the async runtime thread.
 pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> {
     let ffprobe = ffmpeg::get_ffprobe_path()
-        .or_else(|| ffmpeg::get_ffmpeg_path())
         .ok_or(AppError::FfmpegNotFound)?;
 
     let mut cmd = tokio::process::Command::new(ffprobe);

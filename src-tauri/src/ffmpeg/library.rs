@@ -67,7 +67,8 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
 fn detect_ffmpeg(data_dir: &Path) -> AppResult<FfmpegStatus> {
     // Try system PATH
     if let Some(ffmpeg_path) = find_in_path("ffmpeg") {
-        let ffprobe_path = find_in_path("ffprobe");
+        let ffprobe_path = find_in_path("ffprobe")
+            .or_else(|| find_local_install(&local_install_dir(data_dir)).map(|(_, p)| p));
         return get_status_from_paths(ffmpeg_path, ffprobe_path);
     }
 
