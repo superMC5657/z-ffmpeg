@@ -233,15 +233,6 @@ export async function trackEvent(name: string): Promise<void> {
   return invoke("track_event", { name });
 }
 
-/** 读取埋点上报开关（默认开启） */
-export async function getAnalyticsEnabled(): Promise<boolean> {
-  return invoke<boolean>("get_analytics_enabled");
-}
-
-/** 保存埋点上报开关（退出时上报据此决定是否发送） */
-export async function setAnalyticsEnabled(enabled: boolean): Promise<boolean> {
-  return invoke<boolean>("set_analytics_enabled", { enabled });
-}
 
 // ============================================================
 // Event listeners

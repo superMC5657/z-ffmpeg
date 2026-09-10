@@ -6,8 +6,6 @@ use rusqlite::Connection;
 /// settings 表中已知的 key
 pub const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
 pub const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
-/// 埋点上报开关（1 = 开启，0 = 关闭，默认开启）
-pub const SETTINGS_KEY_ANALYTICS_ENABLED: &str = "analytics_enabled";
 
 /// Read a usize setting from the settings table.
 pub fn load_usize(db: &Connection, key: &str) -> Option<usize> {

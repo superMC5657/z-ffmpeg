@@ -108,8 +108,6 @@ pub fn run() {
             commands::license::activate_license,
             commands::license::deactivate_license,
             commands::analytics::track_event,
-            commands::analytics::get_analytics_enabled,
-            commands::analytics::set_analytics_enabled,
             commands::queue::add_to_queue,
             commands::queue::start_queue,
             commands::queue::remove_from_queue,

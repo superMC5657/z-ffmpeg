@@ -60,14 +60,6 @@ fn os_name() -> String {
         .unwrap_or_else(|| std::env::consts::OS.to_string())
 }
 
-/// 是否启用埋点（settings 表 `analytics_enabled`，默认开启）。
-/// 退出钩子在队列管理器初始化失败时也应保守地视为关闭——无法读到用户偏好。
-pub fn is_enabled(queue: Option<&std::sync::Arc<crate::queue::QueueManager>>) -> bool {
-    queue
-        .map(|q| q.get_setting_usize(crate::queue::settings::SETTINGS_KEY_ANALYTICS_ENABLED, 1) != 0)
-        .unwrap_or(false)
-}
-
 /// 退出时上报：起独立线程发送，最多等 3 秒，超时/失败仅记日志。
 /// 模块级守卫保证单次（ExitRequested 可能多次触发）。
 pub fn report_on_exit(app: &tauri::AppHandle) {
@@ -78,24 +70,18 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
         return;
     }
 
-    let (cfg, device_id, license_status, queue) = {
+    let (cfg, device_id, license_status) = {
         let state = app.state::<crate::AppState>();
         let license_status = if state.license.is_pro() { "pro" } else { "free" };
         (
             state.license.config().clone(),
             state.license.device_id().to_string(),
             license_status.to_string(),
-            state.queue_manager.clone(),
         )
     };
 
     // 配置为空（未接入）时不上报
     if !cfg.online_enabled() {
-        return;
-    }
-
-    if !is_enabled(queue.as_ref()) {
-        log::info!("埋点上报已关闭（用户设置），跳过");
         return;
     }
 

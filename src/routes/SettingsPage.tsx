@@ -5,7 +5,6 @@ import { useSystemStore } from "@/store/systemStore";
 import FfmpegSection from "@/components/settings/FfmpegSection";
 import QueueSection from "@/components/settings/QueueSection";
 import LicenseSection from "@/components/settings/LicenseSection";
-import PrivacySection from "@/components/settings/PrivacySection";
 import VmafSection from "@/components/settings/VmafSection";
 import HwAccelSection from "@/components/settings/HwAccelSection";
 import UpdateSection from "@/components/settings/UpdateSection";
@@ -49,9 +48,6 @@ export default function SettingsPage() {
 
       {/* License（软糖铺授权） */}
       <LicenseSection />
-
-      {/* Privacy（埋点开关） */}
-      <PrivacySection />
 
       {/* VMAF Settings */}
       <VmafSection />
