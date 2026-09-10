@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauriRuntime } from "@/lib/utils";
-import appIcon from "@/assets/app-icon.png";
+import appIcon from "@/assets/app-icon.svg";
 
 /**
  * Windows 11 Fluent 风格窗口三元控制按钮（最小化、最大化/向下还原、关闭）
@@ -120,7 +120,7 @@ export default function Titlebar() {
       {/* 左侧应用图标 */}
       <div className="flex flex-1 items-center pl-3.5">
         <div className="flex items-center gap-2 select-none">
-          <img src={appIcon} alt="ZFFmpeg" className="h-4 w-4 rounded-xs pointer-events-none" />
+          <img src={appIcon} alt="ZFFmpeg" className="h-6.5 w-6.5 pointer-events-none" />
         </div>
       </div>
 

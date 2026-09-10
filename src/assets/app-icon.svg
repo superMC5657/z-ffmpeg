@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- 背景 Squircle 径向渐变（精准对齐应用原生 Apple System Blue #0a84ff） -->
+    <radialGradient id="bgGrad" cx="50%" cy="16%" r="85%">
+      <stop offset="0%" stop-color="#38a5ff"/>
+      <stop offset="42%" stop-color="#0a84ff"/>
+      <stop offset="100%" stop-color="#004fc7"/>
+    </radialGradient>
+
+    <!-- 顶部半透明玻璃光泽 -->
+    <linearGradient id="sheenGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- 胶片卡片半透明玻璃材质 -->
+    <linearGradient id="cardGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="cardGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+
+    <!-- 极速双箭头高亮纯白立体渐变 -->
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e0f2fe"/>
+    </linearGradient>
+
+    <!-- 箭头立体倒角高光 -->
+    <linearGradient id="arrowBevel" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.2"/>
+    </linearGradient>
+
+    <!-- 箭头柔和立体投影 -->
+    <filter id="arrowShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="18" flood-color="#002066" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#001444" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- 1. Squircle 主底座容器（标准 Apple / macOS / Windows 11 Fluent 规范） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+  <rect x="0" y="0" width="1024" height="512" rx="225" ry="225" fill="url(#sheenGrad)"/>
+
+  <!-- 2. 多层胶片卡片队列 (代表 FFmpeg 批处理队列) -->
+  <!-- 底层卡片 -->
+  <g transform="translate(512, 535) scale(0.96) translate(-370, -225)">
+    <rect width="740" height="450" rx="36" fill="url(#cardGrad2)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+    <!-- 胶片孔 -->
+    <g fill="rgba(0, 30, 80, 0.45)">
+      <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
+      <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
+      <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
+      <rect x="24" y="356" width="38" height="28" rx="8"/>
+      <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
+      <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
+      <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
+      <rect x="678" y="356" width="38" height="28" rx="8"/>
+    </g>
+  </g>
+
+  <!-- 顶层主卡片 -->
+  <g transform="translate(512, 485) scale(1.0) translate(-370, -225)">
+    <rect width="740" height="450" rx="36" fill="url(#cardGrad1)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"/>
+    <!-- 胶片孔 -->
+    <g fill="rgba(0, 30, 80, 0.4)">
+      <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
+      <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
+      <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
+      <rect x="24" y="356" width="38" height="28" rx="8"/>
+      <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
+      <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
+      <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
+      <rect x="678" y="356" width="38" height="28" rx="8"/>
+    </g>
+  </g>
+
+  <!-- 3. 中央高能极速双箭头 (代表跳跃推进转码，纯白高反差，微缩尺寸极度锐利) -->
+  <g filter="url(#arrowShadow)">
+    <!-- 箭头 1 (左) -->
+    <polyline points="375,320 515,480 375,640" fill="none"
+              stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="375,320 515,480 375,640" fill="none"
+              stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- 箭头 2 (右) -->
+    <polyline points="545,320 685,480 545,640" fill="none"
+              stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="545,320 685,480 545,640" fill="none"
+              stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
