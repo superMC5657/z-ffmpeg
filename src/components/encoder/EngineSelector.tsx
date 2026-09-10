@@ -63,21 +63,21 @@ export default function EngineSelector() {
       {/* 1. 硬件加速方案 */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-[12px] font-medium text-secondary">
+          <label className="text-[13px] font-semibold text-secondary">
             硬件与加速引擎
           </label>
-          <span className="text-[11px] text-tertiary">
+          <span className="text-[12px] text-tertiary">
             {hwAccel ? `已启用 ${hwAccel.device} 硬件加速` : "使用 CPU 软件编码"}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2.5">
           {/* CPU 软件编码卡片 */}
           <button
             type="button"
             onClick={() => handleSelectHw(null)}
             className={cn(
-              "flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all",
+              "flex items-center gap-3 rounded-xl border p-3 text-left transition-all",
               hwAccel === null
                 ? "border-accent bg-accent/10 shadow-xs ring-1 ring-accent/20"
                 : "border-hairline bg-fill/40 hover:bg-fill hover:border-hairline/80"
@@ -85,17 +85,17 @@ export default function EngineSelector() {
           >
             <div
               className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                "flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg transition-colors",
                 hwAccel === null
                   ? "bg-accent text-on-accent"
                   : "bg-fill text-secondary"
               )}
             >
-              <Cpu className="h-4 w-4" />
+              <Cpu className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0">
-              <div className="text-[12px] font-semibold">CPU 软件编码</div>
-              <div className="truncate text-[10px] text-secondary">
+              <div className="text-[13px] font-bold text-foreground">CPU 软件编码</div>
+              <div className="truncate text-[11px] text-secondary">
                 画质最高 · 依赖 CPU
               </div>
             </div>
@@ -110,7 +110,7 @@ export default function EngineSelector() {
                 type="button"
                 onClick={() => handleSelectHw(hw.device as HwAccelDevice)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all",
+                  "flex items-center gap-3 rounded-xl border p-3 text-left transition-all",
                   selected
                     ? "border-accent bg-accent/10 shadow-xs ring-1 ring-accent/20"
                     : "border-hairline bg-fill/40 hover:bg-fill hover:border-hairline/80"
@@ -118,21 +118,21 @@ export default function EngineSelector() {
               >
                 <div
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors",
+                    "flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg transition-colors",
                     selected
                       ? "bg-accent text-on-accent"
                       : "bg-fill text-secondary"
                   )}
                 >
-                  <Zap className="h-4 w-4 fill-current" />
+                  <Zap className="h-4.5 w-4.5 fill-current" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1 text-[12px] font-semibold">
+                  <div className="flex items-center gap-1.5 text-[13px] font-bold text-foreground">
                     <span className="truncate">{hw.device}</span>
                     {!isPro && <ProBadge />}
                   </div>
-                  <div className="truncate text-[10px] text-secondary">
-                    GPU 极速转码
+                  <div className="truncate text-[11px] text-secondary">
+                    GPU 极速硬件加速
                   </div>
                 </div>
               </button>
@@ -143,8 +143,8 @@ export default function EngineSelector() {
 
       {/* 2. 视频编码格式选择 */}
       <div>
-        <label className="mb-2 block text-[12px] font-medium text-secondary">
-          视频编码标准
+        <label className="mb-2 block text-[13px] font-semibold text-secondary">
+          视频编码格式
         </label>
         <div className="grid grid-cols-2 gap-2">
           {CODEC_ITEMS.map(({ value, label, sub, icon: Icon }) => {
@@ -155,7 +155,7 @@ export default function EngineSelector() {
                 type="button"
                 onClick={() => setVideoCodec(value)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-xl border p-2 text-left transition-all",
+                  "flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all",
                   selected
                     ? "border-accent bg-accent/10 shadow-xs ring-1 ring-accent/20"
                     : "border-hairline bg-fill/30 hover:bg-fill/70"
@@ -163,19 +163,19 @@ export default function EngineSelector() {
               >
                 <div
                   className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                    "flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg",
                     selected
                       ? "bg-accent/20 text-accent font-bold"
                       : "bg-fill text-secondary"
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
+                  <Icon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-[12px] font-medium leading-tight">
+                  <div className="text-[13px] font-medium text-foreground leading-tight">
                     {label}
                   </div>
-                  <div className="truncate text-[10px] text-secondary">
+                  <div className="truncate text-[11px] text-secondary mt-0.5">
                     {sub}
                   </div>
                 </div>
@@ -186,8 +186,8 @@ export default function EngineSelector() {
       </div>
 
       {/* 3. 封装格式 */}
-      <div className="flex items-center justify-between border-t border-hairline/60 pt-3">
-        <label className="text-[12px] text-secondary">容器封装格式</label>
+      <div className="flex items-center justify-between border-t border-hairline/60 pt-3.5">
+        <label className="text-[13px] font-medium text-secondary">容器封装格式</label>
         <SegmentedControl
           value={containerFormat}
           onChange={(v) => setContainerFormat(v)}

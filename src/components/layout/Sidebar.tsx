@@ -15,16 +15,17 @@ import {
   onFfmpegError,
 } from "@/lib/tauri";
 import { useSystemStore } from "@/store/systemStore";
+import { useQueueStore } from "@/store/queueStore";
 import { isTauriRuntime } from "@/lib/utils";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { FfmpegStatusInfo } from "@/types";
 
 const navItems = [
-  { to: "/", label: "编码", icon: Video },
-  { to: "/presets", label: "预设", icon: SlidersHorizontal },
-  { to: "/queue", label: "队列", icon: Layers },
-  { to: "/history", label: "历史", icon: History },
-  { to: "/settings", label: "设置", icon: Settings },
+  { to: "/", label: "转码工作台", icon: Video },
+  { to: "/presets", label: "编码预设", icon: SlidersHorizontal },
+  { to: "/queue", label: "任务队列", icon: Layers },
+  { to: "/history", label: "转码历史", icon: History },
+  { to: "/settings", label: "系统设置", icon: Settings },
 ];
 
 const FFMPEG_STATES: Record<string, { dot: string; text: string }> = {
@@ -45,8 +46,6 @@ function FfmpegStatusFooter() {
       .catch(() => setInfo(null));
 
     if (!isTauriRuntime()) return;
-    // 下载过程中显示"正在下载...",完成后用 ffmpeg://ready 的载荷
-    // 直接刷新(设置页下载、其他入口下载都会同步到这里)。
     const unlisteners: UnlistenFn[] = [];
     onFfmpegDownloadProgress(() =>
       setInfo({
@@ -61,15 +60,11 @@ function FfmpegStatusFooter() {
       .catch(() => {});
     onFfmpegReady((ready) => {
       setInfo(ready);
-      // FFmpeg 刚就绪(如自动下载完成),硬件加速器需要基于新的
-      // ffmpeg 重新检测;此处全局触发,所有页面共享同一份结果。
       useSystemStore.getState().fetchHwAccels(true);
     })
       .then((u) => unlisteners.push(u))
       .catch(() => {});
     onFfmpegError(() => {
-      // 下载失败:重新拉取真实状态,避免 footer 卡在"正在下载..."
-      // (失败时后端只 emit ffmpeg://error,不会 emit ffmpeg://ready)。
       checkFfmpegStatus()
         .then(setInfo)
         .catch(() => setInfo(null));
@@ -85,50 +80,70 @@ function FfmpegStatusFooter() {
   const state = FFMPEG_STATES[key] ?? FFMPEG_STATES.error;
 
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 text-[12px] text-secondary">
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", state.dot)} />
-      <span className="truncate">{state.text}</span>
+    <div className="flex items-center gap-2.5 rounded-xl bg-fill/35 px-3 py-2 border border-hairline/60 text-[13px] text-secondary">
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", state.dot)} />
+      <span className="truncate font-medium">{state.text}</span>
     </div>
   );
 }
 
 export default function Sidebar() {
   const location = useLocation();
+  const queueCount = useQueueStore((s) =>
+    s.jobs.filter((j) => j.status === "Pending" || j.status === "Encoding").length
+  );
 
   return (
-    <aside className="flex w-[190px] shrink-0 flex-col border-r border-hairline bg-sidebar backdrop-blur-2xl">
-      {/* System Settings 风格导航 */}
-      <nav className="flex flex-1 flex-col gap-0.5 px-3 pt-5">
+    <aside className="flex w-[210px] shrink-0 flex-col border-r border-hairline bg-sidebar backdrop-blur-2xl select-none">
+      {/* 导航项列表 */}
+      <nav className="flex flex-1 flex-col gap-1.5 px-3 pt-5">
         {navItems.map(({ to, label, icon: Icon }) => {
-          const isActive = to === "/"
-            ? location.pathname === "/"
-            : location.pathname.startsWith(to);
+          const isActive =
+            to === "/"
+              ? location.pathname === "/"
+              : location.pathname.startsWith(to);
+
           return (
             <NavLink
               key={to}
               to={to}
               className={cn(
-                "flex h-9 items-center gap-2.5 rounded-[8px] px-2.5 text-[13px] transition-colors",
+                "group flex h-11 items-center gap-3 rounded-xl px-3.5 text-[14px] font-medium transition-all",
                 isActive
-                  ? "bg-accent font-medium text-on-accent"
-                  : "text-foreground hover:bg-fill-strong"
+                  ? "bg-accent font-semibold text-on-accent shadow-xs"
+                  : "text-foreground/85 hover:bg-fill/70 hover:text-foreground"
               )}
             >
               <Icon
                 className={cn(
-                  "h-4 w-4 shrink-0",
-                  isActive ? "text-on-accent" : "text-secondary"
+                  "h-4.5 w-4.5 shrink-0 transition-colors",
+                  isActive
+                    ? "text-on-accent"
+                    : "text-secondary group-hover:text-foreground"
                 )}
-                strokeWidth={isActive ? 2.4 : 2}
+                strokeWidth={isActive ? 2.3 : 1.9}
               />
-              {label}
+              <span>{label}</span>
+
+              {to === "/queue" && queueCount > 0 && (
+                <span
+                  className={cn(
+                    "ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums",
+                    isActive
+                      ? "bg-on-accent/20 text-on-accent"
+                      : "bg-accent/15 text-accent"
+                  )}
+                >
+                  {queueCount}
+                </span>
+              )}
             </NavLink>
           );
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="border-t border-hairline px-1.5 py-2.5">
+      {/* 底部 FFmpeg 就绪状态卡 */}
+      <div className="border-t border-hairline p-3">
         <FfmpegStatusFooter />
       </div>
     </aside>

@@ -172,12 +172,12 @@ export default function UnifiedInspector() {
   })();
 
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-hairline bg-surface/70 backdrop-blur-md p-4.5 shadow-card">
+    <div className="flex flex-col gap-4.5 rounded-2xl border border-hairline bg-surface/75 backdrop-blur-md p-5 shadow-card">
       {/* 1. 顶部预设快捷切换器与另存按钮 */}
-      <div className="flex items-center justify-between gap-2 border-b border-hairline/80 pb-3.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Sliders className="h-4 w-4 text-accent shrink-0" />
-          <span className="text-[13px] font-semibold text-foreground shrink-0">
+      <div className="flex items-center justify-between gap-3 border-b border-hairline/80 pb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <Sliders className="h-4.5 w-4.5 text-accent shrink-0" />
+          <span className="text-[15px] font-bold text-foreground shrink-0">
             编码配置
           </span>
         </div>
@@ -186,7 +186,7 @@ export default function UnifiedInspector() {
           <button
             onClick={() => setSaveDialogOpen(true)}
             title="将当前参数保存为自定义预设"
-            className="flex h-8 items-center gap-1 rounded-lg bg-fill px-2.5 text-[12px] font-medium text-foreground transition-colors hover:bg-fill-strong shrink-0"
+            className="flex h-8.5 items-center gap-1.5 rounded-lg bg-fill px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong shrink-0"
           >
             <Save className="h-3.5 w-3.5 text-secondary" />
             <span className="hidden sm:inline">存为预设</span>
@@ -198,9 +198,9 @@ export default function UnifiedInspector() {
       <EngineSelector />
 
       {/* 3. 质量与速率控制 */}
-      <div className="space-y-3.5 border-t border-hairline/80 pt-3.5">
+      <div className="space-y-4 border-t border-hairline/80 pt-4">
         <div className="flex items-center justify-between">
-          <label className="text-[12px] font-medium text-secondary">
+          <label className="text-[13px] font-semibold text-secondary">
             码率控制模式
           </label>
           <SegmentedControl
@@ -231,21 +231,21 @@ export default function UnifiedInspector() {
 
         {/* CRF 调节滑块 */}
         {(rateControl.type === "CRF" || rateControl.type === "CQP") && (
-          <div className="rounded-xl bg-fill/30 p-3 border border-hairline/50">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-[12px] text-secondary">画质系数 (CRF)</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-[16px] font-bold text-accent tabular-nums">
+          <div className="rounded-xl bg-fill/30 p-3.5 border border-hairline/50">
+            <div className="mb-2.5 flex items-center justify-between">
+              <span className="text-[13px] font-medium text-secondary">画质系数 (CRF)</span>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-[18px] font-bold text-accent tabular-nums">
                   {rateControl.value}
                 </span>
-                <span className="text-[11px] text-tertiary">
+                <span className="text-[12px] text-tertiary font-medium">
                   {rateControl.value <= 18
                     ? "(无损级)"
                     : rateControl.value <= 23
                       ? "(视觉无损·推荐)"
                       : rateControl.value <= 28
                         ? "(平衡推荐)"
-                        : "(低码率体积)"}
+                        : "(体积优先)"}
                 </span>
               </div>
             </div>
@@ -261,13 +261,13 @@ export default function UnifiedInspector() {
                   value: parseInt(e.target.value),
                 })
               }
-              className="w-full accent-accent"
+              className="w-full accent-accent cursor-pointer"
             />
 
-            <div className="mt-1.5 flex justify-between text-[10px] text-tertiary">
-              <span className="text-accent/80 font-medium">0 极佳无损</span>
+            <div className="mt-2 flex justify-between text-[11px] text-tertiary font-medium">
+              <span className="text-accent">0 极佳无损</span>
               <span>18</span>
-              <span className="text-success font-medium">23 推荐</span>
+              <span className="text-success font-semibold">23 推荐</span>
               <span>28</span>
               <span>51 低画质</span>
             </div>
@@ -276,12 +276,12 @@ export default function UnifiedInspector() {
 
         {/* ABR 比特率输入 */}
         {rateControl.type === "ABR" && (
-          <div className="flex items-center justify-between rounded-xl bg-fill/30 p-3 border border-hairline/50">
-            <span className="text-[12px] text-secondary">目标比特率</span>
+          <div className="flex items-center justify-between rounded-xl bg-fill/30 p-3.5 border border-hairline/50">
+            <span className="text-[13px] font-medium text-secondary">目标比特率</span>
             <div className="flex items-center gap-2">
               <AppleInput
                 type="number"
-                className="w-28 text-right"
+                className="w-32 text-right text-[14px]"
                 value={rateControl.bitrateKbps}
                 onChange={(e) =>
                   setRateControl({
@@ -290,7 +290,7 @@ export default function UnifiedInspector() {
                   })
                 }
               />
-              <span className="text-[12px] text-secondary">kbps</span>
+              <span className="text-[13px] font-medium text-secondary">kbps</span>
             </div>
           </div>
         )}
@@ -298,9 +298,9 @@ export default function UnifiedInspector() {
         {/* 速度预设 */}
         <div>
           <div className="flex items-center justify-between gap-2">
-            <label className="text-[12px] text-secondary">编码速度预设</label>
+            <label className="text-[13px] font-medium text-secondary">编码速度预设</label>
             <AppleSelect
-              className="w-48"
+              className="w-52 text-[13px]"
               value={encoderPreset}
               onChange={(e) =>
                 setEncoderPreset(e.target.value as EncoderPreset)
@@ -314,7 +314,7 @@ export default function UnifiedInspector() {
             </AppleSelect>
           </div>
           {presetHint && (
-            <p className="mt-1 text-right text-[10px] text-tertiary">
+            <p className="mt-1.5 text-right text-[11px] text-tertiary leading-normal">
               {presetHint}
             </p>
           )}
@@ -322,32 +322,32 @@ export default function UnifiedInspector() {
       </div>
 
       {/* 4. 音频与高级参数（折叠面板） */}
-      <div className="border-t border-hairline/80 pt-2">
+      <div className="border-t border-hairline/80 pt-2.5">
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex w-full items-center justify-between py-1.5 text-[12px] font-medium text-secondary hover:text-foreground transition-colors"
+          className="flex w-full items-center justify-between py-2 text-[13px] font-medium text-secondary hover:text-foreground transition-colors"
         >
-          <span className="flex items-center gap-1.5">
-            <Volume2 className="h-3.5 w-3.5" />
-            <span>音频轨、分辨率与帧率</span>
+          <span className="flex items-center gap-2">
+            <Volume2 className="h-4 w-4" />
+            <span>音频轨道、自定义分辨率与帧率</span>
           </span>
           <ChevronDown
             className={cn(
-              "h-3.5 w-3.5 transition-transform duration-200",
+              "h-4 w-4 transition-transform duration-200",
               showAdvanced ? "rotate-180" : ""
             )}
           />
         </button>
 
         {showAdvanced && (
-          <div className="mt-2 space-y-3 rounded-xl bg-fill/20 p-3 border border-hairline/40">
+          <div className="mt-2 space-y-3.5 rounded-xl bg-fill/25 p-3.5 border border-hairline/50">
             {/* 音频配置 */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] text-secondary">音频编码</span>
+              <span className="text-[13px] text-secondary">音频编码</span>
               <div className="flex items-center gap-2">
                 <AppleSelect
-                  className="w-44"
+                  className="w-48 text-[13px]"
                   value={audioCodec}
                   onChange={(e) => setAudioCodec(e.target.value as AudioCodec)}
                 >
@@ -361,13 +361,13 @@ export default function UnifiedInspector() {
                   <div className="flex items-center gap-1">
                     <AppleInput
                       type="number"
-                      className="w-18 text-right"
+                      className="w-20 text-right text-[13px]"
                       value={audioBitrate}
                       onChange={(e) =>
                         setAudioBitrate(parseInt(e.target.value) || 0)
                       }
                     />
-                    <span className="text-[11px] text-tertiary">k</span>
+                    <span className="text-[12px] text-tertiary">k</span>
                   </div>
                 )}
               </div>
@@ -375,12 +375,12 @@ export default function UnifiedInspector() {
 
             {/* 分辨率 */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] text-secondary">限制分辨率</span>
+              <span className="text-[13px] text-secondary">限制分辨率</span>
               <div className="flex items-center gap-1.5">
                 <AppleInput
                   type="number"
                   placeholder="宽"
-                  className="w-18 text-center"
+                  className="w-20 text-center text-[13px]"
                   value={resolution?.width || ""}
                   onChange={(e) =>
                     setResolution({
@@ -389,11 +389,11 @@ export default function UnifiedInspector() {
                     })
                   }
                 />
-                <span className="text-tertiary text-[11px]">×</span>
+                <span className="text-tertiary text-[12px]">×</span>
                 <AppleInput
                   type="number"
                   placeholder="高"
-                  className="w-18 text-center"
+                  className="w-20 text-center text-[13px]"
                   value={resolution?.height || ""}
                   onChange={(e) =>
                     setResolution({
@@ -407,12 +407,12 @@ export default function UnifiedInspector() {
 
             {/* 帧率 */}
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[12px] text-secondary">最大帧率 (FPS)</span>
+              <span className="text-[13px] text-secondary">最大帧率 (FPS)</span>
               <div className="flex items-center gap-1.5">
                 <AppleInput
                   type="number"
                   placeholder="保持原始"
-                  className="w-24 text-center"
+                  className="w-28 text-center text-[13px]"
                   value={frameRate || ""}
                   onChange={(e) =>
                     setFrameRate(
@@ -420,7 +420,7 @@ export default function UnifiedInspector() {
                     )
                   }
                 />
-                <span className="text-[11px] text-tertiary">fps</span>
+                <span className="text-[12px] text-tertiary">fps</span>
               </div>
             </div>
           </div>
@@ -428,16 +428,16 @@ export default function UnifiedInspector() {
       </div>
 
       {/* 5. 输出目录选择 */}
-      <div className="border-t border-hairline/80 pt-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-[12px] font-medium text-secondary flex items-center gap-1.5">
-            <Folder className="h-3.5 w-3.5 text-tertiary" />
-            <span>输出位置</span>
+      <div className="border-t border-hairline/80 pt-3.5">
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-[13px] font-semibold text-secondary flex items-center gap-1.5">
+            <Folder className="h-4 w-4 text-tertiary" />
+            <span>输出目标位置</span>
           </label>
           {outputDir && (
             <button
               onClick={() => setOutputDir("")}
-              className="flex items-center gap-1 text-[11px] text-secondary hover:text-foreground transition-colors"
+              className="flex items-center gap-1 text-[12px] text-secondary hover:text-foreground transition-colors"
             >
               <RotateCcw className="h-3 w-3" />
               <span>恢复源目录</span>
@@ -446,10 +446,10 @@ export default function UnifiedInspector() {
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex h-9 flex-1 items-center rounded-xl bg-fill/40 px-3 border border-hairline/60 overflow-hidden">
+          <div className="flex h-10 flex-1 items-center rounded-xl bg-fill/40 px-3.5 border border-hairline/70 overflow-hidden">
             <span
               className={cn(
-                "truncate text-[12px]",
+                "truncate text-[13px]",
                 outputDir ? "text-foreground font-mono" : "text-tertiary"
               )}
               title={outputDir || undefined}
@@ -460,27 +460,27 @@ export default function UnifiedInspector() {
           <button
             type="button"
             onClick={handleSelectOutputDir}
-            className="flex h-9 items-center gap-1.5 rounded-xl bg-fill px-3 text-[12px] font-medium text-foreground transition-colors hover:bg-fill-strong shrink-0"
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-fill px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong shrink-0"
           >
-            <FolderOpen className="h-3.5 w-3.5 text-secondary" />
+            <FolderOpen className="h-4 w-4 text-secondary" />
             <span>浏览</span>
           </button>
         </div>
       </div>
 
       {/* 6. 行动区 (CTA Actions) */}
-      <div className="border-t border-hairline/80 pt-4 space-y-2">
+      <div className="border-t border-hairline/80 pt-4 space-y-2.5">
         <button
           onClick={handleAddToQueueAndStart}
           disabled={!hasFiles}
           className={cn(
-            "flex h-11 w-full items-center justify-center gap-2 rounded-xl text-[14px] font-semibold transition-all shadow-md active:scale-[0.98]",
+            "flex h-11.5 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-bold transition-all shadow-md active:scale-[0.98]",
             hasFiles
               ? "bg-accent text-on-accent hover:bg-accent-hover hover:shadow-accent/25 hover:shadow-lg cursor-pointer"
               : "cursor-not-allowed bg-fill text-tertiary opacity-70"
           )}
         >
-          <Play className="h-4 w-4 fill-current" />
+          <Play className="h-4.5 w-4.5 fill-current" />
           <span>
             {hasFiles
               ? `添加到转码队列 (${inputFiles.length} 个文件)`
@@ -491,9 +491,9 @@ export default function UnifiedInspector() {
         <button
           onClick={handleBuildCommand}
           disabled={building}
-          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-[12px] text-secondary hover:text-foreground hover:bg-fill transition-colors"
+          className="flex h-8.5 w-full items-center justify-center gap-2 rounded-lg text-[13px] text-secondary hover:text-foreground hover:bg-fill transition-colors"
         >
-          <Terminal className="h-3.5 w-3.5" />
+          <Terminal className="h-4 w-4" />
           <span>{building ? "正在生成…" : "查看 FFmpeg CLI 命令行"}</span>
         </button>
       </div>

@@ -125,7 +125,7 @@ export default function BatchFileList() {
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
       className={cn(
-        "flex flex-col rounded-2xl border transition-all duration-200 bg-surface/60 backdrop-blur-md shadow-card overflow-hidden",
+        "flex flex-col rounded-2xl border transition-all duration-200 bg-surface/70 backdrop-blur-md shadow-card overflow-hidden",
         isDragOver
           ? "border-accent bg-accent/[0.04] ring-2 ring-accent/20"
           : "border-hairline"
@@ -141,66 +141,66 @@ export default function BatchFileList() {
       />
 
       {/* 列表头部操作栏 */}
-      <div className="flex items-center justify-between border-b border-hairline px-4 py-3 bg-fill/20">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold tracking-tight text-foreground">
+      <div className="flex items-center justify-between border-b border-hairline px-5 py-3.5 bg-fill/25">
+        <div className="flex items-center gap-2.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground">
             待转码清单
           </span>
           {inputFiles.length > 0 && (
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent tabular-nums">
-              {inputFiles.length} 项
+            <span className="rounded-full bg-accent/15 px-2.5 py-0.5 text-[12px] font-semibold text-accent tabular-nums">
+              {inputFiles.length} 个文件
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {inputFiles.length > 0 && (
             <button
               onClick={clearFiles}
-              className="flex h-7 items-center gap-1 rounded-lg px-2 text-[12px] text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive"
               title="清空全部待处理文件"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>清空</span>
+              <Trash2 className="h-4 w-4" />
+              <span>清空全部</span>
             </button>
           )}
           <button
             onClick={handlePickFiles}
-            className="flex h-7 items-center gap-1 rounded-lg bg-accent px-2.5 text-[12px] font-medium text-on-accent shadow-xs transition-transform active:scale-95 hover:bg-accent-hover"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-semibold text-on-accent shadow-xs transition-transform active:scale-95 hover:bg-accent-hover"
           >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
+            <Plus className="h-4 w-4" strokeWidth={2.4} />
             <span>添加视频</span>
           </button>
         </div>
       </div>
 
       {/* 内容区域：空状态 vs 文件卡片列表 */}
-      <div className="flex-1 p-3">
+      <div className="flex-1 p-4">
         {inputFiles.length === 0 ? (
           /* 空状态：大幅面拖拽投送区 */
           <div
             onClick={handlePickFiles}
             className={cn(
-              "flex flex-col items-center justify-center rounded-xl border border-dashed py-14 px-6 text-center cursor-pointer transition-all duration-200",
+              "flex flex-col items-center justify-center rounded-xl border border-dashed py-20 px-8 text-center cursor-pointer transition-all duration-200",
               isDragOver
                 ? "border-accent bg-accent/[0.08]"
                 : "border-hairline/80 bg-fill/20 hover:border-accent/50 hover:bg-fill/40"
             )}
           >
-            <div className="flex h-13 w-13 items-center justify-center rounded-2xl bg-accent/15 text-accent shadow-sm mb-3.5 transition-transform duration-200 group-hover:scale-105">
-              <UploadCloud className="h-7 w-7" strokeWidth={1.8} />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/15 text-accent shadow-sm mb-4 transition-transform duration-200 group-hover:scale-105">
+              <UploadCloud className="h-8 w-8" strokeWidth={1.9} />
             </div>
-            <h3 className="text-[14px] font-semibold text-foreground">
-              拖拽视频文件到此处，或点击浏览文件
+            <h3 className="text-[16px] font-bold text-foreground">
+              拖拽视频文件到此处，或点击浏览添加
             </h3>
-            <p className="mt-1 text-[12px] text-secondary max-w-sm">
-              支持单文件极速转码与多文件批量并行编码，自动解析音视频轨道信息与体积预估
+            <p className="mt-1.5 text-[13px] text-secondary max-w-md leading-relaxed">
+              支持单视频转换与多视频批量并行编码，自动解析分辨率、帧率与体积预估
             </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-1.5 max-w-md">
+            <div className="mt-5 flex flex-wrap justify-center gap-2 max-w-lg">
               {SUPPORTED_FORMATS.map((fmt) => (
                 <span
                   key={fmt}
-                  className="rounded-md border border-hairline/80 bg-surface px-2 py-0.5 text-[10px] font-medium text-tertiary"
+                  className="rounded-lg border border-hairline/80 bg-surface px-2.5 py-1 text-[12px] font-medium text-tertiary"
                 >
                   {fmt}
                 </span>
@@ -209,7 +209,7 @@ export default function BatchFileList() {
           </div>
         ) : (
           /* 文件项列表 */
-          <div className="space-y-2 max-h-[520px] overflow-y-auto pr-0.5">
+          <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-0.5">
             {inputFiles.map((file, index) => {
               const estimatedSize = estimatedSizes[file.path];
               const ratio =
@@ -220,13 +220,13 @@ export default function BatchFileList() {
               return (
                 <div
                   key={file.path}
-                  className="group relative flex items-center gap-3.5 rounded-xl border border-hairline/70 bg-fill/40 p-3 transition-all hover:bg-fill/70 hover:border-hairline"
+                  className="group relative flex items-center gap-3.5 rounded-xl border border-hairline/80 bg-fill/40 p-3.5 transition-all hover:bg-fill/70 hover:border-hairline"
                 >
                   {/* 视频图标 / 时长 */}
-                  <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
-                    <FileVideo className="h-5 w-5" />
+                  <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                    <FileVideo className="h-6 w-6" />
                     {file.duration != null && (
-                      <span className="absolute -bottom-1 -right-1 rounded bg-surface/90 px-1 py-0.2 text-[9px] font-semibold text-secondary shadow-xs tabular-nums ring-1 ring-hairline">
+                      <span className="absolute -bottom-1 -right-1 rounded bg-surface/90 px-1.5 py-0.2 text-[10px] font-semibold text-secondary shadow-xs tabular-nums ring-1 ring-hairline">
                         {formatDuration(file.duration)}
                       </span>
                     )}
@@ -236,29 +236,29 @@ export default function BatchFileList() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <p
-                        className="truncate text-[13px] font-medium text-foreground leading-tight"
+                        className="truncate text-[14px] font-semibold text-foreground leading-tight"
                         title={file.path}
                       >
                         {file.fileName}
                       </p>
                     </div>
 
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-secondary">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-secondary">
                       {file.probing ? (
-                        <span className="flex items-center gap-1 text-accent">
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                        <span className="flex items-center gap-1.5 text-accent font-medium">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           正在解析视频元数据…
                         </span>
                       ) : (
                         <>
-                          <span className="tabular-nums font-medium">
+                          <span className="tabular-nums font-medium text-foreground/90">
                             {formatFileSize(file.fileSize)}
                           </span>
 
                           {file.width && file.height && (
                             <>
                               <span className="text-tertiary">·</span>
-                              <span className="tabular-nums">
+                              <span className="tabular-nums font-medium">
                                 {file.width}×{file.height}
                               </span>
                             </>
@@ -267,7 +267,7 @@ export default function BatchFileList() {
                           {file.videoCodec && (
                             <>
                               <span className="text-tertiary">·</span>
-                              <span className="uppercase font-mono">
+                              <span className="uppercase font-mono font-medium">
                                 {file.videoCodec}
                               </span>
                             </>
@@ -287,7 +287,7 @@ export default function BatchFileList() {
                             <span
                               title="根据当前编码器与质量参数计算出的预期体积"
                               className={cn(
-                                "ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.2 text-[10px] font-semibold tabular-nums",
+                                "ml-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums",
                                 ratio !== null && ratio < 0
                                   ? "bg-success/15 text-success"
                                   : "bg-accent/15 text-accent"
@@ -295,7 +295,7 @@ export default function BatchFileList() {
                             >
                               预计 {formatFileSizeCompact(estimatedSize)}
                               {ratio !== null && (
-                                <span className="opacity-80">
+                                <span className="opacity-80 font-normal">
                                   ({ratio > 0 ? `+${ratio}%` : `${ratio}%`})
                                 </span>
                               )}
@@ -303,7 +303,7 @@ export default function BatchFileList() {
                           )}
 
                           {file.probeError && (
-                            <span className="text-destructive font-medium">
+                            <span className="text-destructive font-semibold">
                               无法解析
                             </span>
                           )}
@@ -316,20 +316,20 @@ export default function BatchFileList() {
                   <button
                     aria-label={`移除 ${file.fileName}`}
                     onClick={() => removeFile(index)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-tertiary opacity-40 transition-all hover:bg-destructive/10 hover:text-destructive hover:opacity-100 group-hover:opacity-100"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-tertiary opacity-40 transition-all hover:bg-destructive/10 hover:text-destructive hover:opacity-100 group-hover:opacity-100"
                   >
-                    <X className="h-4 w-4" />
+                    <X className="h-4.5 w-4.5" />
                   </button>
                 </div>
               );
             })}
 
-            {/* 底部紧凑投送提示 */}
+            {/* 底部投送提示条 */}
             <div
               onClick={handlePickFiles}
-              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-hairline/60 py-2.5 text-[11px] text-secondary cursor-pointer hover:border-accent/40 hover:text-foreground transition-colors"
+              className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-hairline/70 py-3 text-[13px] text-secondary cursor-pointer hover:border-accent/40 hover:text-foreground transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               <span>拖入更多视频文件，或点击继续添加</span>
             </div>
           </div>
@@ -338,22 +338,22 @@ export default function BatchFileList() {
 
       {/* 底部汇总统计条 */}
       {inputFiles.length > 0 && (
-        <div className="flex items-center justify-between border-t border-hairline px-4 py-2.5 bg-fill/15 text-[11px] text-secondary">
+        <div className="flex items-center justify-between border-t border-hairline px-5 py-3 bg-fill/20 text-[12px] text-secondary">
           <div className="flex items-center gap-2 tabular-nums">
-            <HardDrive className="h-3.5 w-3.5 text-tertiary" />
+            <HardDrive className="h-4 w-4 text-tertiary" />
             <span>
               原始总体积:{" "}
-              <strong className="text-foreground font-medium">
+              <strong className="text-foreground font-semibold">
                 {formatFileSize(totalInputSize)}
               </strong>
             </span>
           </div>
           {totalEstimatedSize > 0 && (
             <div className="flex items-center gap-1.5 tabular-nums">
-              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+              <CheckCircle2 className="h-4 w-4 text-success" />
               <span>
                 预计总体积:{" "}
-                <strong className="text-success font-semibold">
+                <strong className="text-success font-bold">
                   ≈ {formatFileSizeCompact(totalEstimatedSize)}
                 </strong>
               </span>
