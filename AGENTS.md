@@ -11,10 +11,11 @@ pnpm tauri build      # 生产构建
 pnpm test             # 前端 vitest 测试
 pnpm lint             # eslint（0 error 才能合入，警告可保留）
 cd src-tauri && cargo test   # Rust 单元测试
+cd src-tauri && cargo clippy -- -D warnings # Rust 代码检查
 pnpm exec tsc --noEmit # TS 类型检查
 ```
 
-CI（tag 推送时）跑 tsc + eslint + vitest + cargo test；发布流水线 `release-tauri.yml`（同样 tag 触发）与 CI 并行跑，发布不等待质量门。
+CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流水线 `release-tauri.yml`（同样 tag 触发）与 CI 并行跑，发布不等待质量门。
 
 ## 架构
 
@@ -23,7 +24,7 @@ CI（tag 推送时）跑 tsc + eslint + vitest + cargo test；发布流水线 `r
 - `src-tauri/src/queue/` — `QueueManager`：SQLite 队列、自动推进、并发、重试；`settings.rs` 为 settings 表存储层。DB 在 `{app_data_dir}/queue.db`（Tauri appDataDir，Windows = `%APPDATA%\com.zffmpeg.app`）。
 - `src-tauri/src/preset/` — 内置预设（`commands/preset.rs`，18 个只读）+ 自定义预设（presets.db，JSON 导入导出）。
 - `src-tauri/src/ffmpeg/` — `library.rs` PATH 检测、`mod.rs` 的 `hidden_command()`（Windows 隐藏控制台窗口）。
-- `src-tauri/src/license/` — 软糖铺授权：激活/续验/注销客户端、JWT 等级公钥验签与离线降级（接入契约见 `docs/soft-candy-integration-guide.md`，本地笔记见 `docs/soft-candy-zffmpeg-notes.md`）。
+- `src-tauri/src/license/` — 软糖铺授权：激活/续验/注销客户端、JWT 等级公钥验签与离线降级（接入契约见 `docs/remote-api/soft-candy-integration-guide.md`）。
 - `src-tauri/src/analytics/` — 埋点会话记录与上报（负载字段顺序对齐接入契约 4.1 示例，有测试锁定）。
 - `src-tauri/src/util/` — 通用工具（`platform.rs` 平台判定）。
 - 前端：`src/routes/` 5 页面、`src/store/`（Zustand）、`src/hooks/useEncodeEvents.ts`、`src/lib/tauri.ts`。

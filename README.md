@@ -2,8 +2,6 @@
 
 FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 19 + TypeScript + Tailwind v4）。
 
-<!-- TODO: 截图（编码页 / 队列页 / 历史页），发布前补充 -->
-
 ## 功能
 
 - **批量编码**：多文件入队，SQLite 持久化队列，自动推进、并发控制、失败重试，应用重启后任务不丢。

@@ -99,6 +99,8 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SOFTCANDY_API_BASE: ${{ vars.SOFTCANDY_API_BASE || secrets.SOFTCANDY_API_BASE }}
+          SOFTCANDY_BUY_URL: ${{ vars.SOFTCANDY_BUY_URL || secrets.SOFTCANDY_BUY_URL }}
 
       # Windows runner 默认 pwsh,这里强制 bash(collect 步骤为 bash 语法)
       # 注意:不用项目根 dist/(那是 Vite web 产物目录,会污染 release 资产),用独立 artifacts/

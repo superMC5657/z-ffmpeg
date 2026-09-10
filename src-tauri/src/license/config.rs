@@ -77,7 +77,27 @@ impl SoftCandyConfig {
             return Self::default();
         };
         match serde_json::from_value::<SoftCandyConfig>(value.clone()) {
-            Ok(cfg) => {
+            Ok(mut cfg) => {
+                if let Some(api) = option_env!("SOFTCANDY_API_BASE") {
+                    if !api.trim().is_empty() {
+                        cfg.api_base = api.trim().to_string();
+                    }
+                } else if let Ok(api) = std::env::var("SOFTCANDY_API_BASE") {
+                    if !api.trim().is_empty() {
+                        cfg.api_base = api.trim().to_string();
+                    }
+                }
+
+                if let Some(buy) = option_env!("SOFTCANDY_BUY_URL") {
+                    if !buy.trim().is_empty() {
+                        cfg.buy_url = buy.trim().to_string();
+                    }
+                } else if let Ok(buy) = std::env::var("SOFTCANDY_BUY_URL") {
+                    if !buy.trim().is_empty() {
+                        cfg.buy_url = buy.trim().to_string();
+                    }
+                }
+
                 log::info!(
                     "软糖铺配置加载完成: product={}, apiBase={}, level={}",
                     cfg.product,
