@@ -38,7 +38,7 @@ export default function SettingsPage() {
       <Card title="外观" description="浅色、深色或跟随系统，切换立即生效">
         <div className="flex items-center justify-between gap-4">
           <p className="text-[13px] leading-5 text-secondary">
-            深浅主题在标题栏与设置页均可切换，跟随系统时自动适配外观变化。
+            浅色、深色或跟随系统，跟随系统时自动适配外观变化。
           </p>
           <ThemeToggleButton />
         </div>
