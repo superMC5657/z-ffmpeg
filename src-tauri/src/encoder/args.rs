@@ -27,8 +27,8 @@ pub fn build_ffmpeg_args(
         // Encoder preset (value depends on the encoder — see encoder_preset_args)
         args.extend(encoder_preset_args(config));
 
-        // Rate control
-        args.extend(config.video_settings.rate_control.to_args());
+        // Rate control (mapped to encoder capabilities)
+        args.extend(rate_control_args(config, &encoder));
 
         // Profile
         if let Some(ref profile) = config.video_settings.profile {
@@ -172,6 +172,73 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
                 VideoCodec::VP9 => vec!["-cpu-used".into(), vp9_map(name).to_string()],
                 _ => vec!["-preset".into(), name.clone()],
             }
+        }
+    }
+}
+
+/// Map rate control configuration according to the target encoder.
+///
+/// Hardware and specialty software encoders have divergent rate control CLI options:
+/// - NVENC: does not support -crf; constant quality uses `-rc:v vbr -cq <val>`, CQP uses `-rc:v constqp -qp <val>`.
+/// - QSV: constant quality uses `-global_quality <val>`, CQP uses `-q:v <val>`.
+/// - AMF: CQP uses `-rc cqp -qp_i <val> -qp_p <val>`.
+/// - VAAPI: `-qp <val>`.
+/// - VideoToolbox: `-q:v <val>`.
+/// - libvpx-vp9: constant quality requires `-crf <val> -b:v 0`.
+/// - libsvtav1: does not support -qp; uses `-crf <val>`.
+/// - libx264 / libx265: standard `-crf <val>` or `-qp <val>`.
+fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
+    use crate::encoder::codec::RateControl;
+
+    match &config.video_settings.rate_control {
+        RateControl::Crf { value } => {
+            if encoder.contains("nvenc") {
+                vec!["-rc:v".into(), "vbr".into(), "-cq".into(), value.to_string()]
+            } else if encoder.contains("qsv") {
+                vec!["-global_quality".into(), value.to_string()]
+            } else if encoder.contains("amf") {
+                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
+            } else if encoder.contains("vaapi") {
+                vec!["-qp".into(), value.to_string()]
+            } else if encoder.contains("videotoolbox") {
+                vec!["-q:v".into(), value.to_string()]
+            } else if encoder == "libvpx-vp9" {
+                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
+            } else {
+                vec!["-crf".into(), value.to_string()]
+            }
+        }
+        RateControl::Cqp { value } => {
+            if encoder.contains("nvenc") {
+                vec!["-rc:v".into(), "constqp".into(), "-qp".into(), value.to_string()]
+            } else if encoder.contains("qsv") {
+                vec!["-q:v".into(), value.to_string()]
+            } else if encoder.contains("amf") {
+                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
+            } else if encoder.contains("vaapi") {
+                vec!["-qp".into(), value.to_string()]
+            } else if encoder.contains("videotoolbox") {
+                vec!["-q:v".into(), value.to_string()]
+            } else if encoder == "libsvtav1" {
+                vec!["-crf".into(), value.to_string()]
+            } else if encoder == "libvpx-vp9" {
+                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
+            } else {
+                vec!["-qp".into(), value.to_string()]
+            }
+        }
+        RateControl::Abr {
+            bitrate_kbps,
+            max_bitrate_kbps,
+        } => {
+            let mut args = vec!["-b:v".into(), format!("{}k", bitrate_kbps)];
+            if let Some(max) = max_bitrate_kbps {
+                args.push("-maxrate".into());
+                args.push(format!("{}k", max));
+                args.push("-bufsize".into());
+                args.push(format!("{}k", max * 2));
+            }
+            args
         }
     }
 }
@@ -354,7 +421,7 @@ mod tests {
             device_index: None,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_nvenc", "-preset", "p4", "-crf", "23"]);
+        assert_args_contain(&args, &["-c:v", "h264_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23"]);
     }
 
     #[test]
@@ -364,7 +431,7 @@ mod tests {
             device_index: None,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_qsv", "-preset", "medium"]);
+        assert_args_contain(&args, &["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "23"]);
     }
 
     #[test]
@@ -374,7 +441,7 @@ mod tests {
             device_index: None,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_amf", "-quality", "balanced"]);
+        assert_args_contain(&args, &["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "23", "-qp_p", "23"]);
     }
 
     #[test]
@@ -383,7 +450,7 @@ mod tests {
         config.video_codec = VideoCodec::AV1;
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
         // medium → 6
-        assert_args_contain(&args, &["-c:v", "libsvtav1", "-preset", "6"]);
+        assert_args_contain(&args, &["-c:v", "libsvtav1", "-preset", "6", "-crf", "23"]);
     }
 
     #[test]
@@ -391,8 +458,8 @@ mod tests {
         let mut config = sample_config();
         config.video_codec = VideoCodec::VP9;
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        // medium → 3
-        assert_args_contain(&args, &["-c:v", "libvpx-vp9", "-cpu-used", "3"]);
+        // medium → 3, VP9 requires -crf 23 -b:v 0
+        assert_args_contain(&args, &["-c:v", "libvpx-vp9", "-cpu-used", "3", "-crf", "23", "-b:v", "0"]);
     }
 
     #[test]
