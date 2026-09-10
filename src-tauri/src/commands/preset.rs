@@ -230,6 +230,10 @@ pub async fn import_preset(
         (value.clone(), String::new())
     };
 
+    // 校验 config 是否符合 EncodeConfig 结构，防止损坏或不兼容的配置入库
+    let _validated: crate::encoder::codec::EncodeConfig = serde_json::from_value(config.clone())
+        .map_err(|e| AppError::InvalidConfig(format!("预设编码配置解析失败: {e}")))?;
+
     let preset_name = if name.trim().is_empty() {
         value.get("name")
             .and_then(|n| n.as_str())

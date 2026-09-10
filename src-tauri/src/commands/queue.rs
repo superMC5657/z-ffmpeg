@@ -36,13 +36,16 @@ pub async fn add_to_queue(
     let pairs: Vec<(String, String)> = files.iter().cloned().zip(outputs).collect();
 
     // 入队前探测每个输入文件，预估压缩后的输出体积（Pending 状态即可展示）。
-    // 探测失败只影响预估，不阻塞入队。批量文件并行探测，避免串行等待；
+    // 探测失败只影响预估，不阻塞入队。通过 Semaphore 限制最大并发数为 4，避免文件过多造成进程风暴；
     // 每个任务携带自身索引，保证估算值与输入文件一一对应（join_next 不保序）。
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
     let mut probes = tokio::task::JoinSet::new();
     for (idx, input) in files.iter().enumerate() {
         let input = input.clone();
         let config = config.clone();
+        let sem = semaphore.clone();
         probes.spawn(async move {
+            let _permit = sem.acquire().await;
             let est = match probe::probe_file_async(&input).await {
                 Ok(json) => estimate::estimate_output_bytes(&config, &json),
                 Err(_) => None,

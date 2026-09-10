@@ -77,6 +77,18 @@ pub fn cancel_process(job_id: &str) -> bool {
     false
 }
 
+/// Kill all running encoding child processes (invoked on application exit).
+pub fn kill_all_processes() {
+    if let Some(map) = PROCESSES.get() {
+        if let Ok(mut map) = map.lock() {
+            for (_job_id, mut proc) in map.drain() {
+                proc.cancel.store(true, Ordering::Relaxed);
+                let _ = proc.child.kill();
+            }
+        }
+    }
+}
+
 /// Start encoding with progress reporting via Tauri events.
 /// The `cancel` flag can be set to true to request cancellation.
 pub fn start_encode(

@@ -157,8 +157,10 @@ fn build_segment_args(
     args.push("-i".into());
     args.push(distorted.into());
 
-    let w = info.width.max(2);
-    let h = info.height.max(2);
+    let mut w = info.width.max(2);
+    let mut h = info.height.max(2);
+    if w % 2 == 1 { w = w.saturating_sub(1).max(2); }
+    if h % 2 == 1 { h = h.saturating_sub(1).max(2); }
     let fps = if info.fps > 0.0 { format!("{:.3}", info.fps) } else { "30.0".to_string() };
     let filter = format!(
         "[0:v]fps={fps},scale={w}:{h}:flags=bicubic,format=yuv420p[ref];\

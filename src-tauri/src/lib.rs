@@ -140,8 +140,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building z-ffmpeg")
         .run(|app_handle, event| {
-            // 正常退出时一次性上报会话聚合埋点（失败静默，最多等 3s）
+            // 正常退出时清理运行中的子进程，并一次性上报会话聚合埋点（最多等 3s）
             if let tauri::RunEvent::ExitRequested { .. } = event {
+                encoder::engine::kill_all_processes();
                 analytics::report::report_on_exit(app_handle);
             }
         });

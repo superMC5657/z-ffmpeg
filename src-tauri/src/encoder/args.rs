@@ -42,10 +42,14 @@ pub fn build_ffmpeg_args(
             args.push(pix_fmt.clone());
         }
 
-        // Resolution scaling
+        // Resolution scaling (force even dimensions for chroma subsampling compatibility)
         if let Some(ref res) = config.video_settings.resolution {
+            let mut w = res.width.max(2);
+            let mut h = res.height.max(2);
+            if w % 2 == 1 { w = w.saturating_sub(1).max(2); }
+            if h % 2 == 1 { h = h.saturating_sub(1).max(2); }
             args.push("-vf".into());
-            args.push(format!("scale={}:{}", res.width, res.height));
+            args.push(format!("scale={}:{}", w, h));
         }
 
         // Frame rate
