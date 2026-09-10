@@ -176,12 +176,12 @@ fn install_from_url(
     let ffprobe_final = install_dir.join("ffprobe.exe");
     if let Err(e) = replace_file(&ffmpeg_tmp, &ffmpeg_final) {
         let _ = std::fs::remove_file(&ffmpeg_final);
-        return Err(e.into());
+        return Err(e);
     }
     if let Err(e) = replace_file(&ffprobe_tmp, &ffprobe_final) {
         let _ = std::fs::remove_file(&ffmpeg_final);
         let _ = std::fs::remove_file(&ffprobe_final);
-        return Err(e.into());
+        return Err(e);
     }
 
     // 4) 验证最终二进制可运行;失败则报错,由回退循环清理并换下一个源,

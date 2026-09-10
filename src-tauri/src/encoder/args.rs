@@ -28,7 +28,7 @@ pub fn build_ffmpeg_args(
         args.extend(encoder_preset_args(config));
 
         // Rate control (mapped to encoder capabilities)
-        args.extend(rate_control_args(config, &encoder));
+        args.extend(rate_control_args(config, encoder));
 
         // Profile
         if let Some(ref profile) = config.video_settings.profile {

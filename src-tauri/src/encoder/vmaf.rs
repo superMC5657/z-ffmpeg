@@ -191,6 +191,7 @@ fn parse_vmaf_log(text: &str) -> Option<f64> {
 
 /// 计算单段的 VMAF 得分（阻塞，调用方应处于 spawn_blocking 上下文）。
 /// ffmpeg 的 cwd 设为唯一的 `work_dir`，日志写相对文件名，避免路径转义问题。
+#[allow(clippy::too_many_arguments)]
 fn run_segment(
     ffmpeg_path: &Path,
     reference: &str,

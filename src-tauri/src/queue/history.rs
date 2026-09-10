@@ -152,9 +152,9 @@ impl QueueManager {
              FROM jobs WHERE {where_sql}
              ORDER BY completed_at DESC, created_at DESC"
         );
-        if limit.is_some() {
+        if let Some(limit_val) = limit {
             sql.push_str(" LIMIT ? OFFSET ?");
-            params.push(Box::new(limit.unwrap() as i64));
+            params.push(Box::new(limit_val as i64));
             params.push(Box::new(offset as i64));
         }
 

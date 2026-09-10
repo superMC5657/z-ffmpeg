@@ -174,6 +174,7 @@ impl AudioSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::upper_case_acronyms)]
 pub enum ContainerFormat {
     #[serde(rename = "MP4")]
     MP4,
@@ -205,6 +206,7 @@ pub struct HwAccelConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::upper_case_acronyms)]
 pub enum HwAccelDevice {
     #[serde(rename = "NVENC")]
     NVENC,

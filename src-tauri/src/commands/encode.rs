@@ -146,7 +146,7 @@ pub async fn save_command_to_file(
     state.license.ensure_pro("命令导出为文件")?;
 
     std::fs::write(&path, content)
-        .map_err(|e| AppError::Io(e))?;
+        .map_err(AppError::Io)?;
     crate::analytics::bump(&crate::analytics::COUNTERS.commands_exported, 1);
     log::info!("Saved command to file: {}", path);
     Ok(())

@@ -76,8 +76,10 @@ pub fn session_start() -> i64 {
     *SESSION_START.get_or_init(|| chrono::Utc::now().timestamp())
 }
 
+pub type SnapshotEntries = Vec<(String, u64)>;
+
 /// 读取 codecs / events 快照（上报用）
-pub fn snapshots() -> (Vec<(String, u64)>, Vec<(String, u64)>) {
+pub fn snapshots() -> (SnapshotEntries, SnapshotEntries) {
     let to_sorted = |m: &Mutex<HashMap<String, u64>>| {
         m.lock()
             .map(|m| {

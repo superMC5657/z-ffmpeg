@@ -167,9 +167,7 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
             .or_else(|| {
                 // 仅当存在音频流时按「容器总码率 − 视频流码率」近似（视频-only 文件
                 // 无音频流，不应误标）；直接用容器总码率会把视频也当成音频，Copy 预估虚高
-                if audio_stream.is_none() {
-                    return None;
-                }
+                audio_stream?;
                 let dur = duration?;
                 if dur <= 0.0 {
                     return None; // 防止 size*8/0 → inf → u64::MAX 污染预估

@@ -69,6 +69,7 @@ fn audio_json(codec: &str) -> serde_json::Value {
 }
 
 /// Helper for software presets
+#[allow(clippy::too_many_arguments)]
 fn p(
     id: &str, name: &str, desc: &str,
     codec: &str, preset: &str, rc: &str, value: u32,
@@ -194,7 +195,7 @@ pub async fn export_preset_to_file(
 
     let json = preset_export_json(&state, &id)?;
     std::fs::write(&path, json)
-        .map_err(|e| AppError::Io(e))?;
+        .map_err(AppError::Io)?;
     log::info!("Exported preset {} to {}", id, path);
     Ok(path)
 }

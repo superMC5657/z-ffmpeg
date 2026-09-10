@@ -37,6 +37,12 @@ jobs:
       - name: Typecheck
         run: pnpm exec tsc --noEmit
 
+      - name: Lint
+        run: pnpm lint
+
+      - name: Vitest
+        run: pnpm test --run
+
   # Rust 测试（browse 大小写/路径语义、授权验签、缓存/解码行为）
   # 跑在 windows-latest:应用仅发 Windows 包,大小写不敏感/winreg 等语义
   # 只在 Windows 下成立;test-images/ 已入库,测试资产随仓库走
@@ -47,6 +53,8 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -54,3 +62,6 @@ jobs:
 
       - name: Run cargo test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Run cargo clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
