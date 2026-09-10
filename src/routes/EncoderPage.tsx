@@ -3,10 +3,10 @@ import PageHeader from "@/components/layout/PageHeader";
 
 export default function EncoderPage() {
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
-        title="视频编码"
-        description="选择文件，配置编码参数，添加到队列转码"
+        title="工作台"
+        description="添加视频文件，配置编码引擎与画质参数，批量并行转码"
       />
       <EncoderPanel />
     </div>
