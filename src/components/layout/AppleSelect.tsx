@@ -14,7 +14,10 @@ export default function AppleSelect({ className, ...props }: AppleSelectProps) {
         className={cn(
           "h-9 w-full cursor-pointer appearance-none rounded-lg bg-fill py-0 pl-3 pr-8 text-[13px] text-foreground transition-colors",
           "hover:bg-fill-strong focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent",
-          "disabled:cursor-default disabled:opacity-50"
+          "disabled:cursor-default disabled:opacity-50",
+          "[color-scheme:light] dark:[color-scheme:dark]",
+          "[&>option]:bg-surface [&>option]:text-foreground dark:[&>option]:bg-[#232326] dark:[&>option]:text-[#f5f5f7]",
+          "[&>optgroup]:bg-surface [&>optgroup]:text-foreground dark:[&>optgroup]:bg-[#232326] dark:[&>optgroup]:text-[#f5f5f7]"
         )}
       />
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-tertiary" />

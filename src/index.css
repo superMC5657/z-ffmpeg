@@ -138,6 +138,26 @@
     font: inherit;
     color: inherit;
   }
+
+  select {
+    color-scheme: light;
+  }
+  .dark select,
+  html.dark select {
+    color-scheme: dark;
+  }
+  select option,
+  select optgroup {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+  .dark select option,
+  html.dark select option,
+  .dark select optgroup,
+  html.dark select optgroup {
+    background-color: #232326;
+    color: #f5f5f7;
+  }
 }
 
 /* 滚动条：macOS overlay 风格 */

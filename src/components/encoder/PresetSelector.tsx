@@ -47,20 +47,41 @@ export default function PresetSelector() {
     }
   }, [selectedPresetId, usablePresets]);
 
+  const builtinPresets = useMemo(
+    () => usablePresets.filter((p) => p.isBuiltin),
+    [usablePresets]
+  );
+  const customPresets = useMemo(
+    () => usablePresets.filter((p) => !p.isBuiltin),
+    [usablePresets]
+  );
+
   return (
     <AppleSelect
-      className="w-48"
+      className="w-52"
       value={selectedPresetId || ""}
       onChange={(e) => applyPreset(e.target.value)}
       aria-label="应用预设"
     >
       <option value="">选择预设…</option>
-      {usablePresets.map((p) => (
-        <option key={p.id} value={p.id}>
-          {p.name}
-          {p.isBuiltin ? "（内置）" : ""}
-        </option>
-      ))}
+      {builtinPresets.length > 0 && (
+        <optgroup label="内置推荐预设">
+          {builtinPresets.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {customPresets.length > 0 && (
+        <optgroup label="自定义预设">
+          {customPresets.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
     </AppleSelect>
   );
 }
