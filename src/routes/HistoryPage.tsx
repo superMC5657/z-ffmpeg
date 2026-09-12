@@ -200,32 +200,33 @@ export default function HistoryPage() {
         }
       />
 
-      {/* 筛选与搜索栏 */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SegmentedControl<StatusFilterValue>
-          value={query.status}
-          onChange={handleStatusChange}
-          options={STATUS_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-        />
-        <div className="relative ml-auto w-56">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-tertiary" />
-          <input
-            value={searchInput}
-            onChange={(e) => handleSearchInput(e.target.value)}
-            placeholder="搜索文件名…"
-            className="h-9 w-full rounded-[9px] bg-fill pl-8 pr-8 text-[13px] text-foreground outline-none placeholder:text-tertiary transition-shadow focus:ring-2 focus:ring-accent/30"
+      <div className="space-y-4">
+        {/* 筛选与搜索栏 */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SegmentedControl<StatusFilterValue>
+            value={query.status}
+            onChange={handleStatusChange}
+            options={STATUS_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
           />
-          {searchInput && (
-            <button
-              aria-label="清除搜索"
-              onClick={() => handleSearchInput("")}
-              className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-tertiary hover:bg-fill-strong hover:text-foreground"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          )}
+          <div className="relative ml-auto w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-tertiary" />
+            <input
+              value={searchInput}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              placeholder="搜索文件名…"
+              className="h-9 w-full rounded-[9px] bg-fill pl-8 pr-8 text-[13px] text-foreground outline-none placeholder:text-tertiary transition-shadow focus:ring-2 focus:ring-accent/30"
+            />
+            {searchInput && (
+              <button
+                aria-label="清除搜索"
+                onClick={() => handleSearchInput("")}
+                className="absolute right-2 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-tertiary hover:bg-fill-strong hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
       {loading ? (
         <div className="space-y-2">
@@ -381,6 +382,7 @@ export default function HistoryPage() {
         )}
         </>
       )}
+      </div>
     </div>
   );
 }

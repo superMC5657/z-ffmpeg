@@ -33,8 +33,8 @@ export default defineConfig({
   server: {
     // Tauri expects a fixed port, fail if that port is not available
     strictPort: true,
-    // Allow Tauri to access the dev server
-    host: true,
+    // Only listen on localhost
+    host: "localhost",
     port: 1430,
   },
 
