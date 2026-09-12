@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui-dev/nicegui/main/nicegui/static/tauri-v2/tauri.conf.json",
   "productName": "ZFFmpeg",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "identifier": "com.zffmpeg.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -20,7 +20,7 @@
         "minHeight": 600,
         "decorations": false,
         "center": true,
-        "zoomHotkeysEnabled": true
+        "zoomHotkeysEnabled": false
       }
     ],
     "security": {

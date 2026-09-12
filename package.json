@@ -1,19 +1,16 @@
 {
   "name": "z-ffmpeg",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "bump:version": "node scripts/bump-version.mjs --name z-ffmpeg",
+    "bump": "node scripts/bump-version.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "clean": "rm -rf dist && rm -rf src-tauri/target",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "clean": "rm -rf dist && rm -rf src-tauri/target"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

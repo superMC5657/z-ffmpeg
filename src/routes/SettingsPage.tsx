@@ -1,6 +1,7 @@
 import PageHeader from "@/components/layout/PageHeader";
 import Card from "@/components/layout/Card";
 import ThemeToggleButton from "@/components/layout/ThemeToggleButton";
+import ZoomControl from "@/components/settings/ZoomControl";
 import { useSystemStore } from "@/store/systemStore";
 import LicenseSection from "@/components/settings/LicenseSection";
 import QueueSection from "@/components/settings/QueueSection";
@@ -39,13 +40,28 @@ export default function SettingsPage() {
         <h2 className="px-1 text-[12px] font-semibold tracking-wider text-tertiary uppercase">
           外观与授权
         </h2>
-        {/* Appearance */}
-        <Card title="外观" description="浅色、深色或跟随系统，切换立即生效">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-[13px] leading-5 text-secondary">
-              浅色、深色或跟随系统，跟随系统时自动适配外观变化。
-            </p>
-            <ThemeToggleButton />
+        {/* Appearance & Zoom */}
+        <Card title="外观与显示" description="界面配色与显示缩放比例">
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">主题模式</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-secondary">
+                  浅色、深色或跟随系统，跟随系统时自动适配外观变化。
+                </p>
+              </div>
+              <ThemeToggleButton />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-t border-hairline pt-3.5">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">界面缩放</p>
+                <p className="mt-0.5 text-[12px] leading-5 text-secondary">
+                  调节界面显示与字体比例大小。已禁用原生 Ctrl +/- 快捷键改由此处统一控制。
+                </p>
+              </div>
+              <ZoomControl />
+            </div>
           </div>
         </Card>
 
