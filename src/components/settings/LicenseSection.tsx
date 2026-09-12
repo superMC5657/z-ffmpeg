@@ -74,8 +74,7 @@ export default function LicenseSection() {
         )}
         {!isPro && (
           <p className="text-[12px] leading-5 text-secondary">
-            免费版包含全部基础编码功能；硬件加速、VMAF 质量对比、预设导入导出、
-            命令导出为文件、并发 1-16 等进阶功能需要激活 Pro。
+            免费版包含全部基础编码、硬件加速、并发调度与预设管理功能；VMAF 质量对比、命令导出为脚本文件需要激活 Pro。
           </p>
         )}
         {isPro && (

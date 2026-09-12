@@ -2,8 +2,8 @@ import { create } from "zustand";
 import type { LicenseStatus } from "@/types";
 import { getLicenseStatus, activateLicense, deactivateLicense } from "@/lib/tauri";
 
-/** 免费版并发数上限（与后端 config::FREE_MAX_CONCURRENT 对齐） */
-export const FREE_MAX_CONCURRENT = 2;
+/** 免费版并发数上限（与后端 config::FREE_MAX_CONCURRENT 对齐，开放至 16） */
+export const FREE_MAX_CONCURRENT = 16;
 
 interface LicenseState {
   status: LicenseStatus | null;

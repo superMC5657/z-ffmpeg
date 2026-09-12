@@ -10,8 +10,8 @@ use std::collections::HashMap;
 
 use serde::Deserialize;
 
-/// 免费版允许的最大并发编码任务数
-pub const FREE_MAX_CONCURRENT: usize = 2;
+/// 免费版允许的最大并发编码任务数（统一开放至 16）
+pub const FREE_MAX_CONCURRENT: usize = 16;
 
 /// 在线请求统一超时（契约约定 10s，避免对话框永久卡死）
 pub const HTTP_TIMEOUT_SECS: u64 = 10;

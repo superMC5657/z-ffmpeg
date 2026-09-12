@@ -105,6 +105,6 @@ describe("licenseStore", () => {
   });
 
   it("FREE_MAX_CONCURRENT matches the backend constant", () => {
-    expect(FREE_MAX_CONCURRENT).toBe(2);
+    expect(FREE_MAX_CONCURRENT).toBe(16);
   });
 });

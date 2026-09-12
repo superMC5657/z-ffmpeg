@@ -3,8 +3,6 @@ import { Cpu, Zap, Film, Sparkles, Clapperboard, Globe } from "lucide-react";
 import type { VideoCodec, ContainerFormat, HwAccelDevice } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useSystemStore } from "@/store/systemStore";
-import { useLicenseStore } from "@/store/licenseStore";
-import { ProBadge } from "@/components/license/ProGate";
 import SegmentedControl from "@/components/layout/SegmentedControl";
 import { cn } from "@/lib/utils";
 
@@ -37,8 +35,6 @@ export default function EngineSelector() {
 
   const hwList = useSystemStore((s) => s.hwAccels);
   const fetchHwAccels = useSystemStore((s) => s.fetchHwAccels);
-  const isPro = useLicenseStore((s) => s.status?.pro === true);
-  const setActivationOpen = useLicenseStore((s) => s.setActivationOpen);
 
   useEffect(() => {
     fetchHwAccels();
@@ -49,10 +45,6 @@ export default function EngineSelector() {
   const handleSelectHw = (device: HwAccelDevice | null) => {
     if (device === null) {
       setHwAccel(null);
-      return;
-    }
-    if (!isPro) {
-      setActivationOpen(true);
       return;
     }
     setHwAccel({ device, deviceIndex: null });
@@ -129,7 +121,6 @@ export default function EngineSelector() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 text-[13px] font-bold text-foreground">
                     <span className="truncate">{hw.device}</span>
-                    {!isPro && <ProBadge />}
                   </div>
                   <div className="truncate text-[11px] text-secondary">
                     GPU 极速硬件加速

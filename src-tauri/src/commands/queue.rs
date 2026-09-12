@@ -197,7 +197,6 @@ pub async fn get_max_concurrent(
 }
 
 /// Set the max concurrent encoding jobs limit (clamped to 1..=16, persisted).
-/// 免费版进一步 clamp 到 1..=2。
 #[tauri::command]
 pub async fn set_max_concurrent(
     state: State<'_, crate::AppState>,
@@ -209,13 +208,9 @@ pub async fn set_max_concurrent(
     Ok(queue.set_max_concurrent(value.min(cap)))
 }
 
-/// 免费版 / Pro 的并发数上限
-fn concurrency_cap(license: &crate::license::LicenseManager) -> usize {
-    if license.is_pro() {
-        16
-    } else {
-        crate::license::config::FREE_MAX_CONCURRENT
-    }
+/// 并发数上限（统一支持 1..=16）
+fn concurrency_cap(_license: &crate::license::LicenseManager) -> usize {
+    crate::license::config::FREE_MAX_CONCURRENT
 }
 
 /// 队列变更后统一广播快照（7 个命令此前重复同一两行）

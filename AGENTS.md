@@ -24,7 +24,7 @@ CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流
 - `src-tauri/src/queue/` — `QueueManager`：SQLite 队列、自动推进、并发、重试；`settings.rs` 为 settings 表存储层。DB 在 `{app_data_dir}/queue.db`（Tauri appDataDir，Windows = `%APPDATA%\com.zffmpeg.app`）。
 - `src-tauri/src/preset/` — 内置预设（`commands/preset.rs`，18 个只读）+ 自定义预设（presets.db，JSON 导入导出）。
 - `src-tauri/src/ffmpeg/` — `library.rs` PATH 检测、`mod.rs` 的 `hidden_command()`（Windows 隐藏控制台窗口）。
-- `src-tauri/src/license/` — 软糖铺授权：激活/续验/注销客户端、JWT 等级公钥验签与离线降级（接入契约见 `docs/remote-api/soft-candy-integration-guide.md`）。
+- `src-tauri/src/license/` — 软糖铺授权：激活/续验/注销客户端、JWT 等级公钥验签与离线降级（接入契约见 `docs/remote-api/soft-candy-integration-guide.md`）。Pro 门控收敛为两项：VMAF 画质评分对比（`commands/vmaf.rs`）与命令导出为脚本文件（`commands/encode.rs` 中的 `save_command_to_file`）；硬件加速、1~16 并发、预设导入导出等已完全放开给免费版。
 - `src-tauri/src/analytics/` — 埋点会话记录与上报（负载字段顺序对齐接入契约 4.1 示例，有测试锁定）。
 - `src-tauri/src/util/` — 通用工具（`platform.rs` 平台判定）。
 - 前端：`src/routes/` 5 页面、`src/store/`（Zustand）、`src/hooks/useEncodeEvents.ts`、`src/lib/tauri.ts`。
@@ -34,6 +34,7 @@ CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流
 - 命令返回 `AppResult<T>`；错误序列化为字符串供前端直接展示。
 - Rust `pub` 结构体统一 `#[serde(rename_all = "camelCase")]`，对齐 `src/types/index.ts`。
 - 进度事件走 Tauri emit → store；UI 文案为中文；release profile 为体积优化，勿改。
+- Pro 门控边界：仅 VMAF 质量评分对比与命令导出为文件需要 Pro 授权，其他功能（硬件加速、1~16 任务并发、预设导入导出等）保持免费，不要随意扩大付费门控面。
 
 ## Agent skills
 
