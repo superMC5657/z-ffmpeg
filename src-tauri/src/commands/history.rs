@@ -86,7 +86,6 @@ pub async fn delete_history(
         None => return Ok(()),
     };
     queue.delete_history(&ids);
-    log::info!("Deleted {} history entries", ids.len());
     Ok(())
 }
 
@@ -100,6 +99,5 @@ pub async fn clear_history(
         None => return Ok(()),
     };
     queue.clear_history();
-    log::info!("Cleared all history entries");
     Ok(())
 }

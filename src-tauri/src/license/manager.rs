@@ -120,12 +120,10 @@ impl LicenseManager {
     }
 
     fn save_stored(&self, stored: &StoredLicense) {
-        if let Err(e) = std::fs::write(
+        let _ = std::fs::write(
             self.license_path(),
             serde_json::to_string_pretty(stored).unwrap_or_default(),
-        ) {
-            log::error!("保存 license.json 失败: {e}");
-        }
+        );
     }
 
     fn delete_stored(&self) {
@@ -137,22 +135,16 @@ impl LicenseManager {
         let Some(stored) = self.load_stored() else {
             return;
         };
-        match self.offline_verify(&stored.license) {
-            Ok(claims) => {
-                log::info!("本地授权验签通过（离线模式），等级: {:?}", claims.level);
-                *self.state.write() = LicenseState::Pro(ProInfo {
-                    code: stored.code,
-                    email: claims.email.unwrap_or(stored.email),
-                    level_label: claims.level_label,
-                    expires_at: exp_to_rfc3339(claims.exp.unwrap_or(0)),
-                    exp: claims.exp.unwrap_or(0),
-                    features: claims.features,
-                    offline: true,
-                });
-            }
-            Err(e) => {
-                log::info!("本地授权验签未通过，按免费版处理: {e}");
-            }
+        if let Ok(claims) = self.offline_verify(&stored.license) {
+            *self.state.write() = LicenseState::Pro(ProInfo {
+                code: stored.code,
+                email: claims.email.unwrap_or(stored.email),
+                level_label: claims.level_label,
+                expires_at: exp_to_rfc3339(claims.exp.unwrap_or(0)),
+                exp: claims.exp.unwrap_or(0),
+                features: claims.features,
+                offline: true,
+            });
         }
     }
 
@@ -290,14 +282,12 @@ impl LicenseManager {
         };
         // 激活成功后本地验签一次：公钥不匹配等问题当场暴露
         let claims = self.offline_verify(&stored.license).map_err(|e| {
-            log::error!("激活返回的令牌本地验签失败: {e}");
             LicenseFlowError::Network(format!("激活返回的令牌验签失败: {e}"))
         })?;
 
         *self.state.write() =
             LicenseState::Pro(Self::claims_to_pro_info(&claims, &stored, false));
         self.save_stored(&stored);
-        log::info!("激活成功，令牌到期: {}", resp.expires_at);
 
         Ok(self.status())
     }
@@ -329,28 +319,23 @@ impl LicenseManager {
                         *self.state.write() =
                             LicenseState::Pro(Self::claims_to_pro_info(&claims, &new_stored, false));
                         self.save_stored(&new_stored);
-                        log::info!("在线续验成功，令牌到期: {}", resp.expires_at);
                         Ok(true)
                     }
                     Err(e) => {
-                        log::error!("续验返回的新令牌本地验签失败: {e}");
                         Err(LicenseFlowError::Network(format!("新令牌验签失败: {e}")))
                     }
                 }
             }
-            Err(LicenseFlowError::Network(m)) => {
-                log::warn!("在线续验网络失败，按离线宽限期继续: {m}");
+            Err(LicenseFlowError::Network(_)) => {
                 Ok(false)
             }
             Err(LicenseFlowError::Api(api)) => {
                 if matches!(api.code.as_str(), "CDK_REVOKED" | "DEVICE_NOT_ACTIVATED" | "INVALID_SIGNATURE") {
-                    log::warn!("授权已失效（{}），删除本地凭证并降级免费版", api.code);
                     *self.state.write() = LicenseState::Free;
                     self.delete_stored();
                     Err(LicenseFlowError::Api(api))
                 } else {
                     // EMAIL_MISMATCH 等其他错误：旧版本令牌场景，保留凭证等待重新激活
-                    log::warn!("在线续验返回 {}，保留本地凭证", api.code);
                     Ok(false)
                 }
             }
@@ -368,8 +353,6 @@ impl LicenseManager {
         client::deactivate(&self.config.deactivate_url(), &stored.code, &self.device_id, &stored.email)?;
         *self.state.write() = LicenseState::Free;
         self.delete_stored();
-        log::info!("注销激活成功，已释放设备名额");
-
         Ok(self.status())
     }
 
@@ -383,13 +366,7 @@ impl LicenseManager {
             loop {
                 if manager.config.online_enabled() {
                     let m = manager.clone();
-                    let result = tauri::async_runtime::spawn_blocking(move || m.verify_online()).await;
-                    match result {
-                        Ok(Ok(true)) => log::info!("周期续验: 令牌已更新"),
-                        Ok(Ok(false)) => log::info!("周期续验: 网络不可用或跳过，保持离线宽限期"),
-                        Ok(Err(e)) => log::warn!("周期续验: 授权失效: {e}"),
-                        Err(e) => log::error!("周期续验任务异常: {e}"),
-                    }
+                    let _ = tauri::async_runtime::spawn_blocking(move || m.verify_online()).await;
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
             }

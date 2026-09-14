@@ -62,7 +62,6 @@ impl QueueManager {
 
         let max_concurrent = settings::load_usize(&db, SETTINGS_KEY_MAX_CONCURRENT)
             .unwrap_or(DEFAULT_MAX_CONCURRENT);
-        log::info!("QueueManager: {} restored jobs, max_concurrent={}", Self::load_jobs(&db).len(), max_concurrent);
 
         Ok(Arc::new(Self {
             jobs: RwLock::new(VecDeque::from(Self::load_jobs(&db))),
@@ -164,7 +163,6 @@ impl QueueManager {
             ids.push(job.id.clone());
             jobs.push_back(job);
         }
-        log::info!("Queue: added {} jobs", ids.len());
         ids
     }
 
@@ -222,7 +220,7 @@ impl QueueManager {
             flag.store(true, Ordering::Relaxed);
         }
         // 2. Kill the underlying ffmpeg process if it is already running
-        let killed = crate::encoder::engine::cancel_process(job_id);
+        crate::encoder::engine::cancel_process(job_id);
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
             if job.status == JobStatus::Pending || job.status == JobStatus::Encoding {
@@ -231,13 +229,6 @@ impl QueueManager {
                 self.save_job(job);
                 crate::analytics::bump(&crate::analytics::COUNTERS.encode_cancelled, 1);
             }
-        }
-
-        if !killed {
-            log::warn!(
-                "cancel_job: no ffmpeg process registered yet for {}; cancel flag set so the job will not start",
-                job_id
-            );
         }
     }
 
@@ -308,16 +299,11 @@ impl QueueManager {
     /// 队列级暂停：暂停自动调度（正在编码的任务继续到结束）。
     pub fn pause_queue(&self) {
         *self.paused.write() = true;
-        log::info!("Queue: paused (auto-advance disabled)");
     }
 
     /// 解除队列暂停。返回解除前的状态，方便调用方判断是否需要重新拉起调度。
     pub fn resume_queue(&self) -> bool {
-        let was = std::mem::replace(&mut *self.paused.write(), false);
-        if was {
-            log::info!("Queue: resumed");
-        }
-        was
+        std::mem::replace(&mut *self.paused.write(), false)
     }
 
     pub fn is_paused(&self) -> bool {
@@ -359,7 +345,6 @@ impl QueueManager {
         let clamped = value.clamp(1, 16);
         *self.max_concurrent.write() = clamped;
         self.set_setting_usize(SETTINGS_KEY_MAX_CONCURRENT, clamped);
-        log::info!("Queue: max_concurrent set to {}", clamped);
         clamped
     }
 
@@ -373,7 +358,6 @@ impl QueueManager {
 
         tokio::spawn(async move {
             let _guard = qm.processing.lock().await;
-            let mut started = 0usize;
 
             while qm.can_start() {
                 let job = match qm.dequeue_next() {
@@ -385,7 +369,6 @@ impl QueueManager {
                 let config = match &job.config {
                     Some(c) => c.clone(),
                     None => {
-                        log::error!("Job {} has no config", job_id);
                         qm.complete_job(&job_id, false, Some("Missing config".into()));
                         continue;
                     }
@@ -408,8 +391,6 @@ impl QueueManager {
 
                 // Spawn encoding on blocking thread
                 tokio::task::spawn_blocking(move || {
-                    log::info!("Queue executing job: {}", job_id);
-
                     // Run the encoding engine; surface its error instead of the
                     // misleading "Output file not created" for every failure.
                     let result = engine::start_encode(
@@ -448,13 +429,6 @@ impl QueueManager {
                     // Auto-advance: process next pending job
                     manager.process_queue(app.clone());
                 });
-
-                started += 1;
-            }
-
-            if started == 0 {
-                log::debug!("Queue: no jobs to process (active={})",
-                    *qm.active_count.read());
             }
         });
     }

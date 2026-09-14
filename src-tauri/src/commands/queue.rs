@@ -13,8 +13,6 @@ pub async fn add_to_queue(
     config: EncodeConfig,
     output_dir: Option<String>,
 ) -> AppResult<Vec<String>> {
-    log::info!("add_to_queue: {} files", files.len());
-
     // 埋点：入队规模、编码器分布、硬件加速使用
     crate::analytics::bump(&crate::analytics::COUNTERS.files_added, files.len() as u64);
     crate::analytics::bump(&crate::analytics::COUNTERS.jobs_added, files.len() as u64);
@@ -72,7 +70,6 @@ pub async fn start_queue(
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
     if let Some(queue) = state.queue_manager.as_ref() {
-        log::info!("start_queue: user triggered processing");
         queue.process_queue(app_handle);
     }
     Ok(())

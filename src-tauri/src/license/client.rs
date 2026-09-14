@@ -5,19 +5,17 @@ use serde_json::{json, Value};
 
 use super::config::HTTP_TIMEOUT_SECS;
 
-/// 服务端返回的授权响应（activate 成功）。等级显示名以 JWT 内
-/// `levelLabel` claim 为准（验签覆盖），响应体同名字段无人消费，已删除。
+/// 服务端返回的授权响应（activate 成功）。等级显示名与到期时间以 JWT 内
+/// claims 为准（验签覆盖），响应体对应字段无人消费。
 #[derive(Debug, Clone)]
 pub struct ActivateResponse {
     pub license: String,
-    pub expires_at: String,
 }
 
 /// 服务端返回的续验响应（verify 成功）
 #[derive(Debug, Clone)]
 pub struct VerifyResponse {
     pub license: String,
-    pub expires_at: String,
 }
 
 /// 带错误码的接口错误（用于映射中文文案）
@@ -123,11 +121,6 @@ pub fn activate(
             .and_then(|v| v.as_str())
             .ok_or(super::manager::LicenseFlowError::Network("响应缺少 license 字段".into()))?
             .to_string(),
-        expires_at: value
-            .get("expiresAt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
     })
 }
 
@@ -151,11 +144,6 @@ pub fn verify(url: &str, device_id: &str, license: &str, email: &str) -> Result<
             .get("license")
             .and_then(|v| v.as_str())
             .ok_or(super::manager::LicenseFlowError::Network("响应缺少 license 字段".into()))?
-            .to_string(),
-        expires_at: value
-            .get("expiresAt")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
             .to_string(),
     })
 }

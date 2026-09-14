@@ -139,7 +139,6 @@ pub async fn load_presets(state: State<'_, crate::AppState>) -> AppResult<Vec<Pr
 /// Delete a custom preset by id.
 #[tauri::command]
 pub async fn delete_preset(state: State<'_, crate::AppState>, id: String) -> AppResult<()> {
-    log::info!("Delete preset: {}", id);
     match state.preset_manager.as_ref() {
         Some(m) => m.delete(&id),
         None => Ok(()),
@@ -192,7 +191,6 @@ pub async fn export_preset_to_file(
     let json = preset_export_json(&state, &id)?;
     std::fs::write(&path, json)
         .map_err(AppError::Io)?;
-    log::info!("Exported preset {} to {}", id, path);
     Ok(path)
 }
 
@@ -252,7 +250,6 @@ pub async fn import_preset(
         updated_at: now,
     };
     manager.insert(&preset)?;
-    log::info!("Imported preset: {}", preset.name);
     Ok(preset)
 }
 

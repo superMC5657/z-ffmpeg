@@ -73,7 +73,6 @@ impl SoftCandyConfig {
     /// 从 Tauri 运行时配置解析 `plugins.softcandy`；区块缺失 = 默认配置（不联网）。
     pub fn from_tauri(config: &tauri::Config) -> Self {
         let Some(value) = config.plugins.0.get("softcandy") else {
-            log::info!("tauri.conf.json 未配置 plugins.softcandy，授权/埋点均不联网");
             return Self::default();
         };
         match serde_json::from_value::<SoftCandyConfig>(value.clone()) {
@@ -98,18 +97,9 @@ impl SoftCandyConfig {
                     }
                 }
 
-                log::info!(
-                    "软糖铺配置加载完成: product={}, apiBase={}, level={}",
-                    cfg.product,
-                    cfg.api_base,
-                    cfg.license_level
-                );
                 cfg
             }
-            Err(e) => {
-                log::error!("plugins.softcandy 配置解析失败，按未配置处理: {e}");
-                Self::default()
-            }
+            Err(_) => Self::default(),
         }
     }
 

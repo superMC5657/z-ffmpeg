@@ -1,6 +1,6 @@
 //! 埋点负载组装与退出时一次性上报。
 //!
-//! 契约约定（接入指南 4.5 节）：失败静默（仅记本地日志）、不重试不弹窗、
+//! 契约约定（接入指南 4.5 节）：失败静默、不重试不弹窗、
 //! 会话结束时一次性上报避免高频小请求（服务端限流 60 次/分钟/产品/IP）。
 
 use std::sync::atomic::Ordering;
@@ -60,7 +60,7 @@ fn os_name() -> String {
         .unwrap_or_else(|| std::env::consts::OS.to_string())
 }
 
-/// 退出时上报：起独立线程发送，最多等 3 秒，超时/失败仅记日志。
+/// 退出时上报：起独立线程发送，最多等 3 秒，超时/失败静默处理。
 /// 模块级守卫保证单次（ExitRequested 可能多次触发）。
 pub fn report_on_exit(app: &tauri::AppHandle) {
     static REPORT_TRIGGERED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -93,18 +93,12 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
     let token = cfg.analytics_token.clone();
     let url = cfg.analytics_url();
     std::thread::spawn(move || {
-        let result = send_blocking(&url, &token, &payload);
-        match result {
-            Ok(()) => log::info!("埋点会话上报完成"),
-            Err(e) => log::warn!("埋点会话上报失败（静默忽略）: {e}"),
-        }
+        let _ = send_blocking(&url, &token, &payload);
         let _ = tx.send(());
     });
 
     let wait = std::time::Duration::from_secs(3);
-    if rx.recv_timeout(wait).is_err() {
-        log::warn!("埋点上报超时（{}s），放弃等待", wait.as_secs());
-    }
+    let _ = rx.recv_timeout(wait);
 }
 
 /// 阻塞 POST 上报（Bearer token 按产品配置决定是否携带）

@@ -140,7 +140,6 @@ fn install_from_sources(
         match install_one(url) {
             Ok(()) => return Ok(()),
             Err(e) => {
-                log::warn!("FFmpeg 下载源 {} 失败: {}", url, e);
                 errors.push(format!("{url}: {e}"));
                 cleanup_source();
             }

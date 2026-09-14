@@ -117,7 +117,6 @@ pub fn start_encode(
     // only registered in PROCESSES after spawn, so cancel_process can't find it
     // yet). Honour the flag here so the encode never starts at all.
     if cancel.load(Ordering::Relaxed) {
-        log::info!("Encoding cancelled before start: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
@@ -126,7 +125,6 @@ pub fn start_encode(
     }
 
     let args = build_ffmpeg_args(&config, &input_path, &output_path);
-    log::info!("Running ffmpeg: {} {}", ffmpeg_path.display(), args.join(" "));
 
     // First, probe to get total duration for percentage calculation
     let total_duration = match probe_file(&input_path) {
@@ -185,7 +183,6 @@ pub fn start_encode(
             let _ = proc.child.wait();
         }
         let _ = std::fs::remove_file(&output_path);
-        log::info!("Encoding cancelled during probe/spawn: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
@@ -288,7 +285,6 @@ pub fn start_encode(
 
     if cancel.load(Ordering::Relaxed) {
         let _ = std::fs::remove_file(&output_path);
-        log::info!("Encoding cancelled: {}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, elapsed.as_secs_f64()),
@@ -301,8 +297,6 @@ pub fn start_encode(
             let output_size = std::fs::metadata(&output_path)
                 .map(|m| m.len())
                 .unwrap_or(0);
-
-            log::info!("Encoding completed: {} in {:?}", job_id, elapsed);
 
             let _ = app_handle.emit(
                 "encode://complete",
@@ -321,7 +315,6 @@ pub fn start_encode(
         }
         _ => {
             let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
-            log::error!("Encoding failed: {} (exit code: {})", job_id, exit_code);
 
             // Clean up partial output file on error
             let _ = std::fs::remove_file(&output_path);

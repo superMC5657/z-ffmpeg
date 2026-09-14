@@ -57,8 +57,6 @@ pub async fn start_encode(
     output_path: String,
     job_id: String,
 ) -> AppResult<()> {
-    log::info!("start_encode: {} -> {} (job: {})", input_path, output_path, job_id);
-
     let cancel = Arc::new(AtomicBool::new(false));
 
     let app_handle_clone = app_handle.clone();
@@ -70,19 +68,14 @@ pub async fn start_encode(
 
     // Run encoding in a blocking thread
     tokio::task::spawn_blocking(move || {
-        match engine::start_encode(
+        let _ = engine::start_encode(
             app_handle_clone,
             job_id_clone,
             config_clone,
             input_path_clone,
             output_path_clone,
             cancel_clone,
-        ) {
-            Ok(()) => {}
-            Err(e) => {
-                log::error!("Encoding error: {:?}", e);
-            }
-        }
+        );
     })
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -94,14 +87,7 @@ pub async fn start_encode(
 pub async fn cancel_encode(
     job_id: String,
 ) -> AppResult<()> {
-    log::info!("cancel_encode: {}", job_id);
-
-    if engine::cancel_process(&job_id) {
-        log::info!("Cancellation signal sent to ffmpeg process {}", job_id);
-    } else {
-        log::warn!("No active ffmpeg process found for job {}", job_id);
-    }
-
+    let _ = engine::cancel_process(&job_id);
     Ok(())
 }
 
@@ -123,7 +109,6 @@ pub async fn build_ffmpeg_commands(
         .zip(outputs.iter())
         .map(|(f, out)| args::build_ffmpeg_command_line(&config, f, out))
         .collect();
-    log::info!("Built {} ffmpeg command preview(s)", cmds.len());
     Ok(cmds)
 }
 
@@ -140,7 +125,6 @@ pub async fn save_command_to_file(
     std::fs::write(&path, content)
         .map_err(AppError::Io)?;
     crate::analytics::bump(&crate::analytics::COUNTERS.commands_exported, 1);
-    log::info!("Saved command to file: {}", path);
     Ok(())
 }
 

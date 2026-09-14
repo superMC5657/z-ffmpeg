@@ -41,19 +41,7 @@ pub async fn compute_vmaf(
     }
 
     // 0 = 全量，1..=32 = 采样段数
-    let raw_segments = segments;
     let segments = segments.clamp(0, MAX_VMAF_SEGMENTS);
-    if raw_segments != segments {
-        log::warn!("compute_vmaf: segments={} 越界，已收敛为 {}", raw_segments, segments);
-    }
-
-    log::info!(
-        "compute_vmaf: {} segments={} (ref={}, dist={})",
-        job_id,
-        segments,
-        input_path,
-        output_path
-    );
 
     let input = input_path.clone();
     let output = output_path.clone();
@@ -70,8 +58,6 @@ pub async fn compute_vmaf(
     })
     .await
     .map_err(|e| crate::error::AppError::Internal(e.to_string()))??;
-
-    log::info!("compute_vmaf: {} average={}", job_id, result.average_score);
 
     // 持久化平均分 + 各段明细（含模式标记，供前端区分全量/采样展示）
     let detail = serde_json::json!({
@@ -110,6 +96,5 @@ pub async fn set_vmaf_segments(
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
     let value = value.clamp(0, MAX_VMAF_SEGMENTS);
     queue.set_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS, value);
-    log::info!("set_vmaf_segments: {}", value);
     Ok(value)
 }
