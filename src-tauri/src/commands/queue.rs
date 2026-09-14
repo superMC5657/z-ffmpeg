@@ -15,9 +15,6 @@ pub async fn add_to_queue(
 ) -> AppResult<Vec<String>> {
     log::info!("add_to_queue: {} files", files.len());
 
-    // Pro 门控：硬件加速 / 高级参数透传（后端强制，前端绕不过）
-    crate::commands::ensure_config_allowed(&state.license, &config)?;
-
     // 埋点：入队规模、编码器分布、硬件加速使用
     crate::analytics::bump(&crate::analytics::COUNTERS.files_added, files.len() as u64);
     crate::analytics::bump(&crate::analytics::COUNTERS.jobs_added, files.len() as u64);

@@ -1,9 +1,11 @@
 import { Trash2, Download, Check, Ban } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
 import type { HwAccelDevice, Preset } from "@/types";
 import { usePresetStore } from "@/store/presetStore";
 import { useSystemStore } from "@/store/systemStore";
 import { useToastStore } from "@/store/toastStore";
 import { useEncoderStore } from "@/store/encoderStore";
+import { exportPresetToFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 interface PresetCardProps {
@@ -24,7 +26,6 @@ export default function PresetCard({ preset }: PresetCardProps) {
   const isSelected = selectedPresetId === preset.id;
 
   const handleExport = async () => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
     const path = await save({
       defaultPath: `${preset.name}.json`,
       filters: [{ name: "JSON", extensions: ["json"] }],
@@ -32,7 +33,6 @@ export default function PresetCard({ preset }: PresetCardProps) {
     if (!path) return; // 用户取消
 
     try {
-      const { exportPresetToFile } = await import("@/lib/tauri");
       await exportPresetToFile(preset.id, path);
       useToastStore.getState().showToast(
         `已导出到 ${path}`,

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Upload } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import PresetPanel from "@/components/preset/PresetPanel";
 import ImportPresetDialog from "@/components/preset/ImportPresetDialog";
 import PageHeader from "@/components/layout/PageHeader";
@@ -23,13 +25,11 @@ export default function PresetsPage() {
 
   const handleImport = async () => {
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const result = await open({
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!result) return;
       const path = typeof result === "string" ? result : (result as { path: string }).path;
-      const { readTextFile } = await import("@tauri-apps/plugin-fs");
       const content = await readTextFile(path);
       setPendingImport({ content, defaultName: defaultNameFromPath(path) });
     } catch {

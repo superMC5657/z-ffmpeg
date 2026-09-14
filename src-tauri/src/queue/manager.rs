@@ -60,21 +60,6 @@ impl QueueManager {
             );"
         ).map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
 
-        // 迁移：老库无 estimated_output_size / vmaf 列，补上（列已存在时 ALTER 报错属预期）
-        for stmt in [
-            "ALTER TABLE jobs ADD COLUMN input_size INTEGER",
-            "ALTER TABLE jobs ADD COLUMN estimated_output_size INTEGER",
-            "ALTER TABLE jobs ADD COLUMN output_size INTEGER",
-            "ALTER TABLE jobs ADD COLUMN vmaf_score REAL",
-            "ALTER TABLE jobs ADD COLUMN vmaf_detail TEXT",
-        ] {
-            if let Err(e) = db.execute(stmt, []) {
-                if !e.to_string().contains("duplicate column") {
-                    log::warn!("DB migration {stmt:?} failed: {e}");
-                }
-            }
-        }
-
         let max_concurrent = settings::load_usize(&db, SETTINGS_KEY_MAX_CONCURRENT)
             .unwrap_or(DEFAULT_MAX_CONCURRENT);
         log::info!("QueueManager: {} restored jobs, max_concurrent={}", Self::load_jobs(&db).len(), max_concurrent);

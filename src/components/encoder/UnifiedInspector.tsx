@@ -18,6 +18,7 @@ import { useToastStore } from "@/store/toastStore";
 import { useNavigate } from "react-router-dom";
 import { isTauriRuntime, cn } from "@/lib/utils";
 import { buildFfmpegCommands } from "@/lib/tauri";
+import { open } from "@tauri-apps/plugin-dialog";
 import EngineSelector from "./EngineSelector";
 import PresetSelector from "./PresetSelector";
 import SavePresetDialog from "./SavePresetDialog";
@@ -85,7 +86,6 @@ export default function UnifiedInspector() {
   const handleSelectOutputDir = async () => {
     if (!isTauriRuntime()) return;
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected === "string" && selected) {
         setOutputDir(selected);

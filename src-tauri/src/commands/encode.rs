@@ -52,15 +52,11 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
 #[tauri::command]
 pub async fn start_encode(
     app_handle: tauri::AppHandle,
-    _state: tauri::State<'_, crate::AppState>,
     config: EncodeConfig,
     input_path: String,
     output_path: String,
     job_id: String,
 ) -> AppResult<()> {
-    // Pro 门控：硬件加速 / 高级参数透传（后端强制，前端绕不过）
-    crate::commands::ensure_config_allowed(&_state.license, &config)?;
-
     log::info!("start_encode: {} -> {} (job: {})", input_path, output_path, job_id);
 
     let cancel = Arc::new(AtomicBool::new(false));
@@ -96,7 +92,6 @@ pub async fn start_encode(
 
 #[tauri::command]
 pub async fn cancel_encode(
-    _state: tauri::State<'_, crate::AppState>,
     job_id: String,
 ) -> AppResult<()> {
     log::info!("cancel_encode: {}", job_id);
@@ -117,13 +112,10 @@ pub async fn cancel_encode(
 /// preview never shows two commands writing the same file.
 #[tauri::command]
 pub async fn build_ffmpeg_commands(
-    _state: tauri::State<'_, crate::AppState>,
     config: EncodeConfig,
     files: Vec<String>,
     output_dir: Option<String>,
 ) -> AppResult<Vec<String>> {
-    // Pro 门控与编码入口保持一致（预览/复制免费，含 Pro 能力的配置需授权）
-    crate::commands::ensure_config_allowed(&_state.license, &config)?;
 
     let outputs = args::derive_output_paths_unique(&files, &config, output_dir.as_deref());
     let cmds: Vec<String> = files

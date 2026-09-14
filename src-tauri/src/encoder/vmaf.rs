@@ -173,20 +173,13 @@ fn build_segment_args(
     args
 }
 
-/// 解析 libvmaf 的 JSON 日志，取 pooled_metrics.vmaf.mean（兼容旧版 "VMAF score"）。
+/// 解析 libvmaf 的 JSON 日志，取 pooled_metrics.vmaf.mean。
 fn parse_vmaf_log(text: &str) -> Option<f64> {
     let v: Value = serde_json::from_str(text).ok()?;
-    // 新版格式：{"pooled_metrics": {"vmaf": {"mean": 92.3, ...}}}
-    if let Some(mean) = v
-        .get("pooled_metrics")
+    v.get("pooled_metrics")
         .and_then(|m| m.get("vmaf"))
         .and_then(|m| m.get("mean"))
         .and_then(|m| m.as_f64())
-    {
-        return Some(mean);
-    }
-    // 旧版格式：{"VMAF score": 92.3}
-    v.get("VMAF score").and_then(|s| s.as_f64())
 }
 
 /// 计算单段的 VMAF 得分（阻塞，调用方应处于 spawn_blocking 上下文）。
@@ -429,14 +422,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_vmaf_log_new_and_old_formats() {
+    fn parse_vmaf_log_format() {
         let new = r#"{"frames":[],"pooled_metrics":{"vmaf":{"min":88.1,"max":95.2,"mean":92.34}}}"#;
         assert!((parse_vmaf_log(new).unwrap() - 92.34).abs() < 1e-6);
 
-        let old = r#"{"VMAF score": 90.5}"#;
-        assert!((parse_vmaf_log(old).unwrap() - 90.5).abs() < 1e-6);
-
         assert!(parse_vmaf_log("not json").is_none());
+        assert!(parse_vmaf_log("{}").is_none());
     }
 
     #[test]
