@@ -7,6 +7,7 @@ mod license;
 mod analytics;
 mod util;
 mod error;
+mod z_log;
 
 use std::sync::Arc;
 use parking_lot::Mutex;
@@ -26,7 +27,9 @@ pub struct AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    z_log::install_panic_hook();
     tauri::Builder::default()
+        .plugin(z_log::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -103,6 +106,8 @@ pub fn run() {
             commands::vmaf::compute_vmaf,
             commands::vmaf::get_vmaf_segments,
             commands::vmaf::set_vmaf_segments,
+            z_log::zlog_get_dir,
+            z_log::zlog_export_bundle,
         ])
         .build(tauri::generate_context!())
         .expect("error while building z-ffmpeg")

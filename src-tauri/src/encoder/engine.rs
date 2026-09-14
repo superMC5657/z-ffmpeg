@@ -117,6 +117,7 @@ pub fn start_encode(
     // only registered in PROCESSES after spawn, so cancel_process can't find it
     // yet). Honour the flag here so the encode never starts at all.
     if cancel.load(Ordering::Relaxed) {
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled before spawn job_id={}", job_id);
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
@@ -182,6 +183,7 @@ pub fn start_encode(
             let _ = proc.child.kill();
             let _ = proc.child.wait();
         }
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled after spawn job_id={}", job_id);
         let _ = std::fs::remove_file(&output_path);
         let _ = app_handle.emit(
             "encode://complete",
@@ -193,6 +195,8 @@ pub fn start_encode(
     // Drain stderr so ffmpeg never blocks on a full pipe; keep the last
     // STDERR_TAIL_LINES lines for failure diagnostics (ffmpeg reports the
     // actual error reason at the end of stderr).
+    // 进度循环内禁止逐帧打 log（高频刷盘）：只在开始/完成/失败打 info，取消打 warn。
+    log::info!(target: "zffmpeg_lib::encoder", "encode started job_id={} file={}", job_id, file_name);
     let stderr_thread = std::thread::spawn(move || {
         let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
@@ -284,6 +288,7 @@ pub fn start_encode(
     let elapsed = start_time.elapsed();
 
     if cancel.load(Ordering::Relaxed) {
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job_id={} elapsed={:.1}s", job_id, elapsed.as_secs_f64());
         let _ = std::fs::remove_file(&output_path);
         let _ = app_handle.emit(
             "encode://complete",
@@ -298,6 +303,7 @@ pub fn start_encode(
                 .map(|m| m.len())
                 .unwrap_or(0);
 
+            log::info!(target: "zffmpeg_lib::encoder", "encode completed job_id={} size_bytes={} elapsed={:.1}s", job_id, output_size, elapsed.as_secs_f64());
             let _ = app_handle.emit(
                 "encode://complete",
                 EncodeResult {
@@ -329,6 +335,7 @@ pub fn start_encode(
                 ));
             }
 
+            log::info!(target: "zffmpeg_lib::encoder", "encode failed job_id={} exit_code={} elapsed={:.1}s", job_id, exit_code, elapsed.as_secs_f64());
             let _ = app_handle.emit(
                 "encode://complete",
                 EncodeResult {
