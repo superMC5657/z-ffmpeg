@@ -60,6 +60,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .level_for("zffmpeg_lib::encoder", encoder_level())
         .level_for("zffmpeg::encoder", encoder_level())
         // 第三方噪音一并压住
+        .level_for("tao", LevelFilter::Warn)
+        .level_for("wry", LevelFilter::Warn)
+        .level_for("tauri", LevelFilter::Warn)
+        .level_for("tracing", LevelFilter::Warn)
         .level_for("reqwest", LevelFilter::Warn)
         .level_for("hyper", LevelFilter::Warn)
         .level_for("tungstenite", LevelFilter::Warn)

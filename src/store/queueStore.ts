@@ -15,6 +15,7 @@ import {
   getVmafSegments,
   setVmafSegments,
 } from "@/lib/tauri";
+import { zlog } from "@/lib/z-log";
 
 interface QueueState {
   jobs: EncodeJob[];
@@ -90,42 +91,55 @@ export const useQueueStore = create<QueueState>((set, get) => ({
   },
 
   addJobs: async (files, config, outputDir) => {
+    void zlog.uiAction("添加任务至队列", {
+      count: files.length,
+      videoCodec: config.videoCodec,
+      container: config.containerFormat,
+      hw: config.hwAccel?.device ?? "none",
+    });
     await addToQueue(files, config, outputDir || null);
     await get().refreshQueue();
   },
 
   startJobs: async () => {
+    void zlog.uiAction("点击开始执行队列");
     await startQueue();
     await get().refreshQueue();
   },
 
   pauseJobs: async () => {
+    void zlog.uiAction("点击暂停队列调度");
     await pauseQueue();
     set({ paused: true });
   },
 
   resumeJobs: async () => {
+    void zlog.uiAction("点击恢复队列调度");
     await resumeQueue();
     set({ paused: false });
     await get().refreshQueue();
   },
 
   removeJobs: async (ids) => {
+    void zlog.uiAction("移除队列任务", { count: ids.length, ids });
     await removeFromQueue(ids);
     set((s) => ({ jobs: s.jobs.filter((j) => !ids.includes(j.id)) }));
   },
 
   cancelJob: async (id) => {
+    void zlog.uiAction("取消队列任务", { id });
     await cancelJob(id);
     await get().refreshQueue();
   },
 
   clearCompleted: async () => {
+    void zlog.uiAction("清空已完成队列任务");
     await clearCompleted();
     await get().refreshQueue();
   },
 
   retryJob: async (id) => {
+    void zlog.uiAction("重试失败队列任务", { id });
     const ok = await retryJob(id);
     if (ok) {
       // 本地立即反映状态变化,再与后端快照对齐

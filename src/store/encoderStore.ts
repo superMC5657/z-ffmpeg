@@ -11,6 +11,7 @@ import type {
   HwAccelConfig,
 } from "@/types";
 import { probeFile, startEncode, cancelEncode, estimateOutputSizes } from "@/lib/tauri";
+import { zlog } from "@/lib/z-log";
 
 // 模块级防抖计时器：CRF slider 拖动等高频参数变化时合并为一次预估刷新
 let estimateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -116,6 +117,10 @@ export const useEncoderStore = create<EncoderState>()(
   // File selection
   inputFiles: [],
   addFiles: async (paths: string[]) => {
+    void zlog.uiAction("添加文件", {
+      count: paths.length,
+      files: paths.map((p) => p.split(/[/\\]/).pop() || p),
+    });
     // 1) 立即插入"分析中"占位项,界面即时响应;全部探测完才渲染会造成卡顿感
     const placeholders: FileInfo[] = paths.map((path) =>
       filePlaceholder(path, { probing: true })
@@ -151,6 +156,9 @@ export const useEncoderStore = create<EncoderState>()(
 
   removeFile: (index: number) => {
     const removed = get().inputFiles[index];
+    if (removed) {
+      void zlog.uiAction("移除文件", { file: removed.fileName });
+    }
     // 使在途预估请求失效，防止旧结果复活已删除文件的孤儿 key
     estimateRequestSeq++;
     set((s) => ({
@@ -163,6 +171,7 @@ export const useEncoderStore = create<EncoderState>()(
     get().scheduleEstimateRefresh();
   },
   clearFiles: () => {
+    void zlog.uiAction("清空待转码文件列表");
     estimateRequestSeq++;
     set({ inputFiles: [], estimatedSizes: {} });
   },
@@ -170,21 +179,27 @@ export const useEncoderStore = create<EncoderState>()(
   // Codec settings
   videoCodec: "H264",
   setVideoCodec: (codec) => {
+    void zlog.uiSetting("videoCodec", codec);
     set({ videoCodec: codec });
     get().scheduleEstimateRefresh();
   },
 
   rateControl: { type: "CRF", value: 23 },
   setRateControl: (rc) => {
+    void zlog.uiSetting("rateControl", rc);
     set({ rateControl: rc });
     get().scheduleEstimateRefresh();
   },
 
   encoderPreset: "medium",
-  setEncoderPreset: (preset) => set({ encoderPreset: preset }),
+  setEncoderPreset: (preset) => {
+    void zlog.uiSetting("encoderPreset", preset);
+    set({ encoderPreset: preset });
+  },
 
   resolution: null,
   setResolution: (res) => {
+    void zlog.uiSetting("resolution", res ? `${res.width}x${res.height}` : "original");
     set({ resolution: res });
     // 分辨率影响 CRF/CQP 预估体积（像素面积缩放），需刷新
     get().scheduleEstimateRefresh();
@@ -192,31 +207,41 @@ export const useEncoderStore = create<EncoderState>()(
 
   frameRate: null,
   setFrameRate: (fps) => {
+    void zlog.uiSetting("frameRate", fps);
     set({ frameRate: fps });
     // 帧率影响 CRF/CQP 预估体积（帧数缩放），需刷新
     get().scheduleEstimateRefresh();
   },
 
   pixelFormat: null,
-  setPixelFormat: (fmt) => set({ pixelFormat: fmt }),
+  setPixelFormat: (fmt) => {
+    void zlog.uiSetting("pixelFormat", fmt);
+    set({ pixelFormat: fmt });
+  },
 
   // Audio settings
   audioCodec: "AAC",
   setAudioCodec: (codec) => {
+    void zlog.uiSetting("audioCodec", codec);
     set({ audioCodec: codec });
     get().scheduleEstimateRefresh();
   },
   audioBitrate: 192,
   setAudioBitrate: (br) => {
+    void zlog.uiSetting("audioBitrate", br);
     set({ audioBitrate: br });
     get().scheduleEstimateRefresh();
   },
 
   // Output settings
   outputDir: "",
-  setOutputDir: (dir) => set({ outputDir: dir }),
+  setOutputDir: (dir) => {
+    void zlog.uiSetting("outputDir", dir);
+    set({ outputDir: dir });
+  },
   containerFormat: "MP4",
   setContainerFormat: (fmt) => {
+    void zlog.uiSetting("containerFormat", fmt);
     set({ containerFormat: fmt });
     get().scheduleEstimateRefresh();
   },
@@ -224,6 +249,7 @@ export const useEncoderStore = create<EncoderState>()(
   // HW acceleration
   hwAccel: null,
   setHwAccel: (config) => {
+    void zlog.uiSetting("hwAccel", config ? config.device : "none");
     set({ hwAccel: config });
     get().scheduleEstimateRefresh();
   },
@@ -290,18 +316,30 @@ export const useEncoderStore = create<EncoderState>()(
     if (config.hwAccel != null) patch.hwAccel = config.hwAccel;
 
     set(patch);
+    void zlog.uiAction("应用预设配置", {
+      videoCodec: config.videoCodec,
+      preset: vs?.encoderPreset,
+      container: config.containerFormat,
+      hw: config.hwAccel?.device ?? "none",
+    });
     get().scheduleEstimateRefresh();
   },
 
   startEncode: async (inputPath: string, outputPath: string) => {
     const config = get().buildConfig();
     const jobId = crypto.randomUUID();
+    void zlog.uiAction("单任务开始转码", {
+      input: inputPath.split(/[/\\]/).pop(),
+      output: outputPath.split(/[/\\]/).pop(),
+      jobId,
+    });
     set({ isEncoding: true });
     await startEncode(config, inputPath, outputPath, jobId);
     return jobId;
   },
 
   cancelEncode: async (jobId: string) => {
+    void zlog.uiAction("取消单任务转码", { jobId });
     await cancelEncode(jobId);
     set({ isEncoding: false });
   },

@@ -46,12 +46,62 @@ export async function initZLog(): Promise<void> {
   };
 }
 
-/** 直接转发的日质量出口：调用即经 IPC 落到 Rust 日志文件。 */
+/** 安全日志输出：IPC 失败时不抛异常，在单测/非 Tauri 环境静默降级或打印到 console */
+async function safeLog(
+  level: "debug" | "info" | "warn" | "error",
+  msg: string
+): Promise<void> {
+  const fn =
+    level === "debug"
+      ? debug
+      : level === "info"
+        ? info
+        : level === "warn"
+          ? warn
+          : error;
+  try {
+    await fn(msg);
+  } catch {
+    if (import.meta.env.DEV) {
+      console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](msg);
+    }
+  }
+}
+
+/** 前端结构化日志出口：调用即经 IPC 落到 Rust 日志文件。 */
 export const zlog = {
-  debug: (msg: string): Promise<void> => debug(msg),
-  info: (msg: string): Promise<void> => info(msg),
-  warn: (msg: string): Promise<void> => warn(msg),
-  error: (msg: string): Promise<void> => error(msg),
+  debug: (msg: string): Promise<void> => safeLog("debug", msg),
+  info: (msg: string): Promise<void> => safeLog("info", msg),
+  warn: (msg: string): Promise<void> => safeLog("warn", msg),
+  error: (msg: string): Promise<void> => safeLog("error", msg),
+
+  /** 记录路由/页面导航 */
+  route: (pathname: string): Promise<void> => {
+    return safeLog("info", `[UI] 导航至页面: ${pathname}`);
+  },
+
+  /** 记录用户关键业务操作 */
+  uiAction: (
+    action: string,
+    detail?: Record<string, unknown> | string
+  ): Promise<void> => {
+    const detailStr = detail
+      ? typeof detail === "string"
+        ? detail
+        : Object.entries(detail)
+            .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+            .join(" ")
+      : "";
+    const msg = detailStr ? `[UI] ${action} ${detailStr}` : `[UI] ${action}`;
+    return safeLog("info", msg);
+  },
+
+  /** 记录用户修改参数（使用 debug 级别避免日常使用过度刷屏） */
+  uiSetting: (setting: string, value: unknown): Promise<void> => {
+    const valStr =
+      typeof value === "object" ? JSON.stringify(value) : String(value);
+    return safeLog("debug", `[UI] 修改参数: ${setting}=${valStr}`);
+  },
 };
 
 /** 取后端日志目录（“打开日志目录”按钮用）。 */

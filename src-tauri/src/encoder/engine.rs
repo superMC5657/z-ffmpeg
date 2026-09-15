@@ -128,7 +128,19 @@ pub fn start_encode(
         return Ok(());
     }
 
+    let input_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
     let args = build_ffmpeg_args(&config, &input_path, &output_path);
+    let cmd_preview = format!(
+        "ffmpeg {}",
+        args.iter()
+            .map(|a| if a.contains(' ') || a.is_empty() {
+                format!("\"{}\"", a)
+            } else {
+                a.to_string()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
 
     // First, probe to get total duration for percentage calculation
     let total_duration = match probe_file(&input_path) {
@@ -167,7 +179,11 @@ pub fn start_encode(
             cancel: cancel.clone(),
             child,
         });
-    log::info!(target: "zffmpeg_lib::encoder", "encode started job {job_id} file {file_name}");
+    log::info!(
+        target: "zffmpeg_lib::encoder",
+        "encode started job {job_id} file {file_name} in_size={input_size}B dur={:.1}s cmd: {cmd_preview}",
+        total_duration.unwrap_or(0.0)
+    );
 
     // Re-check cancellation after the child is registered: the user may have
     // cancelled during the probe/spawn window, when no child was registered
@@ -214,6 +230,7 @@ pub fn start_encode(
     // Parse `-progress` reports from stdout. Each report is a block of
     // `key=value` lines terminated by `progress=continue|end`.
     let mut kv: HashMap<String, String> = HashMap::new();
+    let mut last_milestone: u32 = 0;
     for line in BufReader::new(stdout).lines() {
         if cancel.load(Ordering::Relaxed) {
             break;
@@ -264,6 +281,17 @@ pub fn start_encode(
             };
             let _ = app_handle.emit("encode://progress", &progress);
 
+            let pct_u32 = percentage.floor() as u32;
+            if pct_u32 >= last_milestone + 25 && pct_u32 < 100 {
+                last_milestone = (pct_u32 / 25) * 25;
+                log::info!(
+                    target: "zffmpeg_lib::encoder",
+                    "encode progress job {job_id} file {file_name} pct={last_milestone}% fps={:.1} speed={:.2}x",
+                    progress.fps,
+                    progress.speed
+                );
+            }
+
             if value == "end" {
                 break;
             }
@@ -307,7 +335,21 @@ pub fn start_encode(
                 .map(|m| m.len())
                 .unwrap_or(0);
             let elapsed_s = elapsed.as_secs_f64();
-            log::info!(target: "zffmpeg_lib::encoder", "encode completed job {job_id} file {file_name} size {output_size} elapsed {elapsed_s:.1}s");
+            let ratio_str = if input_size > 0 {
+                let pct = (output_size as f64 / input_size as f64) * 100.0;
+                let diff_pct = ((output_size as f64 - input_size as f64) / input_size as f64) * 100.0;
+                format!("{:.1}% (delta {:+.1}%)", pct, diff_pct)
+            } else {
+                "N/A".to_string()
+            };
+            let speed_str = total_duration
+                .filter(|d| *d > 0.0 && elapsed_s > 0.0)
+                .map(|d| format!(" avg_speed={:.2}x", d / elapsed_s))
+                .unwrap_or_default();
+            log::info!(
+                target: "zffmpeg_lib::encoder",
+                "encode completed job {job_id} file {file_name} in={input_size}B out={output_size}B ratio={ratio_str} elapsed={elapsed_s:.1}s{speed_str}"
+            );
             let _ = app_handle.emit(
                 "encode://complete",
                 EncodeResult {

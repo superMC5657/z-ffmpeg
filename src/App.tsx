@@ -10,16 +10,18 @@ import ActivationDialog from "./components/license/ActivationDialog";
 import { useLicenseStore } from "./store/licenseStore";
 import { trackEvent } from "./lib/tauri";
 import { useEncodeEvents } from "./hooks/useEncodeEvents";
+import { zlog } from "./lib/z-log";
 
 function EventListener() {
   useEncodeEvents();
   return null;
 }
 
-/** 页面导航埋点：纯 UI 行为，后端看不到，经 track_event 计数 */
+/** 页面导航埋点：纯 UI 行为，后端看不到，经 track_event 计数 + zlog 记录 */
 function RouteTracker() {
   const pathname = useLocation().pathname;
   useEffect(() => {
+    void zlog.route(pathname);
     trackEvent(`page_view:${pathname}`).catch(() => {});
   }, [pathname]);
   return null;

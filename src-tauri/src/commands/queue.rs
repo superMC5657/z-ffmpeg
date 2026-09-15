@@ -69,6 +69,7 @@ pub async fn start_queue(
     app_handle: tauri::AppHandle,
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
+    log::info!("queue start triggered by user");
     if let Some(queue) = state.queue_manager.as_ref() {
         queue.process_queue(app_handle);
     }

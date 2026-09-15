@@ -37,6 +37,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            let version = app.config().version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
+            log::info!("app started version={} os={} arch={}", version, std::env::consts::OS, std::env::consts::ARCH);
+
             // 所有落盘数据的根目录：Tauri app_data_dir（跟随 tauri.conf.json
             // 的 identifier，Windows = %APPDATA%\{identifier}）
             let data_dir = get_data_dir(app.handle());

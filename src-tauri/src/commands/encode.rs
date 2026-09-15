@@ -69,6 +69,14 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
             return Err(e);
         }
     };
+    log::info!(
+        "probe success file {basename} res={}x{} codec={} dur={:.1}s size={}B",
+        info.width.unwrap_or(0),
+        info.height.unwrap_or(0),
+        info.video_codec.as_deref().unwrap_or("unknown"),
+        info.duration.unwrap_or(0.0),
+        info.file_size
+    );
     Ok(info)
 }
 

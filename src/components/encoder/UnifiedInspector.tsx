@@ -26,6 +26,7 @@ import FfmpegCommandDialog from "./FfmpegCommandDialog";
 import SegmentedControl from "@/components/layout/SegmentedControl";
 import AppleSelect from "@/components/layout/AppleSelect";
 import AppleInput from "@/components/layout/AppleInput";
+import { zlog } from "@/lib/z-log";
 
 const PRESETS: { value: EncoderPreset; label: string }[] = [
   { value: "ultrafast", label: "Ultrafast（最快）" },
@@ -88,6 +89,7 @@ export default function UnifiedInspector() {
     try {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected === "string" && selected) {
+        void zlog.uiAction("设置输出目录", { dir: selected });
         setOutputDir(selected);
         useToastStore.getState().showToast("输出目录已设置", "success");
       }
@@ -97,6 +99,7 @@ export default function UnifiedInspector() {
   };
 
   const handleSavePreset = async (name: string) => {
+    void zlog.uiAction("保存自定义预设", { name });
     const config = buildConfig();
     const preset = await importPreset(JSON.stringify(config), name);
     usePresetStore.getState().selectPreset(preset.id);
@@ -108,6 +111,7 @@ export default function UnifiedInspector() {
       useToastStore.getState().showToast("请先添加输入文件", "error");
       return;
     }
+    void zlog.uiAction("生成FFmpeg命令行预览", { count: inputFiles.length });
     setBuilding(true);
     try {
       const cmds = await buildFfmpegCommands(
@@ -136,6 +140,7 @@ export default function UnifiedInspector() {
     if (!hasFiles) return;
     const config = buildConfig();
     const paths = inputFiles.map((f) => f.path);
+    void zlog.uiAction("点击添加到转码队列并跳转", { count: paths.length });
     try {
       await addJobs(paths, config, outputDir || null);
       clearFiles();
