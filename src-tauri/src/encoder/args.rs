@@ -197,7 +197,24 @@ fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
     match &config.video_settings.rate_control {
         RateControl::Crf { value } => {
             if encoder.contains("nvenc") {
-                vec!["-rc:v".into(), "vbr".into(), "-cq".into(), value.to_string()]
+                // NVENC VBR 恒定质量模式：
+                // 1. 必须附加 `-b:v 0`，否则 FFmpeg 默认 target bitrate 会与 -cq 冲突导致码率暴增或失控；
+                // 2. 标尺校准：UI 的 CRF 标尺是按 H.264 CPU 设定的（23 为视觉平衡中位线）。
+                //    NVENC 硬件芯片中，hevc_nvenc 推荐 CQ 比 h264 偏移 +4，av1_nvenc 偏移 +9
+                //    （av1_nvenc CQ 32 对应视觉无损平衡，若直接传 23~25 会导致码率暴增 2~3 倍）；
+                // 3. 启用 `-spatial-aq 1`（空间自适应量化）与 `-rc-lookahead 32`（前瞻分析）以显著提升压缩效率。
+                let cq = match encoder {
+                    "av1_nvenc" => value.saturating_add(9).min(55),
+                    "hevc_nvenc" => value.saturating_add(4).min(51),
+                    _ => *value,
+                };
+                vec![
+                    "-rc:v".into(), "vbr".into(),
+                    "-cq".into(), cq.to_string(),
+                    "-b:v".into(), "0".into(),
+                    "-spatial-aq".into(), "1".into(),
+                    "-rc-lookahead".into(), "32".into(),
+                ]
             } else if encoder.contains("qsv") {
                 vec!["-global_quality".into(), value.to_string()]
             } else if encoder.contains("amf") {
@@ -214,7 +231,16 @@ fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
         }
         RateControl::Cqp { value } => {
             if encoder.contains("nvenc") {
-                vec!["-rc:v".into(), "constqp".into(), "-qp".into(), value.to_string()]
+                let qp = match encoder {
+                    "av1_nvenc" => value.saturating_add(9).min(55),
+                    "hevc_nvenc" => value.saturating_add(4).min(51),
+                    _ => *value,
+                };
+                vec![
+                    "-rc:v".into(), "constqp".into(),
+                    "-qp".into(), qp.to_string(),
+                    "-spatial-aq".into(), "1".into(),
+                ]
             } else if encoder.contains("qsv") {
                 vec!["-q:v".into(), value.to_string()]
             } else if encoder.contains("amf") {
@@ -425,7 +451,28 @@ mod tests {
             device_index: None,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23"]);
+        assert_args_contain(&args, &["-c:v", "h264_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
+    }
+
+    #[test]
+    fn build_args_nvenc_hevc_and_av1_calibrates_cq() {
+        let mut hevc = config_with_hw(Some(HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+            device_index: None,
+        }));
+        hevc.video_codec = VideoCodec::H265;
+        let args = build_ffmpeg_args(&hevc, "in.mp4", "out.mp4");
+        // CRF 23 -> CQ 27 (23 + 4)
+        assert_args_contain(&args, &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "27", "-b:v", "0", "-spatial-aq", "1"]);
+
+        let mut av1 = config_with_hw(Some(HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+            device_index: None,
+        }));
+        av1.video_codec = VideoCodec::AV1;
+        let args_av1 = build_ffmpeg_args(&av1, "in.mp4", "out.mp4");
+        // CRF 23 -> CQ 32 (23 + 9)
+        assert_args_contain(&args_av1, &["-c:v", "av1_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "32", "-b:v", "0", "-spatial-aq", "1"]);
     }
 
     #[test]
