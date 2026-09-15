@@ -267,13 +267,24 @@ impl LicenseManager {
             }));
         }
 
-        let resp = client::activate(
+        let resp = match client::activate(
             &self.config.activate_url(),
             &self.config.license_level,
             &code,
             &self.device_id,
             &email,
-        )?;
+        ) {
+            Ok(resp) => resp,
+            // 只记错误码不记原文：服务端 message 为自由文本，可能回显输入
+            Err(LicenseFlowError::Api(api)) => {
+                log::warn!("license activate failed: {}", api.code);
+                return Err(LicenseFlowError::Api(api));
+            }
+            Err(LicenseFlowError::Network(e)) => {
+                log::warn!("license activate network failed: {e}");
+                return Err(LicenseFlowError::Network(e));
+            }
+        };
 
         let stored = StoredLicense {
             code,
@@ -281,13 +292,20 @@ impl LicenseManager {
             email,
         };
         // 激活成功后本地验签一次：公钥不匹配等问题当场暴露
-        let claims = self.offline_verify(&stored.license).map_err(|e| {
-            LicenseFlowError::Network(format!("激活返回的令牌验签失败: {e}"))
-        })?;
+        let claims = match self.offline_verify(&stored.license) {
+            Ok(claims) => claims,
+            Err(e) => {
+                log::warn!("license activate token verify failed: {e}");
+                return Err(LicenseFlowError::Network(format!(
+                    "激活返回的令牌验签失败: {e}"
+                )));
+            }
+        };
 
         *self.state.write() =
             LicenseState::Pro(Self::claims_to_pro_info(&claims, &stored, false));
         self.save_stored(&stored);
+        log::info!("license activated");
 
         Ok(self.status())
     }
@@ -319,23 +337,28 @@ impl LicenseManager {
                         *self.state.write() =
                             LicenseState::Pro(Self::claims_to_pro_info(&claims, &new_stored, false));
                         self.save_stored(&new_stored);
+                        log::debug!("license verify ok");
                         Ok(true)
                     }
                     Err(e) => {
+                        log::warn!("license verify token check failed: {e}");
                         Err(LicenseFlowError::Network(format!("新令牌验签失败: {e}")))
                     }
                 }
             }
             Err(LicenseFlowError::Network(_)) => {
+                log::warn!("license verify offline, using grace period");
                 Ok(false)
             }
             Err(LicenseFlowError::Api(api)) => {
                 if matches!(api.code.as_str(), "CDK_REVOKED" | "DEVICE_NOT_ACTIVATED" | "INVALID_SIGNATURE") {
+                    log::warn!("license revoked ({}), credentials removed", api.code);
                     *self.state.write() = LicenseState::Free;
                     self.delete_stored();
                     Err(LicenseFlowError::Api(api))
                 } else {
                     // EMAIL_MISMATCH 等其他错误：旧版本令牌场景，保留凭证等待重新激活
+                    log::debug!("license verify deferred: {}", api.code);
                     Ok(false)
                 }
             }
@@ -350,9 +373,16 @@ impl LicenseManager {
             return Ok(self.status());
         };
 
-        client::deactivate(&self.config.deactivate_url(), &stored.code, &self.device_id, &stored.email)?;
+        if let Err(e) = client::deactivate(&self.config.deactivate_url(), &stored.code, &self.device_id, &stored.email) {
+            match &e {
+                LicenseFlowError::Api(api) => log::warn!("license deactivate failed: {}", api.code),
+                LicenseFlowError::Network(e) => log::warn!("license deactivate network failed: {e}"),
+            }
+            return Err(e);
+        }
         *self.state.write() = LicenseState::Free;
         self.delete_stored();
+        log::info!("license deactivated");
         Ok(self.status())
     }
 
@@ -366,7 +396,10 @@ impl LicenseManager {
             loop {
                 if manager.config.online_enabled() {
                     let m = manager.clone();
-                    let _ = tauri::async_runtime::spawn_blocking(move || m.verify_online()).await;
+                    match tauri::async_runtime::spawn_blocking(move || m.verify_online()).await {
+                        Ok(_) => {}
+                        Err(e) => log::error!("license periodic verify task aborted: {e}"),
+                    }
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
             }

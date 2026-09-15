@@ -166,7 +166,11 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
             }))?);
         }
     }
-    Err(AppError::Internal(format!("预设不存在: {id}")))
+    let err = AppError::Internal(format!("预设不存在: {id}"));
+    let msg = err.to_string();
+    let top = msg.lines().next().unwrap_or("unknown").to_string();
+    log::warn!("preset export failed reason {top}");
+    Err(err)
 }
 
 /// Export a preset as a JSON string (name + description + config),
@@ -189,8 +193,14 @@ pub async fn export_preset_to_file(
     crate::analytics::bump(&crate::analytics::COUNTERS.presets_exported, 1);
 
     let json = preset_export_json(&state, &id)?;
-    std::fs::write(&path, json)
-        .map_err(AppError::Io)?;
+    if let Err(e) = std::fs::write(&path, json) {
+        // 日志只记原因，不记目标全路径
+        let err = AppError::Io(e);
+        let msg = err.to_string();
+        let top = msg.lines().next().unwrap_or("unknown").to_string();
+        log::warn!("preset export failed reason {top}");
+        return Err(err);
+    }
     Ok(path)
 }
 
@@ -206,11 +216,27 @@ pub async fn import_preset(
 ) -> AppResult<Preset> {
     crate::analytics::bump(&crate::analytics::COUNTERS.presets_imported, 1);
 
-    let value: serde_json::Value = serde_json::from_str(&json)?;
+    // 导入失败只记原因首行：不记待导入的 JSON 原文（可能很长）
+    let warn_import = |err: &AppError| {
+        let msg = err.to_string();
+        let top = msg.lines().next().unwrap_or("unknown").to_string();
+        log::warn!("preset import failed reason {top}");
+    };
+
+    let value: serde_json::Value = match serde_json::from_str(&json) {
+        Ok(v) => v,
+        Err(e) => {
+            let err = AppError::Serialization(e);
+            warn_import(&err);
+            return Err(err);
+        }
+    };
 
     let (config, description) = if let Some(c) = value.get("config") {
         if !c.is_object() {
-            return Err(AppError::InvalidConfig("预设 config 必须是 JSON 对象".into()));
+            let err = AppError::InvalidConfig("预设 config 必须是 JSON 对象".into());
+            warn_import(&err);
+            return Err(err);
         }
         (
             c.clone(),
@@ -218,14 +244,22 @@ pub async fn import_preset(
         )
     } else {
         if !value.is_object() {
-            return Err(AppError::InvalidConfig("预设 JSON 格式无效".into()));
+            let err = AppError::InvalidConfig("预设 JSON 格式无效".into());
+            warn_import(&err);
+            return Err(err);
         }
         (value.clone(), String::new())
     };
 
     // 校验 config 是否符合 EncodeConfig 结构，防止损坏或不兼容的配置入库
-    let _validated: crate::encoder::codec::EncodeConfig = serde_json::from_value(config.clone())
-        .map_err(|e| AppError::InvalidConfig(format!("预设编码配置解析失败: {e}")))?;
+    let _validated: crate::encoder::codec::EncodeConfig = match serde_json::from_value(config.clone()) {
+        Ok(v) => v,
+        Err(e) => {
+            let err = AppError::InvalidConfig(format!("预设编码配置解析失败: {}", e.to_string().lines().next().unwrap_or("unknown")));
+            warn_import(&err);
+            return Err(err);
+        }
+    };
 
     let preset_name = if name.trim().is_empty() {
         value.get("name")
@@ -236,8 +270,14 @@ pub async fn import_preset(
         name.trim().to_string()
     };
 
-    let manager = state.preset_manager.as_ref()
-        .ok_or_else(|| AppError::Internal("Preset store not initialized".into()))?;
+    let manager = match state.preset_manager.as_ref() {
+        Some(m) => m,
+        None => {
+            let err = AppError::Internal("Preset store not initialized".into());
+            warn_import(&err);
+            return Err(err);
+        }
+    };
 
     let now = chrono::Utc::now().to_rfc3339();
     let preset = Preset {
@@ -249,7 +289,10 @@ pub async fn import_preset(
         created_at: now.clone(),
         updated_at: now,
     };
-    manager.insert(&preset)?;
+    if let Err(e) = manager.insert(&preset) {
+        warn_import(&e);
+        return Err(e);
+    }
     Ok(preset)
 }
 

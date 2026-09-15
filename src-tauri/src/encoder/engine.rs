@@ -99,14 +99,16 @@ pub fn start_encode(
     output_path: String,
     cancel: Arc<AtomicBool>,
 ) -> AppResult<()> {
-    let ffmpeg_path = ffmpeg::get_ffmpeg_path()
-        .ok_or(AppError::FfmpegNotFound)?;
-
     let file_name = std::path::Path::new(&input_path)
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
+
+    let Some(ffmpeg_path) = ffmpeg::get_ffmpeg_path() else {
+        log::error!(target: "zffmpeg_lib::encoder", "encode ffmpeg not found job {job_id} file {file_name}");
+        return Err(AppError::FfmpegNotFound);
+    };
 
     // Start the clock before probing so both cancellation paths (pre-spawn and
     // post-registration) can report an accurate duration.
@@ -117,9 +119,11 @@ pub fn start_encode(
     // only registered in PROCESSES after spawn, so cancel_process can't find it
     // yet). Honour the flag here so the encode never starts at all.
     if cancel.load(Ordering::Relaxed) {
+        let elapsed = start_time.elapsed().as_secs_f64();
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage pre-spawn elapsed {elapsed:.1}s");
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
+            EncodeResult::cancelled(job_id, file_name, elapsed),
         );
         return Ok(());
     }
@@ -163,6 +167,7 @@ pub fn start_encode(
             cancel: cancel.clone(),
             child,
         });
+    log::info!(target: "zffmpeg_lib::encoder", "encode started job {job_id} file {file_name}");
 
     // Re-check cancellation after the child is registered: the user may have
     // cancelled during the probe/spawn window, when no child was registered
@@ -183,9 +188,11 @@ pub fn start_encode(
             let _ = proc.child.wait();
         }
         let _ = std::fs::remove_file(&output_path);
+        let elapsed = start_time.elapsed().as_secs_f64();
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage post-spawn elapsed {elapsed:.1}s");
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, start_time.elapsed().as_secs_f64()),
+            EncodeResult::cancelled(job_id, file_name, elapsed),
         );
         return Ok(());
     }
@@ -285,9 +292,11 @@ pub fn start_encode(
 
     if cancel.load(Ordering::Relaxed) {
         let _ = std::fs::remove_file(&output_path);
+        let elapsed_s = elapsed.as_secs_f64();
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage running elapsed {elapsed_s:.1}s");
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, elapsed.as_secs_f64()),
+            EncodeResult::cancelled(job_id, file_name, elapsed_s),
         );
         return Ok(());
     }
@@ -297,6 +306,8 @@ pub fn start_encode(
             let output_size = std::fs::metadata(&output_path)
                 .map(|m| m.len())
                 .unwrap_or(0);
+            let elapsed_s = elapsed.as_secs_f64();
+            log::info!(target: "zffmpeg_lib::encoder", "encode completed job {job_id} file {file_name} size {output_size} elapsed {elapsed_s:.1}s");
             let _ = app_handle.emit(
                 "encode://complete",
                 EncodeResult {
@@ -327,6 +338,15 @@ pub fn start_encode(
                     stderr_tail.join("\n")
                 ));
             }
+
+            let elapsed_s = elapsed.as_secs_f64();
+            // 日志只记 stderr 尾部（stderr_tail 已截断为 STDERR_TAIL_LINES 行），不 dump 全文
+            let tail = if stderr_tail.is_empty() {
+                String::new()
+            } else {
+                format!(" tail {}", stderr_tail.join(" | "))
+            };
+            log::error!(target: "zffmpeg_lib::encoder", "encode failed job {job_id} file {file_name} exit {exit_code} elapsed {elapsed_s:.1}s{tail}");
 
             let _ = app_handle.emit(
                 "encode://complete",

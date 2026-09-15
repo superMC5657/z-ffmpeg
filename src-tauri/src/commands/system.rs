@@ -96,9 +96,13 @@ pub async fn download_ffmpeg(
 ) -> AppResult<FfmpegStatusInfo> {
     use tauri::Emitter;
 
+    let started = std::time::Instant::now();
     match crate::ffmpeg::downloader::download_ffmpeg(&app, &state.ffmpeg_status).await {
         Ok(status) => {
             crate::analytics::bump(&crate::analytics::COUNTERS.ffmpeg_downloaded, 1);
+            let version = status.version.as_deref().unwrap_or("unknown");
+            let elapsed = started.elapsed().as_secs_f64();
+            log::info!("ffmpeg downloaded version {version} elapsed {elapsed:.1}s");
             let info = FfmpegStatusInfo {
                 status: "installed".into(),
                 version: status.version.clone(),
@@ -121,6 +125,9 @@ pub async fn download_ffmpeg(
                 error: Some(e.to_string()),
             };
             let _ = app.emit("ffmpeg://error", &info);
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::error!("ffmpeg download failed reason {top}");
             Err(e)
         }
     }

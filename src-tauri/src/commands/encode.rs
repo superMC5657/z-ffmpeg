@@ -35,8 +35,15 @@ pub struct FileInfo {
 
 #[tauri::command]
 pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
+    // 日志只记 basename，不记全路径
+    let basename = std::path::Path::new(&file_path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let path = std::path::Path::new(&file_path);
     if !path.exists() {
+        log::warn!("probe failed file {basename} reason not found");
         return Err(AppError::InvalidConfig(format!(
             "File not found: {}",
             file_path
@@ -44,8 +51,24 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     }
 
     // Use ffprobe to get detailed info (async — doesn't block the runtime)
-    let json = probe::probe_file_async(&file_path).await?;
-    let info = probe::parse_probe_result(&json, &file_path)?;
+    let json = match probe::probe_file_async(&file_path).await {
+        Ok(json) => json,
+        Err(e) => {
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::warn!("probe failed file {basename} reason {top}");
+            return Err(e);
+        }
+    };
+    let info = match probe::parse_probe_result(&json, &file_path) {
+        Ok(info) => info,
+        Err(e) => {
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::warn!("probe failed file {basename} reason {top}");
+            return Err(e);
+        }
+    };
     Ok(info)
 }
 

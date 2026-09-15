@@ -57,6 +57,20 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
 
     let ffmpeg = status.ffmpeg_path.clone().map(PathBuf::from);
     let ffprobe = status.ffprobe_path.clone().map(PathBuf::from);
+
+    // 启动检测结果：只记来源 + 版本，完整路径只进 debug
+    if status.available {
+        let version = status.version.as_deref().unwrap_or("unknown");
+        let kind = match status.ffmpeg_path.as_deref() {
+            Some(p) if Path::new(p).starts_with(local_install_dir(data_dir)) => "bundled",
+            _ => "external",
+        };
+        log::info!("ffmpeg detected {kind} version {version}");
+        log::debug!("ffmpeg detected path {:?}", status.ffmpeg_path);
+    } else {
+        log::info!("ffmpeg missing");
+    }
+
     *FFMPEG_PATH.lock() = ffmpeg;
     *FFPROBE_PATH.lock() = ffprobe;
 

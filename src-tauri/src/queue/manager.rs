@@ -33,8 +33,12 @@ pub struct QueueManager {
 
 impl QueueManager {
     pub fn new(db_path: &str) -> AppResult<Arc<Self>> {
-        let db = Connection::open(db_path)
-            .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+        let db = Connection::open(db_path).map_err(|e| {
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::error!("queue db open failed reason {top}");
+            crate::error::AppError::Internal(msg)
+        })?;
 
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS jobs (
@@ -58,7 +62,12 @@ impl QueueManager {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );"
-        ).map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+        ).map_err(|e| {
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::error!("queue db init failed reason {top}");
+            crate::error::AppError::Internal(msg)
+        })?;
 
         let max_concurrent = settings::load_usize(&db, SETTINGS_KEY_MAX_CONCURRENT)
             .unwrap_or(DEFAULT_MAX_CONCURRENT);
@@ -94,7 +103,12 @@ impl QueueManager {
              ORDER BY created_at ASC"
         ) {
             Ok(s) => s,
-            Err(_) => return vec![],
+            Err(e) => {
+                let msg = e.to_string();
+                let top = msg.lines().next().unwrap_or("unknown").to_string();
+                log::debug!("queue load jobs skipped reason {top}");
+                return vec![];
+            }
         };
 
         stmt.query_map([], |row| {
@@ -160,6 +174,11 @@ impl QueueManager {
             job.input_size = std::fs::metadata(&job.input_path).ok().map(|m| m.len());
             job.estimated_output_size = estimate;
             self.save_job(&job);
+            log::info!("queue enqueued job {} file {}", job.id, job.file_name());
+            log::debug!(
+                "queue enqueued config job {} video {:?} container {:?} hw {:?}",
+                job.id, config.video_codec, config.container_format, config.hw_accel,
+            );
             ids.push(job.id.clone());
             jobs.push_back(job);
         }
@@ -224,9 +243,16 @@ impl QueueManager {
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
             if job.status == JobStatus::Pending || job.status == JobStatus::Encoding {
+                // Running 取消由 engine 侧记 warn（pre-spawn/post-spawn/running），
+                // 这里只补 Pending（未进 engine）的行为盲区，避免双记。
+                let was_pending = job.status == JobStatus::Pending;
+                let id = job.id.clone();
                 job.status = JobStatus::Cancelled;
                 job.completed_at = Some(chrono::Utc::now().to_rfc3339());
                 self.save_job(job);
+                if was_pending {
+                    log::warn!("queue cancelled job {id}");
+                }
                 crate::analytics::bump(&crate::analytics::COUNTERS.encode_cancelled, 1);
             }
         }
@@ -242,12 +268,18 @@ impl QueueManager {
         if !matches!(job.status, JobStatus::Failed | JobStatus::Cancelled) {
             return false;
         }
+        // 手动重进队列：原因取上次失败的 error 首行（basename 不记全路径）
+        let reason = job.error.clone().unwrap_or_default();
+        let top = reason.lines().next().unwrap_or("unknown").to_string();
+        let name = job.file_name();
+        let id = job.id.clone();
         job.status = JobStatus::Pending;
         job.error = None;
         job.completed_at = None;
         job.progress = None;
         job.output_size = None;
         self.save_job(job);
+        log::warn!("queue retry job {id} file {name} reason {top}");
         crate::analytics::bump(&crate::analytics::COUNTERS.retries, 1);
         true
     }
@@ -274,7 +306,17 @@ impl QueueManager {
                 job.output_size = std::fs::metadata(&job.output_path).ok().map(|m| m.len());
             }
             if error.is_some() { job.error = error; }
-            self.save_job(job);
+            // 失败即终态 Failed（本项目无自动重试，重试仅用户手动 retry_job）
+            if !success {
+                let reason = job.error.clone().unwrap_or_default();
+                let top = reason.lines().next().unwrap_or("unknown").to_string();
+                let id = job.id.clone();
+                let name = job.file_name();
+                self.save_job(job);
+                log::error!("queue failed job {id} file {name} reason {top}");
+            } else {
+                self.save_job(job);
+            }
         }
     }
 

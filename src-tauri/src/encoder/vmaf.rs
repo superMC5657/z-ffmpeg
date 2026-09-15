@@ -103,9 +103,14 @@ fn probe_video_info(path: &str) -> AppResult<VideoInfo> {
     };
 
     if duration <= 0.0 {
+        let file_name = std::path::Path::new(path)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         return Err(AppError::Ffmpeg(format!(
             "Cannot read duration of {} (ffprobe returned 0)",
-            path
+            file_name
         )));
     }
     Ok(VideoInfo { duration, width, height, fps })

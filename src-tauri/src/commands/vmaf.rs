@@ -30,11 +30,20 @@ pub async fn compute_vmaf(
         .as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
 
-    let (input_path, output_path) = queue
-        .get_job_paths(&job_id)
-        .ok_or_else(|| crate::error::AppError::InvalidConfig(format!("任务不存在: {job_id}")))?;
+    let (input_path, output_path) = match queue.get_job_paths(&job_id) {
+        Some(paths) => paths,
+        None => {
+            // job_id 为内部 UUID，可进日志；不记输入输出路径
+            let err = crate::error::AppError::InvalidConfig(format!("任务不存在: {job_id}"));
+            let msg = err.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::warn!("vmaf compute failed job {job_id} reason {top}");
+            return Err(err);
+        }
+    };
 
     if !std::path::Path::new(&input_path).exists() || !std::path::Path::new(&output_path).exists() {
+        log::warn!("vmaf compute failed job {job_id} reason missing files");
         return Err(crate::error::AppError::InvalidConfig(
             "原始文件或输出文件不存在，无法计算 VMAF".into(),
         ));
@@ -47,7 +56,7 @@ pub async fn compute_vmaf(
     let output = output_path.clone();
     // 每次计算使用唯一工作目录：job 重算/并发计算互不干扰
     let work_id = format!("{job_id}_{}", uuid::Uuid::new_v4());
-    let result = tokio::task::spawn_blocking(move || {
+    let result = match tokio::task::spawn_blocking(move || {
         vmaf::compute_vmaf_sampled(
             &input,
             &output,
@@ -57,7 +66,24 @@ pub async fn compute_vmaf(
         )
     })
     .await
-    .map_err(|e| crate::error::AppError::Internal(e.to_string()))??;
+    .map_err(|e| crate::error::AppError::Internal(e.to_string()))
+    {
+        Ok(inner) => match inner {
+            Ok(result) => result,
+            Err(e) => {
+                let msg = e.to_string();
+                let top = msg.lines().next().unwrap_or("unknown").to_string();
+                log::warn!("vmaf compute failed job {job_id} reason {top}");
+                return Err(e);
+            }
+        },
+        Err(e) => {
+            let msg = e.to_string();
+            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            log::warn!("vmaf compute failed job {job_id} reason {top}");
+            return Err(e);
+        }
+    };
 
     // 持久化平均分 + 各段明细（含模式标记，供前端区分全量/采样展示）
     let detail = serde_json::json!({
