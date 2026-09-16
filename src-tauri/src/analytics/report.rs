@@ -93,7 +93,11 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
     let token = cfg.analytics_token.clone();
     let url = cfg.analytics_url();
     std::thread::spawn(move || {
-        let _ = send_blocking(&url, &token, &payload);
+        // 上报失败只记原因首行（debug，仍静默：不重试不弹窗；不记 body 全文）
+        if let Err(e) = send_blocking(&url, &token, &payload) {
+            let top = e.lines().next().unwrap_or("unknown").to_string();
+            log::debug!("analytics report failed reason {top}");
+        }
         let _ = tx.send(());
     });
 

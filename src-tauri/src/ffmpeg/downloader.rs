@@ -136,10 +136,13 @@ fn install_from_sources(
     cleanup_source: &dyn Fn(),
 ) -> AppResult<()> {
     let mut errors: Vec<String> = Vec::new();
-    for url in sources {
+    for (idx, url) in sources.iter().enumerate() {
         match install_one(url) {
             Ok(()) => return Ok(()),
             Err(e) => {
+                // 源切换只记序号+原因首行：不记完整 URL（长查询串噪音）
+                let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+                log::error!("ffmpeg source {}/{} failed reason {top}", idx + 1, sources.len());
                 errors.push(format!("{url}: {e}"));
                 cleanup_source();
             }
@@ -164,9 +167,16 @@ fn install_from_url(
     // 1) 下载
     download_from(client, url, zip_path, app)?;
 
-    // 2) 解压到临时目录
+    // 2) 解压到临时目录（只记原因首行，不记 zip 全路径/body）
     std::fs::create_dir_all(temp_dir)?;
-    let (ffmpeg_tmp, ffprobe_tmp) = extract_binaries(zip_path, temp_dir)?;
+    let (ffmpeg_tmp, ffprobe_tmp) = match extract_binaries(zip_path, temp_dir) {
+        Ok(v) => v,
+        Err(e) => {
+            let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+            log::error!("ffmpeg extract failed reason {top}");
+            return Err(e);
+        }
+    };
 
     // 3) Move into place (same volume; Windows rename doesn't overwrite).
     //    任一文件移动失败即整体失败,并回滚已移动的文件,
@@ -184,8 +194,12 @@ fn install_from_url(
     }
 
     // 4) 验证最终二进制可运行;失败则报错,由回退循环清理并换下一个源,
-    //    绝不向 UI 报告 "installed"。
-    verify_binary(&ffmpeg_final)?;
+    //    绝不向 UI 报告 "installed"。（只记原因首行，不记二进制全路径）
+    if let Err(e) = verify_binary(&ffmpeg_final) {
+        let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+        log::error!("ffmpeg verify failed reason {top}");
+        return Err(e);
+    }
     Ok(())
 }
 

@@ -19,11 +19,12 @@
 |---|---|---|
 | Target | `LogDir` + `Stdout` + `Webview` | 仅 `LogDir` |
 | root level | `Debug` | `Info` |
+| 门槛覆盖 | `ZFFMPEG_LOG` 优先、`RUST_LOG` 兜底（`resolve_level`，非法值穿透到默认） | 同左 |
 | `zffmpeg_lib::encoder` | `Debug` | `Info` |
 | `reqwest` / `hyper` / `tungstenite` | `Warn` | `Warn` |
 | 前端 console 镜像 | `attachConsole()`（仅 DEV，失败不阻塞启动） | 无 |
-| 单文件滚动 | 20MB（`MAX_FILE_SIZE`，`KeepAll` 按日期重命名旧文件） | 同左 |
-| 总量水位 + 保留期 | 7 天 / 20MB（`prune`） | 同左 |
+| 单文件滚动 | 5MB（`MAX_FILE_SIZE`，`KeepSome(5)` 保留 5 个轮转兄弟） | 同左 |
+| 总量水位 + 保留期 | 14 天 / 25MB（`prune`） | 同左 |
 
 前端 `zlog.debug` 在 release 下会被 root `Info` 阈值过滤，无需前端重复判断环境。
 
@@ -67,8 +68,9 @@
 
 ## FFmpeg 本体（`ffmpeg/library.rs` + `commands/system.rs`）
 
-- `info` ffmpeg detected {bundled|external} version（含来源 + 版本号）/ `info` ffmpeg missing（未检测到）
+- `info` ffmpeg detected {bundled|external} version（含来源 + 版本号）/ `info` ffmpeg missing（未检测到；`debug` 记 basename）
 - `error` ffmpeg download failed（下载失败摘要）
+- `error` 下载源切换 / 校验失败 / 解包缺二进制（`ffmpeg/downloader.rs` 各记一条，不记 URL）
 - `info` ffmpeg downloaded version + elapsed（下载完成；含版本 + 耗时秒）
 
 ## 探测 / 预设 / VMAF（`commands/encode.rs` / `preset.rs` / `vmaf.rs`）
@@ -79,7 +81,7 @@
 
 ## 脱敏（redact）
 
-`z_log::redact()` 只在导出诊断包时对文件内容执行（原始落盘文件不改写）：
+`z_log::redact()` 在写盘前 `format` 内执行（导出诊断包时二次脱敏为纵深）：
 
 - 邮箱 → `[redacted-email]`
 - `token[:=] <值>` / `code[:=] <值>` → `[redacted]`
@@ -92,7 +94,7 @@
 
 ## 修剪策略（prune）
 
-仅处理 `*.log`：删除 mtime 超过 7 天的文件，当总量超过 20MB 时按 mtime 从旧到新删除至总量 ≤ 20MB。
+仅处理 `*.log`：删除 mtime 超过 14 天的文件，当总量超过 25MB 时按 mtime 从旧到新删除至总量 ≤ 25MB。
 
 ## panic hook
 

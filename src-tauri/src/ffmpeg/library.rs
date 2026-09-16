@@ -66,7 +66,14 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
             _ => "external",
         };
         log::info!("ffmpeg detected {kind} version {version}");
-        log::debug!("ffmpeg detected path {:?}", status.ffmpeg_path);
+        // 路径脱敏：只记 basename，不记全路径原文
+        let basename = status
+            .ffmpeg_path
+            .as_deref()
+            .and_then(|p| Path::new(p).file_name())
+            .unwrap_or_default()
+            .to_string_lossy();
+        log::debug!("ffmpeg detected file {basename}");
     } else {
         log::info!("ffmpeg missing");
     }

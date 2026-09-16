@@ -145,6 +145,9 @@ impl LicenseManager {
                 features: claims.features,
                 offline: true,
             });
+        } else {
+            // 启动恢复验签失败 = 免费版：只记静态原因，不记令牌原文
+            log::debug!("license restore skipped reason verify failed");
         }
     }
 
@@ -240,6 +243,8 @@ impl LicenseManager {
         if self.is_pro() {
             Ok(())
         } else {
+            // Pro 拒绝只记功能名：不记 code/email/token
+            log::debug!("license pro gate rejected feature {feature}");
             Err(crate::error::AppError::Internal(format!(
                 "{feature}为 Pro 版功能，请在设置中激活授权后使用"
             )))
