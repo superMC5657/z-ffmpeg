@@ -86,3 +86,56 @@ describe("encoderStore.buildConfig", () => {
     expect(config.containerFormat).toBeTypeOf("string");
   });
 });
+
+describe("encoderStore quality adaptation", () => {
+  it("adapts recommended quality when switching videoCodec", () => {
+    // 默认 H264 CPU，值为 23
+    useEncoderStore.setState({
+      videoCodec: "H264",
+      hwAccel: null,
+      rateControl: { type: "CRF", value: 23 },
+    });
+
+    // 切到 AV1 CPU，自动适应为 30
+    useEncoderStore.getState().setVideoCodec("AV1");
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 30 });
+
+    // 切到 H265 CPU，自动适应为 26
+    useEncoderStore.getState().setVideoCodec("H265");
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 26 });
+
+    // 切回 H264，自动适应为 23
+    useEncoderStore.getState().setVideoCodec("H264");
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 23 });
+  });
+
+  it("adapts recommended quality when enabling hardware acceleration", () => {
+    useEncoderStore.setState({
+      videoCodec: "AV1",
+      hwAccel: null,
+      rateControl: { type: "CRF", value: 30 },
+    });
+
+    // 启用 NVENC 硬编，AV1 推荐值由 30 自动提升为 32（抵消硬件编码码率浮躁）
+    useEncoderStore.getState().setHwAccel({ device: "NVENC", deviceIndex: null });
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 32 });
+
+    // 切回 CPU 软编，自动恢复为 30
+    useEncoderStore.getState().setHwAccel(null);
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 30 });
+  });
+
+  it("preserves user relative quality preference across codec switches", () => {
+    // 用户偏好更高画质：在 H264 下设为 20（比推荐 23 低 3 档，即高画质）
+    useEncoderStore.setState({
+      videoCodec: "H264",
+      hwAccel: null,
+      rateControl: { type: "CRF", value: 20 },
+    });
+
+    // 切换到 AV1（推荐 30），保持高画质偏好，相对偏移 -3 -> 27
+    useEncoderStore.getState().setVideoCodec("AV1");
+    expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 27 });
+  });
+});
+

@@ -153,10 +153,22 @@ fn estimate_bytes(
             *bitrate_kbps as f64
         }
         RateControl::Crf { value } => {
-            scaled_crf_kbps(input_kbps, &config.video_codec, *value as f64, scale)
+            scaled_crf_kbps(
+                input_kbps,
+                &config.video_codec,
+                config.hw_accel.as_ref(),
+                *value as f64,
+                scale,
+            )
         }
         RateControl::Cqp { value } => {
-            scaled_crf_kbps(input_kbps, &config.video_codec, *value as f64, scale)
+            scaled_crf_kbps(
+                input_kbps,
+                &config.video_codec,
+                config.hw_accel.as_ref(),
+                *value as f64,
+                scale,
+            )
         }
     };
 
@@ -169,11 +181,42 @@ fn estimate_bytes(
     input_kbps_to_bytes(video_kbps + audio_kbps, duration)
 }
 
-/// CRF/CQP 外推：输入码率 × 编码器因子 × 质量比 × 分辨率/帧率缩放。
-/// CRF 与 CQP 共用同一经验公式（CRF 每 +6 码率约减半，CRF 18 为基准 ×0.8）。
-fn scaled_crf_kbps(input_kbps: f64, codec: &VideoCodec, value: f64, scale: f64) -> f64 {
-    let ratio = 2f64.powf((18.0 - value) / 6.0) * 0.8;
-    (input_kbps * codec_factor(codec) * ratio * scale).max(1.0)
+/// 各编码器与硬件环境下的画质参考基准点（对应视觉平衡参考值）：
+/// - H.264 CPU 基准为 18.0；
+/// - H.265 CPU 基准为 20.0，硬件为 22.0；
+/// - AV1 CPU 基准为 24.0，硬件为 26.0；
+/// - VP9 CPU 基准为 24.0。
+///
+/// 结合各格式基准点消除 AV1/H265 在绝对 CRF/CQ 数值较高时被误算为极低码率的偏差。
+fn crf_baseline(codec: &VideoCodec, hw: Option<&crate::encoder::codec::HwAccelConfig>) -> f64 {
+    match codec {
+        VideoCodec::H264 => 18.0,
+        VideoCodec::H265 => {
+            if hw.is_some() { 22.0 } else { 20.0 }
+        }
+        VideoCodec::AV1 => {
+            if hw.is_some() { 26.0 } else { 24.0 }
+        }
+        VideoCodec::VP9 => 24.0,
+        VideoCodec::Copy => 18.0,
+    }
+}
+
+/// CRF/CQP 外推：输入码率 × 编码器因子 × 硬件补偿系数 × 质量比 × 分辨率/帧率缩放。
+/// CRF 与 CQP 共用同一经验公式（CRF 每 +6 码率约减半）。
+/// 硬件编码器（如 NVENC/AMF/QSV）在同等质量下压缩率略低于极致 CPU 编码，
+/// 引入 1.25x 补偿系数大幅缩小预估与实机压制大小的误差。
+fn scaled_crf_kbps(
+    input_kbps: f64,
+    codec: &VideoCodec,
+    hw_accel: Option<&crate::encoder::codec::HwAccelConfig>,
+    value: f64,
+    scale: f64,
+) -> f64 {
+    let baseline = crf_baseline(codec, hw_accel);
+    let ratio = 2f64.powf((baseline - value) / 6.0) * 0.8;
+    let hw_factor = if hw_accel.is_some() { 1.25 } else { 1.0 };
+    (input_kbps * codec_factor(codec) * hw_factor * ratio * scale).max(1.0)
 }
 
 /// 编码器相对 H.264 的压缩因子（同质量下体积更小）
@@ -594,5 +637,23 @@ mod tests {
             "streams": [],
         });
         assert!(estimate_output_bytes(&cfg, &json).is_some());
+    }
+
+    #[test]
+    fn hw_accel_factor_increases_crf_estimate() {
+        let mut cpu_cfg = base_config();
+        cpu_cfg.audio_settings.codec = AudioCodec::None;
+        let cpu_est = estimate_output_bytes(&cpu_cfg, &probe_json(100.0, 8_000_000, 100_000_000)).unwrap();
+
+        let mut hw_cfg = cpu_cfg.clone();
+        hw_cfg.hw_accel = Some(HwAccelConfig {
+            device: crate::encoder::codec::HwAccelDevice::NVENC,
+            device_index: None,
+        });
+        let hw_est = estimate_output_bytes(&hw_cfg, &probe_json(100.0, 8_000_000, 100_000_000)).unwrap();
+
+        // 硬件加速预估体积应为 CPU 预估的 1.25 倍
+        let ratio = hw_est as f64 / cpu_est as f64;
+        assert!((1.24..1.26).contains(&ratio), "hw/cpu ratio: {ratio}");
     }
 }

@@ -122,8 +122,11 @@ export default function EngineSelector() {
                   <div className="flex items-center gap-1.5 text-[13px] font-bold text-foreground">
                     <span className="truncate">{hw.device}</span>
                   </div>
-                  <div className="truncate text-[11px] text-secondary">
-                    GPU 极速硬件加速
+                  <div
+                    className="truncate text-[11px] text-secondary"
+                    title={hw.deviceName || "GPU 极速硬件加速"}
+                  >
+                    {hw.deviceName || "GPU 极速硬件加速"}
                   </div>
                 </div>
               </button>
@@ -140,6 +143,20 @@ export default function EngineSelector() {
         <div className="grid grid-cols-2 gap-2">
           {CODEC_ITEMS.map(({ value, label, sub, icon: Icon }) => {
             const selected = videoCodec === value;
+            const currentHw = hwAccel
+              ? hwList.find((h) => h.device === hwAccel.device)
+              : null;
+            const isHwSupported =
+              !currentHw ||
+              currentHw.supportedCodecs.some((c) => {
+                const codecL = c.codec.toLowerCase();
+                if (value === "H264") return codecL === "h264";
+                if (value === "H265") return codecL === "hevc" || codecL === "h265";
+                if (value === "AV1") return codecL === "av1";
+                if (value === "VP9") return codecL === "vp9";
+                return false;
+              });
+
             return (
               <button
                 key={value}
@@ -162,12 +179,21 @@ export default function EngineSelector() {
                 >
                   <Icon className="h-4 w-4" />
                 </div>
-                <div className="min-w-0">
-                  <div className="text-[13px] font-medium text-foreground leading-tight">
-                    {label}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[13px] font-medium text-foreground leading-tight">
+                      {label}
+                    </span>
+                    {!isHwSupported && hwAccel !== null && (
+                      <span className="rounded px-1.5 py-0.2 text-[10px] font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+                        CPU 软编
+                      </span>
+                    )}
                   </div>
                   <div className="truncate text-[11px] text-secondary mt-0.5">
-                    {sub}
+                    {!isHwSupported && hwAccel !== null
+                      ? "显卡不支持该格式硬编 · 回退 CPU"
+                      : sub}
                   </div>
                 </div>
               </button>

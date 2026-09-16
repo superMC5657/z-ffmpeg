@@ -11,6 +11,16 @@ pub fn build_ffmpeg_args(
     input_path: &str,
     output_path: &str,
 ) -> Vec<String> {
+    build_ffmpeg_args_with_bitrate(config, input_path, output_path, None)
+}
+
+/// Build the ffmpeg command arguments from config with optional input bitrate safety guard
+pub fn build_ffmpeg_args_with_bitrate(
+    config: &EncodeConfig,
+    input_path: &str,
+    output_path: &str,
+    input_bitrate_kbps: Option<u32>,
+) -> Vec<String> {
     let mut args: Vec<String> = vec![];
 
     // Input
@@ -29,6 +39,32 @@ pub fn build_ffmpeg_args(
 
         // Rate control (mapped to encoder capabilities)
         args.extend(rate_control_args(config, encoder));
+
+        // Auto Maxrate Guard:
+        // 当使用硬件加速（如 NVENC/AMF/QSV/VAAPI）恒定画质（CRF/CQP）转码时，
+        // 面对高帧率(如 60fps)、复杂噪点或高动态源视频，硬件芯片在恒定质量量化下
+        // 容易分配极大码率，导致转码后文件体积反超原片数倍。
+        // 若输入码率已知且用户未在 additionalParams 中手动指定 -maxrate，
+        // 自动将最大峰值码率安全限制在 1.25x 输入码率（辅以 2x bufsize），彻底杜绝负压缩。
+        if config.hw_accel.is_some()
+            && !matches!(config.video_settings.rate_control, crate::encoder::codec::RateControl::Abr { .. })
+        {
+            let has_custom_maxrate = config
+                .video_settings
+                .additional_params
+                .iter()
+                .any(|a| a == "-maxrate");
+            if !has_custom_maxrate {
+                if let Some(in_kbps) = input_bitrate_kbps.filter(|&k| k > 0) {
+                    let guard_maxrate = ((in_kbps as f64) * 1.25).round().max(500.0) as u32;
+                    let guard_bufsize = guard_maxrate.saturating_mul(2);
+                    args.push("-maxrate".into());
+                    args.push(format!("{}k", guard_maxrate));
+                    args.push("-bufsize".into());
+                    args.push(format!("{}k", guard_bufsize));
+                }
+            }
+        }
 
         // Profile
         if let Some(ref profile) = config.video_settings.profile {
@@ -197,20 +233,12 @@ fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
     match &config.video_settings.rate_control {
         RateControl::Crf { value } => {
             if encoder.contains("nvenc") {
-                // NVENC VBR 恒定质量模式：
-                // 1. 必须附加 `-b:v 0`，否则 FFmpeg 默认 target bitrate 会与 -cq 冲突导致码率暴增或失控；
-                // 2. 标尺校准：UI 的 CRF 标尺是按 H.264 CPU 设定的（23 为视觉平衡中位线）。
-                //    NVENC 硬件芯片中，hevc_nvenc 推荐 CQ 比 h264 偏移 +4，av1_nvenc 偏移 +9
-                //    （av1_nvenc CQ 32 对应视觉无损平衡，若直接传 23~25 会导致码率暴增 2~3 倍）；
-                // 3. 启用 `-spatial-aq 1`（空间自适应量化）与 `-rc-lookahead 32`（前瞻分析）以显著提升压缩效率。
-                let cq = match encoder {
-                    "av1_nvenc" => value.saturating_add(9).min(55),
-                    "hevc_nvenc" => value.saturating_add(4).min(51),
-                    _ => *value,
-                };
+                // NVENC VBR 恒定质量模式（所见即所得：UI 设定值直接传入 -cq）：
+                // 1. 必须附加 `-b:v 0`，解除默认 target bitrate 约束，由 -cq 决定质量；
+                // 2. 启用 `-spatial-aq 1`（空间自适应量化）与 `-rc-lookahead 32`（前瞻分析）以显著提升压缩效率。
                 vec![
                     "-rc:v".into(), "vbr".into(),
-                    "-cq".into(), cq.to_string(),
+                    "-cq".into(), value.to_string(),
                     "-b:v".into(), "0".into(),
                     "-spatial-aq".into(), "1".into(),
                     "-rc-lookahead".into(), "32".into(),
@@ -231,14 +259,9 @@ fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
         }
         RateControl::Cqp { value } => {
             if encoder.contains("nvenc") {
-                let qp = match encoder {
-                    "av1_nvenc" => value.saturating_add(9).min(55),
-                    "hevc_nvenc" => value.saturating_add(4).min(51),
-                    _ => *value,
-                };
                 vec![
                     "-rc:v".into(), "constqp".into(),
-                    "-qp".into(), qp.to_string(),
+                    "-qp".into(), value.to_string(),
                     "-spatial-aq".into(), "1".into(),
                 ]
             } else if encoder.contains("qsv") {
@@ -327,6 +350,20 @@ pub fn derive_output_paths_unique(
         .collect()
 }
 
+/// Format an array of ffmpeg arguments into a single display-ready shell command line.
+/// Arguments containing spaces, quotes, or empty strings are safely quoted.
+pub fn format_command_line(args: &[String]) -> String {
+    let mut parts = vec!["ffmpeg".to_string()];
+    for arg in args {
+        if arg.contains(' ') || arg.contains('"') || arg.is_empty() {
+            parts.push(format!("\"{}\"", arg.replace('"', "\\\"")));
+        } else {
+            parts.push(arg.clone());
+        }
+    }
+    parts.join(" ")
+}
+
 /// Build a display-ready ffmpeg command line (`ffmpeg <args...>`) from a config.
 /// Paths containing spaces or quotes are quoted so the command can be copied
 /// and pasted into a terminal directly.
@@ -335,15 +372,8 @@ pub fn build_ffmpeg_command_line(
     input_path: &str,
     output_path: &str,
 ) -> String {
-    let mut parts = vec!["ffmpeg".to_string()];
-    for arg in build_ffmpeg_args(config, input_path, output_path) {
-        if arg.contains(' ') || arg.contains('"') {
-            parts.push(format!("\"{}\"", arg.replace('"', "\\\"")));
-        } else {
-            parts.push(arg);
-        }
-    }
-    parts.join(" ")
+    let args = build_ffmpeg_args(config, input_path, output_path);
+    format_command_line(&args)
 }
 
 #[cfg(test)]
@@ -455,15 +485,15 @@ mod tests {
     }
 
     #[test]
-    fn build_args_nvenc_hevc_and_av1_calibrates_cq() {
+    fn build_args_nvenc_wysiwyg_cq() {
         let mut hevc = config_with_hw(Some(HwAccelConfig {
             device: HwAccelDevice::NVENC,
             device_index: None,
         }));
         hevc.video_codec = VideoCodec::H265;
         let args = build_ffmpeg_args(&hevc, "in.mp4", "out.mp4");
-        // CRF 23 -> CQ 27 (23 + 4)
-        assert_args_contain(&args, &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "27", "-b:v", "0", "-spatial-aq", "1"]);
+        // 所见即所得：UI 设置 23，底层直接传递 -cq 23，不做黑盒偏移
+        assert_args_contain(&args, &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
 
         let mut av1 = config_with_hw(Some(HwAccelConfig {
             device: HwAccelDevice::NVENC,
@@ -471,8 +501,8 @@ mod tests {
         }));
         av1.video_codec = VideoCodec::AV1;
         let args_av1 = build_ffmpeg_args(&av1, "in.mp4", "out.mp4");
-        // CRF 23 -> CQ 32 (23 + 9)
-        assert_args_contain(&args_av1, &["-c:v", "av1_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "32", "-b:v", "0", "-spatial-aq", "1"]);
+        // 所见即所得：UI 设置 23，底层直接传递 -cq 23
+        assert_args_contain(&args_av1, &["-c:v", "av1_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
     }
 
     #[test]
@@ -571,5 +601,27 @@ mod tests {
             &args,
             &["-b:v", "4000k", "-maxrate", "6000k", "-bufsize", "12000k"],
         );
+    }
+
+    #[test]
+    fn build_args_auto_maxrate_guard_nvenc() {
+        let config = config_with_hw(Some(HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+            device_index: None,
+        }));
+        // Input bitrate 4000 kbps -> maxrate = 4000 * 1.25 = 5000k, bufsize = 10000k
+        let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
+        assert_args_contain(&args, &["-maxrate", "5000k", "-bufsize", "10000k"]);
+
+        // When CPU encoding (hw is None), auto maxrate guard should NOT be injected
+        let cpu_args = build_ffmpeg_args_with_bitrate(&sample_config(), "in.mp4", "out.mp4", Some(4000));
+        assert!(!cpu_args.contains(&"-maxrate".to_string()));
+
+        // When user explicitly supplied -maxrate in additional_params, do not override
+        let mut custom = config;
+        custom.video_settings.additional_params = vec!["-maxrate".into(), "3000k".into()];
+        let custom_args = build_ffmpeg_args_with_bitrate(&custom, "in.mp4", "out.mp4", Some(4000));
+        let pos = custom_args.iter().position(|a| a == "-maxrate").unwrap();
+        assert_eq!(custom_args[pos + 1], "3000k");
     }
 }

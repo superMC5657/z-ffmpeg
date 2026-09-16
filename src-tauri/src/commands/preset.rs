@@ -32,29 +32,29 @@ fn builtin_presets() -> Vec<Preset> {
 
         // --- NVENC ---
         hw_p("builtin-nvenc-h264", "NVENC H.264", "h264_nvenc — NVIDIA GPU 加速",
-            "H264", "p4", "NVENC"),
+            "H264", "p4", "NVENC", 23),
         hw_p("builtin-nvenc-h265", "NVENC H.265", "hevc_nvenc — NVIDIA GPU 加速",
-            "H265", "p4", "NVENC"),
+            "H265", "p4", "NVENC", 28),
         hw_p("builtin-nvenc-av1", "NVENC AV1", "av1_nvenc — NVIDIA RTX 40+",
-            "AV1", "p4", "NVENC"),
+            "AV1", "p4", "NVENC", 32),
 
         // --- QSV ---
         hw_p("builtin-qsv-h264", "QSV H.264", "h264_qsv — Intel GPU 加速",
-            "H264", "medium", "QSV"),
+            "H264", "medium", "QSV", 23),
         hw_p("builtin-qsv-h265", "QSV H.265", "hevc_qsv — Intel GPU 加速",
-            "H265", "medium", "QSV"),
+            "H265", "medium", "QSV", 26),
 
         // --- AMF ---
         hw_p("builtin-amf-h264", "AMF H.264", "h264_amf — AMD GPU 加速",
-            "H264", "balanced", "AMF"),
+            "H264", "balanced", "AMF", 23),
         hw_p("builtin-amf-h265", "AMF H.265", "hevc_amf — AMD GPU 加速",
-            "H265", "balanced", "AMF"),
+            "H265", "balanced", "AMF", 26),
 
         // --- VideoToolbox (macOS) ---
         hw_p("builtin-vt-h264", "VideoToolbox H.264", "h264_videotoolbox — Apple 硬件加速",
-            "H264", "medium", "VideoToolbox"),
+            "H264", "medium", "VideoToolbox", 23),
         hw_p("builtin-vt-h265", "VideoToolbox H.265", "hevc_videotoolbox — Apple 硬件加速",
-            "H265", "medium", "VideoToolbox"),
+            "H265", "medium", "VideoToolbox", 26),
     ]
 }
 
@@ -101,7 +101,7 @@ fn p(
 }
 
 /// Helper for HW-accelerated presets
-fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str) -> Preset {
+fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
     Preset {
         id: id.into(),
         name: name.into(),
@@ -109,7 +109,7 @@ fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &st
         config: serde_json::json!({
             "videoCodec": codec,
             "videoSettings": {
-                "rateControl": { "type": "CQP", "value": 23 },
+                "rateControl": { "type": "CRF", "value": value },
                 "encoderPreset": preset,
                 "resolution": null,
                 "frameRate": null,

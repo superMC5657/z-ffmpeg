@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Play,
   Terminal,
@@ -157,6 +157,7 @@ export default function UnifiedInspector() {
   };
 
   const presetHint = (() => {
+    if (videoCodec === "VP9") return "VP9 使用 -cpu-used 0-8：数字越小画质越高（CPU 软编）";
     if (hwAccel) {
       switch (hwAccel.device) {
         case "NVENC":
@@ -171,10 +172,177 @@ export default function UnifiedInspector() {
           return "VideoToolbox 自动匹配最佳硬件质量";
       }
     }
-    if (videoCodec === "AV1") return "SVT-AV1 速度等级 0-13：数字越小画质越高";
-    if (videoCodec === "VP9") return "VP9 -cpu-used 0-8：数字越小画质越高";
+    if (videoCodec === "AV1") return "SVT-AV1 速度等级 0-13：数字越小画质越高（CPU 软编）";
     return null;
   })();
+
+  const crfConfig = (() => {
+    const isNvenc = hwAccel?.device === "NVENC";
+    const isQsv = hwAccel?.device === "QSV";
+    const isAmf = hwAccel?.device === "AMF";
+    const isVtb = hwAccel?.device === "VideoToolbox";
+
+    // 动态识别当前激活的硬件引擎真实参数名（让用户所见即所得）
+    let modeName = "恒定画质 (CRF)";
+    let paramName = "-crf";
+    if (isNvenc) {
+      modeName = "恒定质量 (CQ)";
+      paramName = "-cq";
+    } else if (isQsv) {
+      modeName = "全局质量 (Global Quality)";
+      paramName = "-global_quality";
+    } else if (isAmf) {
+      modeName = "量化参数 (CQP)";
+      paramName = "-qp";
+    } else if (isVtb) {
+      modeName = "硬件质量 (Quality)";
+      paramName = "-q:v";
+    }
+
+    const isHw = hwAccel !== null;
+
+    switch (videoCodec) {
+      case "AV1":
+        if (isHw) {
+          return {
+            modeName,
+            paramName,
+            min: 0,
+            max: 63,
+            recommended: 32,
+            ticks: [
+              { val: 0, label: "0 极佳无损" },
+              { val: 24, label: "24 超高画质" },
+              { val: 32, label: "32 推荐", highlight: true },
+              { val: 40, label: "40 高压缩" },
+              { val: 63, label: "63 低画质" },
+            ],
+            getLabel: (v: number) => {
+              if (v <= 22) return "(极高画质·体积大)";
+              if (v <= 28) return "(高保真·接近无损)";
+              if (v <= 36) return "(最佳平衡·推荐)";
+              return "(极高压缩·体积小)";
+            },
+          };
+        }
+        return {
+          modeName,
+          paramName,
+          min: 0,
+          max: 63,
+          recommended: 30,
+          ticks: [
+            { val: 0, label: "0 极佳无损" },
+            { val: 24, label: "24 高画质" },
+            { val: 30, label: "30 推荐", highlight: true },
+            { val: 36, label: "36 高压缩" },
+            { val: 63, label: "63 低画质" },
+          ],
+          getLabel: (v: number) => {
+            if (v <= 22) return "(超高画质·体积大)";
+            if (v <= 27) return "(高保真·接近无损)";
+            if (v <= 33) return "(最佳平衡·推荐)";
+            return "(极高压缩·体积小)";
+          },
+        };
+      case "H265":
+        if (isHw) {
+          return {
+            modeName,
+            paramName,
+            min: 0,
+            max: 51,
+            recommended: 28,
+            ticks: [
+              { val: 0, label: "0 极佳无损" },
+              { val: 22, label: "22 高画质" },
+              { val: 28, label: "28 推荐", highlight: true },
+              { val: 35, label: "35 高压缩" },
+              { val: 51, label: "51 低画质" },
+            ],
+            getLabel: (v: number) => {
+              if (v <= 18) return "(无损级)";
+              if (v <= 24) return "(高画质)";
+              if (v <= 30) return "(平衡·推荐)";
+              return "(体积优先)";
+            },
+          };
+        }
+        return {
+          modeName,
+          paramName,
+          min: 0,
+          max: 51,
+          recommended: 26,
+          ticks: [
+            { val: 0, label: "0 极佳无损" },
+            { val: 20, label: "20 高画质" },
+            { val: 26, label: "26 推荐", highlight: true },
+            { val: 32, label: "32 高压缩" },
+            { val: 51, label: "51 低画质" },
+          ],
+          getLabel: (v: number) => {
+            if (v <= 18) return "(无损级)";
+            if (v <= 24) return "(高画质)";
+            if (v <= 28) return "(平衡·推荐)";
+            return "(体积优先)";
+          },
+        };
+      case "VP9":
+        return {
+          modeName,
+          paramName,
+          min: 0,
+          max: 63,
+          recommended: 32,
+          ticks: [
+            { val: 0, label: "0 极佳无损" },
+            { val: 24, label: "24 高画质" },
+            { val: 32, label: "32 推荐", highlight: true },
+            { val: 40, label: "40 高压缩" },
+            { val: 63, label: "63 低画质" },
+          ],
+          getLabel: (v: number) => {
+            if (v <= 20) return "(无损级)";
+            if (v <= 28) return "(高画质)";
+            if (v <= 35) return "(平衡·推荐)";
+            return "(体积优先)";
+          },
+        };
+      default: // H264
+        return {
+          modeName,
+          paramName,
+          min: 0,
+          max: 51,
+          recommended: 23,
+          ticks: [
+            { val: 0, label: "0 极佳无损" },
+            { val: 18, label: "18 高画质" },
+            { val: 23, label: "23 推荐", highlight: true },
+            { val: 28, label: "28 平衡" },
+            { val: 51, label: "51 低画质" },
+          ],
+          getLabel: (v: number) => {
+            if (v <= 18) return "(无损级)";
+            if (v <= 23) return "(视觉无损·推荐)";
+            if (v <= 28) return "(平衡推荐)";
+            return "(体积优先)";
+          },
+        };
+    }
+  })();
+
+  // 当编码器切换导致 CRF/CQ 范围变化（例如 VP9 63 切至 H264 51）时，自动限幅
+  useEffect(() => {
+    if (rateControl.type === "CRF" || rateControl.type === "CQP") {
+      if (rateControl.value > crfConfig.max) {
+        setRateControl({ type: "CRF", value: crfConfig.max });
+      } else if (rateControl.value < crfConfig.min) {
+        setRateControl({ type: "CRF", value: crfConfig.min });
+      }
+    }
+  }, [crfConfig.max, crfConfig.min, rateControl, setRateControl]);
 
   return (
     <div className="flex flex-col gap-4.5 rounded-2xl border border-hairline bg-surface/75 backdrop-blur-md p-5 shadow-card">
@@ -216,7 +384,9 @@ export default function UnifiedInspector() {
                   ? {
                       type: "CRF",
                       value:
-                        rateControl.type === "CRF" ? rateControl.value : 23,
+                        rateControl.type === "CRF"
+                          ? rateControl.value
+                          : crfConfig.recommended,
                     }
                   : {
                       type: "ABR",
@@ -228,53 +398,88 @@ export default function UnifiedInspector() {
               )
             }
             options={[
-              { value: "CRF", label: "恒定画质 (CRF)" },
+              { value: "CRF", label: crfConfig.modeName },
               { value: "ABR", label: "平均比特率 (ABR)" },
             ]}
           />
         </div>
 
-        {/* CRF 调节滑块 */}
+        {/* CRF / CQ 调节滑块 */}
         {(rateControl.type === "CRF" || rateControl.type === "CQP") && (
           <div className="rounded-xl bg-fill/30 p-3.5 border border-hairline/50">
             <div className="mb-2.5 flex items-center justify-between">
-              <span className="text-[13px] font-medium text-secondary">画质系数 (CRF)</span>
+              <span className="text-[13px] font-medium text-secondary">
+                {crfConfig.modeName}
+                <span className="ml-1 text-[11px] text-tertiary font-mono font-normal">
+                  ({crfConfig.paramName})
+                </span>
+              </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[18px] font-bold text-accent tabular-nums">
                   {rateControl.value}
                 </span>
                 <span className="text-[12px] text-tertiary font-medium">
-                  {rateControl.value <= 18
-                    ? "(无损级)"
-                    : rateControl.value <= 23
-                      ? "(视觉无损·推荐)"
-                      : rateControl.value <= 28
-                        ? "(平衡推荐)"
-                        : "(体积优先)"}
+                  {crfConfig.getLabel(rateControl.value)}
                 </span>
+                {rateControl.value !== crfConfig.recommended && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRateControl({
+                        type: "CRF",
+                        value: crfConfig.recommended,
+                      })
+                    }
+                    className="ml-1 text-[11px] text-accent hover:underline cursor-pointer transition-colors"
+                    title={`重置为当前组合的推荐默认值 ${crfConfig.recommended}`}
+                  >
+                    恢复推荐({crfConfig.recommended})
+                  </button>
+                )}
               </div>
             </div>
 
             <input
               type="range"
-              min={0}
-              max={51}
+              min={crfConfig.min}
+              max={crfConfig.max}
               value={rateControl.value}
               onChange={(e) =>
                 setRateControl({
                   type: "CRF",
-                  value: parseInt(e.target.value),
+                  value: parseInt(e.target.value, 10) || 0,
                 })
               }
               className="w-full accent-accent cursor-pointer"
             />
 
             <div className="mt-2 flex justify-between text-[11px] text-tertiary font-medium">
-              <span className="text-accent">0 极佳无损</span>
-              <span>18</span>
-              <span className="text-success font-semibold">23 推荐</span>
-              <span>28</span>
-              <span>51 低画质</span>
+              {crfConfig.ticks.map((t) => (
+                <button
+                  type="button"
+                  key={t.label}
+                  onClick={() =>
+                    setRateControl({
+                      type: "CRF",
+                      value: t.val,
+                    })
+                  }
+                  title={`点击快速设为 ${t.val}`}
+                  className={cn(
+                    "hover:text-foreground transition-colors cursor-pointer",
+                    t.highlight && "text-success font-semibold"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between text-[11px] text-tertiary border-t border-hairline/40 pt-2">
+              <span>实机转码参数（所见即所得）：</span>
+              <code className="font-mono text-foreground font-semibold bg-fill px-1.5 py-0.5 rounded">
+                {crfConfig.paramName} {rateControl.value}
+              </code>
             </div>
           </div>
         )}

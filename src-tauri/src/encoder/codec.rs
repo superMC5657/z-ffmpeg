@@ -45,11 +45,13 @@ impl VideoCodec {
             Some(HwAccelConfig { device: HwAccelDevice::AMF, .. }) => match self {
                 VideoCodec::H264 => "h264_amf",
                 VideoCodec::H265 => "hevc_amf",
+                VideoCodec::AV1 => "av1_amf",
                 _ => self.software_encoder(),
             },
             Some(HwAccelConfig { device: HwAccelDevice::VideoToolbox, .. }) => match self {
                 VideoCodec::H264 => "h264_videotoolbox",
                 VideoCodec::H265 => "hevc_videotoolbox",
+                VideoCodec::AV1 => "av1_videotoolbox",
                 _ => self.software_encoder(),
             },
             Some(HwAccelConfig { device: HwAccelDevice::VAAPI, .. }) => match self {
@@ -105,28 +107,6 @@ pub enum RateControl {
     },
 }
 
-impl RateControl {
-    /// Build FFmpeg CLI arguments for rate control
-    pub fn to_args(&self) -> Vec<String> {
-        match self {
-            RateControl::Crf { value } => vec!["-crf".into(), value.to_string()],
-            RateControl::Cqp { value } => vec!["-qp".into(), value.to_string()],
-            RateControl::Abr {
-                bitrate_kbps,
-                max_bitrate_kbps,
-            } => {
-                let mut args = vec!["-b:v".into(), format!("{}k", bitrate_kbps)];
-                if let Some(max) = max_bitrate_kbps {
-                    args.push("-maxrate".into());
-                    args.push(format!("{}k", max));
-                    args.push("-bufsize".into());
-                    args.push(format!("{}k", max * 2));
-                }
-                args
-            }
-        }
-    }
-}
 
 /// 音频编码器（此前为自由字符串，拼写错误要到 ffmpeg 运行时才暴露；
 /// 收敛为枚举后与前端 `AudioCodec` 联合类型一一对应， wire 格式不变）。
@@ -254,8 +234,13 @@ mod tests {
         // 前端 EncodingParams.tsx 实际发送：只有 bitrateKbps，无 maxBitrateKbps
         let cfg: EncodeConfig = serde_json::from_str(ABR_CONFIG_JSON)
             .expect("ABR camelCase 配置应能反序列化");
-        let args = cfg.video_settings.rate_control.to_args();
-        assert_eq!(args, vec!["-b:v", "5000k"]);
+        match cfg.video_settings.rate_control {
+            RateControl::Abr { bitrate_kbps, max_bitrate_kbps } => {
+                assert_eq!(bitrate_kbps, 5000);
+                assert_eq!(max_bitrate_kbps, None);
+            }
+            _ => panic!("Expected RateControl::Abr"),
+        }
     }
 
     #[test]
@@ -265,8 +250,13 @@ mod tests {
             "\"bitrateKbps\": 5000, \"maxBitrateKbps\": 8000",
         );
         let cfg: EncodeConfig = serde_json::from_str(&json).expect("带 maxBitrateKbps 应能反序列化");
-        let args = cfg.video_settings.rate_control.to_args();
-        assert_eq!(args, vec!["-b:v", "5000k", "-maxrate", "8000k", "-bufsize", "16000k"]);
+        match cfg.video_settings.rate_control {
+            RateControl::Abr { bitrate_kbps, max_bitrate_kbps } => {
+                assert_eq!(bitrate_kbps, 5000);
+                assert_eq!(max_bitrate_kbps, Some(8000));
+            }
+            _ => panic!("Expected RateControl::Abr"),
+        }
     }
 
     /// 音频 codec 收敛为枚举后，前端发来的 "AAC"/"Opus"/"Copy"/"None"

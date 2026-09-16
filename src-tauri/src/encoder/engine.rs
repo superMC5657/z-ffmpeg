@@ -15,7 +15,7 @@ use crate::ffmpeg;
 
 // 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
 // 本模块只保留进程生命周期管理（start/cancel）与进度循环。
-use super::args::build_ffmpeg_args;
+use super::args::{build_ffmpeg_args_with_bitrate, format_command_line};
 use super::probe::probe_file;
 use super::progress::{compute_percentage, parse_bitrate_kbps};
 
@@ -129,29 +129,34 @@ pub fn start_encode(
     }
 
     let input_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
-    let args = build_ffmpeg_args(&config, &input_path, &output_path);
-    let cmd_preview = format!(
-        "ffmpeg {}",
-        args.iter()
-            .map(|a| if a.contains(' ') || a.is_empty() {
-                format!("\"{}\"", a)
-            } else {
-                a.to_string()
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
 
-    // First, probe to get total duration for percentage calculation
-    let total_duration = match probe_file(&input_path) {
-        Ok(json) => {
-            json.get("format")
-                .and_then(|f| f.get("duration"))
-                .and_then(|d| d.as_str())
-                .and_then(|s| s.parse::<f64>().ok())
-        }
-        Err(_) => None,
-    };
+    // First, probe to get total duration and bitrate for progress and auto maxrate guard
+    let probe_json = probe_file(&input_path).ok();
+    let total_duration = probe_json.as_ref().and_then(|json| {
+        json.get("format")
+            .and_then(|f| f.get("duration"))
+            .and_then(|d| d.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+    });
+
+    let input_bitrate_kbps = probe_json.as_ref().and_then(|json| {
+        let format = json.get("format")?;
+        format.get("bit_rate")
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<f64>().ok())
+            .map(|bps| (bps / 1000.0).round() as u32)
+            .or_else(|| {
+                let dur = total_duration?;
+                if dur > 0.0 && input_size > 0 {
+                    Some(((input_size as f64 * 8.0) / (dur * 1000.0)).round() as u32)
+                } else {
+                    None
+                }
+            })
+    });
+
+    let args = build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
+    let cmd_preview = format_command_line(&args);
 
     // Spawn ffmpeg (hidden console on Windows).
     // `-progress pipe:1` writes machine-readable key=value reports to stdout —

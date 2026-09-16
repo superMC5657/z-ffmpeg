@@ -111,6 +111,31 @@ function filePlaceholder(
   };
 }
 
+/** 各视频格式与硬件加速环境下的黄金推荐质量值（CRF / CQ） */
+export function getRecommendedQuality(
+  videoCodec: VideoCodec,
+  hwDevice?: string | null
+): number {
+  if (videoCodec === "AV1") {
+    return hwDevice ? 32 : 30;
+  }
+  if (videoCodec === "H265") {
+    return hwDevice ? 28 : 26;
+  }
+  if (videoCodec === "VP9") {
+    return 32;
+  }
+  return 23; // H264
+}
+
+/** 各视频格式的量化范围 [min, max] */
+export function getQualityRange(videoCodec: VideoCodec): { min: number; max: number } {
+  if (videoCodec === "AV1" || videoCodec === "VP9") {
+    return { min: 0, max: 63 };
+  }
+  return { min: 0, max: 51 }; // H264, H265
+}
+
 export const useEncoderStore = create<EncoderState>()(
   persist(
     (set, get) => ({
@@ -180,7 +205,19 @@ export const useEncoderStore = create<EncoderState>()(
   videoCodec: "H264",
   setVideoCodec: (codec) => {
     void zlog.uiSetting("videoCodec", codec);
-    set({ videoCodec: codec });
+    const s = get();
+    const prevRec = getRecommendedQuality(s.videoCodec, s.hwAccel?.device);
+    const newRec = getRecommendedQuality(codec, s.hwAccel?.device);
+    const newRange = getQualityRange(codec);
+
+    let nextRateControl = s.rateControl;
+    if (s.rateControl.type === "CRF" || s.rateControl.type === "CQP") {
+      const offset = s.rateControl.value - prevRec;
+      const adapted = Math.min(newRange.max, Math.max(newRange.min, newRec + offset));
+      nextRateControl = { type: "CRF", value: adapted };
+    }
+
+    set({ videoCodec: codec, rateControl: nextRateControl });
     get().scheduleEstimateRefresh();
   },
 
@@ -250,7 +287,19 @@ export const useEncoderStore = create<EncoderState>()(
   hwAccel: null,
   setHwAccel: (config) => {
     void zlog.uiSetting("hwAccel", config ? config.device : "none");
-    set({ hwAccel: config });
+    const s = get();
+    const prevRec = getRecommendedQuality(s.videoCodec, s.hwAccel?.device);
+    const newRec = getRecommendedQuality(s.videoCodec, config?.device);
+    const range = getQualityRange(s.videoCodec);
+
+    let nextRateControl = s.rateControl;
+    if (s.rateControl.type === "CRF" || s.rateControl.type === "CQP") {
+      const offset = s.rateControl.value - prevRec;
+      const adapted = Math.min(range.max, Math.max(range.min, newRec + offset));
+      nextRateControl = { type: "CRF", value: adapted };
+    }
+
+    set({ hwAccel: config, rateControl: nextRateControl });
     get().scheduleEstimateRefresh();
   },
 

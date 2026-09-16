@@ -25,14 +25,33 @@ export default function PresetSelector() {
     useEncoderStore.getState().applyConfig(preset.config);
   };
 
-  // 当前设备不支持的硬件加速预设不出现在下拉中
+  // 当前设备不支持的硬件加速预设（或显卡不支持的特定编码格式，如 RTX 30 系列不支持 AV1 硬编）不出现在下拉中
   const usablePresets = useMemo(
     () =>
       presets.filter((p) => {
-        const hw = (p.config as unknown as { hwAccel?: { device?: HwAccelDevice } | null }).hwAccel;
+        const config = p.config as unknown as {
+          videoCodec?: string;
+          hwAccel?: { device?: HwAccelDevice } | null;
+        };
+        const hw = config.hwAccel;
         if (!hw?.device) return true; // 软件编码
         const found = hwAccels.find((h) => h.device === hw.device);
-        return found ? found.available : false;
+        if (!found || !found.available) return false;
+
+        // 校验该硬件是否支持该预设指定的编码格式
+        const codec = config.videoCodec;
+        if (codec && found.supportedCodecs) {
+          const codecL = codec.toLowerCase();
+          return found.supportedCodecs.some((c) => {
+            const cl = c.codec.toLowerCase();
+            if (codecL === "h264") return cl === "h264";
+            if (codecL === "h265") return cl === "hevc" || cl === "h265";
+            if (codecL === "av1") return cl === "av1";
+            if (codecL === "vp9") return cl === "vp9";
+            return false;
+          });
+        }
+        return true;
       }),
     [presets, hwAccels]
   );

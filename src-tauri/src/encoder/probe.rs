@@ -159,7 +159,15 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
         bitrate: format
             .get("bit_rate")
             .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<u64>().ok()),
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| {
+                let dur = duration?;
+                if dur > 0.0 && file_size > 0 {
+                    Some(((file_size as f64 * 8.0) / dur).round() as u64)
+                } else {
+                    None
+                }
+            }),
         audio_bitrate: audio_stream
             .and_then(|s| s.get("bit_rate"))
             .and_then(|v| v.as_str())

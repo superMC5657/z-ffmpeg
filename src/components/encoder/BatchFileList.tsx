@@ -16,6 +16,7 @@ import {
   formatFileSize,
   formatDuration,
   formatFileSizeCompact,
+  formatBitrate,
   cn,
 } from "@/lib/utils";
 
@@ -216,6 +217,11 @@ export default function BatchFileList() {
                 file.fileSize > 0 && estimatedSize != null
                   ? Math.round(((estimatedSize - file.fileSize) / file.fileSize) * 100)
                   : null;
+              const effectiveBitrate =
+                file.bitrate ||
+                (file.duration && file.fileSize > 0
+                  ? Math.round((file.fileSize * 8) / file.duration)
+                  : null);
 
               return (
                 <div
@@ -278,6 +284,18 @@ export default function BatchFileList() {
                               <span className="text-tertiary">·</span>
                               <span className="tabular-nums">
                                 {Math.round(file.frameRate)} fps
+                              </span>
+                            </>
+                          )}
+
+                          {effectiveBitrate != null && effectiveBitrate > 0 && (
+                            <>
+                              <span className="text-tertiary">·</span>
+                              <span
+                                className="tabular-nums font-medium text-foreground/80"
+                                title={`源视频平均码率：${Math.round(effectiveBitrate / 1000)} kbps`}
+                              >
+                                {formatBitrate(Math.round(effectiveBitrate / 1000))}
                               </span>
                             </>
                           )}
