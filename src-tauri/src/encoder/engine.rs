@@ -158,6 +158,13 @@ pub fn start_encode(
     let args = build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
     let cmd_preview = format_command_line(&args);
 
+    // Ensure output destination directory exists before ffmpeg writes to it
+    if let Some(parent) = std::path::Path::new(&output_path).parent() {
+        if !parent.as_os_str().is_empty() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+
     // Spawn ffmpeg (hidden console on Windows).
     // `-progress pipe:1` writes machine-readable key=value reports to stdout —
     // this is the reliable progress source when ffmpeg is spawned with piped

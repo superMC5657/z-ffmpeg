@@ -24,10 +24,15 @@ pub async fn add_to_queue(
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
 
-    // Build (input, output) pairs. Output paths are deduplicated within the
-    // batch so two inputs with the same basename don't silently overwrite
-    // each other (ffmpeg runs with `-y`).
-    let outputs = args::derive_output_paths_unique(&files, &config, output_dir.as_deref());
+    // Build (input, output) pairs. Output paths are deduplicated against existing disk files,
+    // active queue jobs, and earlier items within this batch to prevent unintended overwrites.
+    let active_outputs = queue.get_active_output_paths();
+    let outputs = args::derive_output_paths_unique_with_claimed(
+        &files,
+        &config,
+        output_dir.as_deref(),
+        &active_outputs,
+    );
     let pairs: Vec<(String, String)> = files.iter().cloned().zip(outputs).collect();
 
     // 入队前探测每个输入文件，预估压缩后的输出体积（Pending 状态即可展示）。

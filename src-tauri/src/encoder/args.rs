@@ -1,7 +1,7 @@
 //! FFmpeg 参数与输出路径构建：从 `EncodeConfig` 推导 ffmpeg CLI 参数、
 //! 编码器 preset 映射，以及输入 → 输出路径的推导与批量去重。
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::encoder::codec::{EncodeConfig, VideoCodec};
 
@@ -313,38 +313,88 @@ pub fn derive_output_path(input: &str, config: &EncodeConfig, output_dir: Option
         .to_string()
 }
 
+/// Helper to normalize path string for key lookup in in-memory sets (case-insensitive on Windows)
+fn normalize_path_key(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        path.replace('/', "\\").to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string()
+    }
+}
+
 /// Derive unique output paths for a batch of inputs.
 ///
-/// `derive_output_path` always maps an input to `{stem}_encoded.{ext}`, so two
-/// inputs sharing a basename (from different folders, or the same file added
-/// twice) would collide and — with the `-y` flag — silently overwrite the first
-/// result. Later duplicates get a numeric suffix (`_2`, `_3`, ...) inserted
-/// before the extension.
+/// Ensures output paths avoid colliding with:
+/// 1. Files already existing on disk
+/// 2. Active or pending jobs in the queue (via `already_claimed`)
+/// 3. Earlier inputs in the same batch
+///
+/// If a collision occurs with `{stem}_encoded.{ext}`, numeric suffixes (`_1`, `_2`, `_3`, ...)
+/// are incrementally appended before the extension until an unoccupied filename is found.
+#[allow(dead_code)]
 pub fn derive_output_paths_unique(
     inputs: &[String],
     config: &EncodeConfig,
     output_dir: Option<&str>,
 ) -> Vec<String> {
-    let mut seen: HashMap<String, usize> = HashMap::new();
+    derive_output_paths_unique_with_claimed(inputs, config, output_dir, &[])
+}
+
+/// Derive unique output paths for a batch of inputs with an explicit set of already-claimed
+/// paths (e.g. from currently active/pending queue jobs).
+pub fn derive_output_paths_unique_with_claimed(
+    inputs: &[String],
+    config: &EncodeConfig,
+    output_dir: Option<&str>,
+    already_claimed: &[String],
+) -> Vec<String> {
+    let mut claimed: HashSet<String> = already_claimed
+        .iter()
+        .map(|p| normalize_path_key(p))
+        .collect();
+
     inputs
         .iter()
         .map(|f| {
             let base = derive_output_path(f, config, output_dir);
-            let count = seen.entry(base.clone()).or_insert(0);
-            *count += 1;
-            if *count == 1 {
-                base
-            } else {
-                let p = std::path::Path::new(&base);
-                let stem = p.file_stem().unwrap_or_default().to_string_lossy();
-                let ext = p.extension().unwrap_or_default().to_string_lossy();
-                let parent = p.parent().unwrap_or(std::path::Path::new("."));
-                let name = if ext.is_empty() {
-                    format!("{}_{}", stem, *count)
+            let base_key = normalize_path_key(&base);
+
+            // If base does not exist on disk AND has not been claimed yet, use base
+            if !std::path::Path::new(&base).exists() && !claimed.contains(&base_key) {
+                claimed.insert(base_key);
+                return base;
+            }
+
+            let p = std::path::Path::new(&base);
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+            let ext = p.extension().unwrap_or_default().to_string_lossy();
+            let parent = p.parent().unwrap_or(std::path::Path::new(""));
+
+            let mut n = 1;
+            loop {
+                let candidate_name = if ext.is_empty() {
+                    format!("{}_{}", stem, n)
                 } else {
-                    format!("{}_{}.{}", stem, *count, ext)
+                    format!("{}_{}.{}", stem, n, ext)
                 };
-                parent.join(name).to_string_lossy().to_string()
+                let candidate = if parent.as_os_str().is_empty() {
+                    std::path::PathBuf::from(candidate_name)
+                } else {
+                    parent.join(candidate_name)
+                }
+                .to_string_lossy()
+                .to_string();
+
+                let candidate_key = normalize_path_key(&candidate);
+
+                if !std::path::Path::new(&candidate).exists() && !claimed.contains(&candidate_key) {
+                    claimed.insert(candidate_key);
+                    return candidate;
+                }
+                n += 1;
             }
         })
         .collect()
@@ -429,8 +479,8 @@ mod tests {
             Some(r"D:\out"),
         );
         assert_eq!(outputs[0], r"D:\out\movie_encoded.mp4");
-        assert_eq!(outputs[1], r"D:\out\movie_encoded_2.mp4");
-        assert_eq!(outputs[2], r"D:\out\movie_encoded_3.mp4");
+        assert_eq!(outputs[1], r"D:\out\movie_encoded_1.mp4");
+        assert_eq!(outputs[2], r"D:\out\movie_encoded_2.mp4");
 
         // The same file added twice collides even without an output dir
         let outputs = derive_output_paths_unique(
@@ -439,7 +489,55 @@ mod tests {
             None,
         );
         assert_eq!(outputs[0], r"C:\a\movie_encoded.mp4");
-        assert_eq!(outputs[1], r"C:\a\movie_encoded_2.mp4");
+        assert_eq!(outputs[1], r"C:\a\movie_encoded_1.mp4");
+    }
+
+    #[test]
+    fn derive_output_paths_unique_avoids_disk_file_collision() {
+        let temp_dir = std::env::temp_dir().join(format!("zffmpeg_test_collision_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let temp_dir_str = temp_dir.to_string_lossy().to_string();
+
+        let config = sample_config();
+        let input = "video.mp4";
+
+        // Pre-create base output file on disk: video_encoded.mp4
+        let base_file = temp_dir.join("video_encoded.mp4");
+        std::fs::write(&base_file, b"existing").unwrap();
+
+        // 1st derivation: should detect video_encoded.mp4 exists, and produce video_encoded_1.mp4
+        let outputs = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
+        assert_eq!(
+            outputs[0],
+            temp_dir.join("video_encoded_1.mp4").to_string_lossy().to_string()
+        );
+
+        // Pre-create video_encoded_1.mp4 on disk as well
+        let second_file = temp_dir.join("video_encoded_1.mp4");
+        std::fs::write(&second_file, b"existing 1").unwrap();
+
+        // 2nd derivation: should detect both exist and produce video_encoded_2.mp4
+        let outputs_next = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
+        assert_eq!(
+            outputs_next[0],
+            temp_dir.join("video_encoded_2.mp4").to_string_lossy().to_string()
+        );
+
+        // Clean up temp directory
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn derive_output_paths_unique_avoids_claimed_collision() {
+        let config = sample_config();
+        let claimed = vec![r"D:\out\movie_encoded.mp4".to_string()];
+        let outputs = derive_output_paths_unique_with_claimed(
+            &[r"C:\a\movie.mp4".into()],
+            &config,
+            Some(r"D:\out"),
+            &claimed,
+        );
+        assert_eq!(outputs[0], r"D:\out\movie_encoded_1.mp4");
     }
 
     // ---- build_ffmpeg_args ----

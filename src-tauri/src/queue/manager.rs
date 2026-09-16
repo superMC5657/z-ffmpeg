@@ -235,6 +235,16 @@ impl QueueManager {
         log::info!("queue clear completed count={cleared}");
     }
 
+    /// 获取当前队列中待处理（Pending）或正在编码（Encoding）任务的输出路径，
+    /// 用于新任务入队时重名去重，避免覆盖在途任务。
+    pub fn get_active_output_paths(&self) -> Vec<String> {
+        let jobs = self.jobs.read();
+        jobs.iter()
+            .filter(|j| matches!(j.status, JobStatus::Pending | JobStatus::Encoding))
+            .map(|j| j.output_path.clone())
+            .collect()
+    }
+
     pub fn update_progress(&self, job_id: &str, pct: f64) {
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
             job.progress = Some(pct);

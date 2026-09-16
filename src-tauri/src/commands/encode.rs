@@ -129,12 +129,22 @@ pub async fn cancel_encode(
 /// preview never shows two commands writing the same file.
 #[tauri::command]
 pub async fn build_ffmpeg_commands(
+    state: tauri::State<'_, crate::AppState>,
     config: EncodeConfig,
     files: Vec<String>,
     output_dir: Option<String>,
 ) -> AppResult<Vec<String>> {
-
-    let outputs = args::derive_output_paths_unique(&files, &config, output_dir.as_deref());
+    let active_outputs = state
+        .queue_manager
+        .as_ref()
+        .map(|q| q.get_active_output_paths())
+        .unwrap_or_default();
+    let outputs = args::derive_output_paths_unique_with_claimed(
+        &files,
+        &config,
+        output_dir.as_deref(),
+        &active_outputs,
+    );
     let cmds: Vec<String> = files
         .iter()
         .zip(outputs.iter())
