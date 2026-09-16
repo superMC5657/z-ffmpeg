@@ -18,7 +18,7 @@ interface SystemState {
 
 export const useSystemStore = create<SystemState>((set, get) => ({
   hwAccels: [],
-  // 初始为 true,与旧的局部 state 行为一致:首次渲染即显示骨架屏
+  // 初始为 true，首次加载显示骨架屏
   loading: true,
   loaded: false,
 

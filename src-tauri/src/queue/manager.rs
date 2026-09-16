@@ -147,9 +147,6 @@ impl QueueManager {
     }
 
     // --- Public API ---
-    //
-    // 注：DB 写原语（save_job / delete_job_db）与历史查询已移入 `history.rs`，
-    // 本文件只保留内存调度。
 
     pub fn add_jobs(&self, files: Vec<(String, String)>, config: EncodeConfig) -> Vec<String> {
         self.add_jobs_estimated(files, vec![], config)
@@ -519,8 +516,6 @@ mod tests {
         ).unwrap()
     }
 
-    // 历史/持久化回归（增删查、分页、VMAF 回退）已移入 `history.rs` tests。
-
     #[test]
     fn queue_pause_blocks_scheduling_until_resume() {
         let dir = std::env::temp_dir().join(format!("z-ffmpeg_qtest_{}", uuid::Uuid::new_v4()));
@@ -575,8 +570,6 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
-
-    // 历史语义回归（clear/remove 后 DB 行保留）见 `history.rs` tests。
 
     #[test]
     fn cancelled_pending_job_is_never_dequeued() {

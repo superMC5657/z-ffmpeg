@@ -267,9 +267,7 @@ export interface FfmpegStatusInfo {
 }
 
 // ============================================================
-// History 查询（对齐后端 history_filtered：全可选；limit 缺省 = 不分页）
-// 原定义散落在 lib/tauri.ts，收敛到此；HistoryPage 的本地同名类型已
-// 更名为 HistoryFilter，避免与 IPC 查询形状混淆。
+// History 查询参数
 // ============================================================
 
 export interface HistoryQuery {

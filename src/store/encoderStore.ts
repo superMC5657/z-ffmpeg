@@ -11,7 +11,7 @@ import type {
   HwAccelConfig,
   EstimatedSize,
 } from "@/types";
-import { probeFile, startEncode, cancelEncode, estimateOutputSizes } from "@/lib/tauri";
+import { probeFile, estimateOutputSizes } from "@/lib/tauri";
 import { zlog } from "@/lib/z-log";
 
 // 模块级防抖计时器：CRF slider 拖动等高频参数变化时合并为一次预估刷新
@@ -57,13 +57,9 @@ interface EncoderState {
   setHwAccel: (config: HwAccelConfig | null) => void;
 
   // Actions
-  isEncoding: boolean;
-  setIsEncoding: (v: boolean) => void;
   buildConfig: () => CodecConfig;
   /** 把一份完整配置(如预设的 config)应用到当前表单状态 */
   applyConfig: (config: CodecConfig) => void;
-  startEncode: (inputPath: string, outputPath: string) => Promise<string>;
-  cancelEncode: (jobId: string) => Promise<void>;
 
   /** 预估输出体积区间，key = 输入文件 path；参数变化时防抖刷新 */
   estimatedSizes: Record<string, EstimatedSize | null>;
@@ -305,9 +301,6 @@ export const useEncoderStore = create<EncoderState>()(
   },
 
   // Actions
-  isEncoding: false,
-  setIsEncoding: (v) => set({ isEncoding: v }),
-
   buildConfig: () => {
     const s = get();
     return {
@@ -373,25 +366,6 @@ export const useEncoderStore = create<EncoderState>()(
       hw: config.hwAccel?.device ?? "none",
     });
     get().scheduleEstimateRefresh();
-  },
-
-  startEncode: async (inputPath: string, outputPath: string) => {
-    const config = get().buildConfig();
-    const jobId = crypto.randomUUID();
-    void zlog.uiAction("单任务开始转码", {
-      input: inputPath.split(/[/\\]/).pop(),
-      output: outputPath.split(/[/\\]/).pop(),
-      jobId,
-    });
-    set({ isEncoding: true });
-    await startEncode(config, inputPath, outputPath, jobId);
-    return jobId;
-  },
-
-  cancelEncode: async (jobId: string) => {
-    void zlog.uiAction("取消单任务转码", { jobId });
-    await cancelEncode(jobId);
-    set({ isEncoding: false });
   },
 
   // ---- 预估体积（编码页实时预览） ----

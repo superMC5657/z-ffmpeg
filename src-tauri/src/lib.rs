@@ -5,7 +5,6 @@ mod preset;
 mod ffmpeg;
 mod license;
 mod analytics;
-mod util;
 mod error;
 mod z_log;
 
@@ -74,8 +73,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::encode::probe_file,
-            commands::encode::start_encode,
-            commands::encode::cancel_encode,
             commands::encode::build_ffmpeg_commands,
             commands::encode::save_command_to_file,
             commands::encode::estimate_output_sizes,

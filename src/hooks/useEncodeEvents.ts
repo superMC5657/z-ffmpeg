@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { useQueueStore } from "@/store/queueStore";
-import { useEncoderStore } from "@/store/encoderStore";
 import {
   onEncodeProgress,
   onEncodeComplete,
@@ -16,7 +15,6 @@ import { isTauriRuntime } from "@/lib/utils";
 export function useEncodeEvents() {
   const updateProgress = useQueueStore((s) => s.updateProgress);
   const updateJobStatus = useQueueStore((s) => s.updateJobStatus);
-  const setIsEncoding = useEncoderStore((s) => s.setIsEncoding);
 
   useEffect(() => {
     // Tauri event listeners only exist inside the WebView runtime
@@ -27,7 +25,6 @@ export function useEncodeEvents() {
     });
 
     const unlistenComplete = onEncodeComplete((result) => {
-      setIsEncoding(false);
       updateJobStatus(
         result.jobId,
         result.cancelled
@@ -40,7 +37,6 @@ export function useEncodeEvents() {
     });
 
     const unlistenError = onEncodeError(({ jobId, error }) => {
-      setIsEncoding(false);
       updateJobStatus(jobId, "Failed", error);
     });
 
@@ -55,5 +51,5 @@ export function useEncodeEvents() {
       unlistenError.then((fn) => fn());
       unlistenQueue.then((fn) => fn());
     };
-  }, [updateProgress, updateJobStatus, setIsEncoding]);
+  }, [updateProgress, updateJobStatus]);
 }

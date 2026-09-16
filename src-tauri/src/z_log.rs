@@ -54,11 +54,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 
     tauri_plugin_log::Builder::new()
         .level(root_level())
-        // 编码进度是高频噪音源：只允许 Info 及以上落盘（dev 放宽到 Debug，
-        // 但同样禁止 Trace）。crate 名为 `zffmpeg_lib`，兼容任务描述中的
-        // `zffmpeg::encoder` 前缀写法，两条都压住。
+        // 编码进度是高频噪音源：只允许 Info 及以上落盘（dev 放宽到 Debug，禁止 Trace）
         .level_for("zffmpeg_lib::encoder", encoder_level())
-        .level_for("zffmpeg::encoder", encoder_level())
         // 第三方噪音一并压住
         .level_for("tao", LevelFilter::Warn)
         .level_for("wry", LevelFilter::Warn)
@@ -111,11 +108,7 @@ fn is_email_domain_char(c: char) -> bool {
 }
 
 fn mask_emails(s: &str) -> String {
-    // 基于游标推进：只在 ASCII '@'（恒为字符边界）处做邮箱判定，
-    // 非 ASCII 内容按完整 char 拷贝。旧实现按字节步进，
-    // `bytes[i] as char` 会把中文 UTF-8 多字节拆成 U+00XX 乱码，
-    // 且 `s[start..end]` 可能切在字符中间导致 panic。
-    // 中文 UI 日志必然走 redact（导出诊断包），此处必须字符边界安全。
+    // 基于游标推进：只在 ASCII '@' 处判定邮箱，按字符边界安全拷贝，保障多字节字符不乱码。
     let mut out = String::with_capacity(s.len());
     let mut cursor = 0;
     let mut i = 0;

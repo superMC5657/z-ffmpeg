@@ -1,7 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-use crate::encoder::engine;
 use crate::encoder::{args, estimate, probe};
 use crate::error::{AppError, AppResult};
 
@@ -78,48 +75,6 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
         info.file_size
     );
     Ok(info)
-}
-
-#[tauri::command]
-pub async fn start_encode(
-    app_handle: tauri::AppHandle,
-    config: EncodeConfig,
-    input_path: String,
-    output_path: String,
-    job_id: String,
-) -> AppResult<()> {
-    let cancel = Arc::new(AtomicBool::new(false));
-
-    let app_handle_clone = app_handle.clone();
-    let config_clone = config.clone();
-    let input_path_clone = input_path.clone();
-    let output_path_clone = output_path.clone();
-    let job_id_clone = job_id.clone();
-    let cancel_clone = cancel.clone();
-
-    // Run encoding in a blocking thread
-    tokio::task::spawn_blocking(move || {
-        let _ = engine::start_encode(
-            app_handle_clone,
-            job_id_clone,
-            config_clone,
-            input_path_clone,
-            output_path_clone,
-            cancel_clone,
-        );
-    })
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn cancel_encode(
-    job_id: String,
-) -> AppResult<()> {
-    let _ = engine::cancel_process(&job_id);
-    Ok(())
 }
 
 /// Build display-ready ffmpeg command lines from a codec config — one per

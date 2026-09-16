@@ -17,9 +17,8 @@ pub struct EstimatedSize {
     pub max: u64,
 }
 
-/// 预估压缩后的输出体积（字节），返回单一体积值（expected）。
-///
-/// 供队列 Pending 状态持久化及旧有接口兼容调用。
+/// 预估压缩后的期望输出体积（字节），返回 expected 值。
+/// 供队列 Pending 状态持久化使用。
 pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64> {
     estimate_output_size(config, probe).map(|e| e.expected)
 }

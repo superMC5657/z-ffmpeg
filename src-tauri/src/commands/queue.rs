@@ -185,15 +185,13 @@ pub async fn retry_job(
 }
 
 /// Get the current max concurrent encoding jobs limit.
-/// 免费版上限为 2（Pro 16）：读取时也收敛，避免历史设置值越界展示。
 #[tauri::command]
 pub async fn get_max_concurrent(
     state: State<'_, crate::AppState>,
 ) -> AppResult<usize> {
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
-    let cap = concurrency_cap(&state.license);
-    Ok(queue.max_concurrent().min(cap))
+    Ok(queue.max_concurrent())
 }
 
 /// Set the max concurrent encoding jobs limit (clamped to 1..=16, persisted).
@@ -204,16 +202,10 @@ pub async fn set_max_concurrent(
 ) -> AppResult<usize> {
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
-    let cap = concurrency_cap(&state.license);
-    Ok(queue.set_max_concurrent(value.min(cap)))
+    Ok(queue.set_max_concurrent(value))
 }
 
-/// 并发数上限（统一支持 1..=16）
-fn concurrency_cap(_license: &crate::license::LicenseManager) -> usize {
-    crate::license::config::FREE_MAX_CONCURRENT
-}
-
-/// 队列变更后统一广播快照（7 个命令此前重复同一两行）
+/// 队列变更后广播状态快照
 pub(crate) fn emit_queue(app: &tauri::AppHandle, queue: &crate::queue::QueueManager) {
     let status = queue.get_status();
     let _ = app.emit("queue://updated", &status);

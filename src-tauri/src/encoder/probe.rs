@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn parse_probe_result_audio_bitrate_falls_back_to_container_rate() {
-        // 音频流不写 bit_rate：用「容器总码率 − 视频流码率」近似，不再把整个容器当音频
+        // 音频流未提供 bit_rate 时：用「容器总码率 − 视频流码率」近似推算
         // 容器 = 104857600*8/100 ≈ 8388608 bps，视频 = 8000000 bps → 音频 ≈ 388608 bps
         let json = serde_json::json!({
             "format": { "size": "104857600", "duration": "100.0" },

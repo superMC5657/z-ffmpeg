@@ -58,7 +58,7 @@ fn builtin_presets() -> Vec<Preset> {
     ]
 }
 
-/// 预设共用的音频配置（9 个软件预设 + 9 个硬件预设此前重复同一字面量）
+/// 预设默认音频配置
 fn audio_json(codec: &str) -> serde_json::Value {
     serde_json::json!({
         "codec": codec,

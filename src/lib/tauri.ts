@@ -24,19 +24,6 @@ export async function probeFile(filePath: string): Promise<FileInfo> {
   return invoke<FileInfo>("probe_file", { filePath });
 }
 
-export async function startEncode(
-  config: CodecConfig,
-  inputPath: string,
-  outputPath: string,
-  jobId: string
-): Promise<void> {
-  return invoke("start_encode", { config, inputPath, outputPath, jobId });
-}
-
-export async function cancelEncode(jobId: string): Promise<void> {
-  return invoke("cancel_encode", { jobId });
-}
-
 export async function buildFfmpegCommands(
   files: string[],
   config: CodecConfig,
@@ -239,7 +226,7 @@ export async function trackEvent(name: string): Promise<void> {
 // Event listeners
 // ============================================================
 
-/** 事件订阅统一出口（6 个监听此前重复同一 listen+payload 解包样板） */
+/** 事件订阅统一辅助函数 */
 function onEvent<T>(event: string, handler: (payload: T) => void): Promise<UnlistenFn> {
   return listen<T>(event, (e) => handler(e.payload));
 }

@@ -108,8 +108,7 @@ pub enum RateControl {
 }
 
 
-/// 音频编码器（此前为自由字符串，拼写错误要到 ffmpeg 运行时才暴露；
-/// 收敛为枚举后与前端 `AudioCodec` 联合类型一一对应， wire 格式不变）。
+/// 音频编码器枚举，与前端 `AudioCodec` 联合类型对齐。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AudioCodec {
     #[serde(rename = "AAC")]

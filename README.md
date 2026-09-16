@@ -47,7 +47,7 @@ cd src-tauri && cargo test   # Rust 单元测试
 
 ## 发布
 
-推送 `v*` tag 触发两条流水线：`ci.yml` 跑类型检查、eslint、vitest、cargo test 质量门；`release-tauri.yml` 并行构建 NSIS 安装包（不等待质量门），发布 GitHub Release 到公开产物仓库 `superMC5657/z-ffmpeg-release`（匿名下载 + gh-proxy 加速），产物含 updater 签名文件与国内镜像 `latest-cn.json`。版本号用 `pnpm bump:version` 三处同步（package.json / Cargo.toml / tauri.conf.json）。
+推送 `v*` tag 触发两条流水线：`ci.yml` 跑类型检查、eslint、vitest、cargo test 质量门；`release-tauri.yml` 并行构建 NSIS 安装包（不等待质量门），发布 GitHub Release 到公开产物仓库 `superMC5657/z-ffmpeg-release`（匿名下载 + gh-proxy 加速），产物含 updater 签名文件与国内镜像 `latest-cn.json`。版本号用 `pnpm bump` 同步。
 
 ## 许可
 

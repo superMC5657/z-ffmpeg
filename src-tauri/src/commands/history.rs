@@ -29,7 +29,7 @@ pub struct HistoryPageResult {
 }
 
 /// 读取编码历史。所有参数可选：
-/// - `limit`/`offset`：分页（limit 缺省 = 不分页，全量返回，兼容旧调用）；
+/// - `limit`/`offset`：分页（limit 为 None 时全量返回）；
 /// - `status`：按状态过滤（Completed / Failed / Cancelled）；
 /// - `search`：按文件路径模糊搜索。
 #[tauri::command]
