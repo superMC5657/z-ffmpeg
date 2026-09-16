@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn test_real_system_gpu_detection_runs_without_panic() {
         let gpus = detect_system_gpus();
-        println!("Discovered system GPUs: {gpus:?}");
+        // 仅断言不打印：测试输出禁 println!（日志收敛）
         // On Windows or systems with GPUs, it should find GPUs without crashing
         for gpu in &gpus {
             assert!(!gpu.name.is_empty());

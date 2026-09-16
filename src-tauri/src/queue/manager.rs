@@ -170,20 +170,10 @@ impl QueueManager {
             // 入队时记录原始文件大小（stat，快）；文件已删/不可读时保持 None
             job.input_size = std::fs::metadata(&job.input_path).ok().map(|m| m.len());
             job.estimated_output_size = estimate;
-            let rc_str = match &config.video_settings.rate_control {
-                crate::encoder::codec::RateControl::Crf { value } => format!("crf={value}"),
-                crate::encoder::codec::RateControl::Cqp { value } => format!("cqp={value}"),
-                crate::encoder::codec::RateControl::Abr { bitrate_kbps, .. } => format!("bitrate={bitrate_kbps}k"),
-            };
-            let preset_str = config.video_settings.encoder_preset.as_str();
-            let hw_str = config.hw_accel.as_ref().map(|h| format!("{:?}", h.device)).unwrap_or_else(|| "none".into());
             self.save_job(&job);
-            log::info!("queue enqueued job {} file {}", job.id, job.file_name());
-            log::info!(
-                "queue job {} config video={:?} {} preset={} hw={} container={:?}",
-                job.id, config.video_codec, rc_str, preset_str, hw_str, config.container_format,
-            );
             ids.push(job.id.clone());
+            // 入队只记一行：id + basename + 队列长度（禁 {:?} 全 dump，config 明细不落盘）
+            log::info!("queue enqueued job {} file {} len={}", job.id, job.file_name(), jobs.len() + 1);
             jobs.push_back(job);
         }
         ids
@@ -359,14 +349,14 @@ impl QueueManager {
     /// 队列级暂停：暂停自动调度（正在编码的任务继续到结束）。
     pub fn pause_queue(&self) {
         *self.paused.write() = true;
-        log::info!("queue paused");
+        log::debug!("queue paused");
     }
 
     /// 解除队列暂停。返回解除前的状态，方便调用方判断是否需要重新拉起调度。
     pub fn resume_queue(&self) -> bool {
         let was = std::mem::replace(&mut *self.paused.write(), false);
         if was {
-            log::info!("queue resumed");
+            log::debug!("queue resumed");
         }
         was
     }
@@ -442,7 +432,7 @@ impl QueueManager {
                 let app = app_handle.clone();
                 let manager = qm.clone();
                 qm.inc_active();
-                log::info!(
+                log::debug!(
                     "queue dispatching job {job_id} file {} active={} max_concurrent={}",
                     job.file_name(),
                     *qm.active_count.read(),
