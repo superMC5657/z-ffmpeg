@@ -15,12 +15,14 @@ use log::LevelFilter;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
-/// 单个日志文件滚动阈值：20MB（与本地小盘策略对齐）。
-const MAX_FILE_SIZE: u128 = 20 * 1024 * 1024;
-/// 日志保留天数：7 天。
-const RETAIN_DAYS: u64 = 7;
-/// 日志目录总水位：20MB，超了按 mtime 从旧到新删。
-const MAX_TOTAL_BYTES: u64 = 20 * 1024 * 1024;
+/// 单个日志文件滚动阈值：5MB（单文件封顶，避免单个日志过大拖慢导出）。
+const MAX_FILE_SIZE: u128 = 5 * 1024 * 1024;
+/// 日志保留天数：14 天。
+const RETAIN_DAYS: u64 = 14;
+/// 日志目录总水位：25MB，超了按 mtime 从旧到新删。
+const MAX_TOTAL_BYTES: u64 = 25 * 1024 * 1024;
+/// 滚动保留的旧日志文件数（不含当前写入文件）：KeepSome(5)。
+const KEEP_ROTATED: usize = 5;
 
 /// 编码模块在 release/dev 下的阈值：避免 progress 每帧 Trace 刷盘。
 fn encoder_level() -> LevelFilter {
@@ -40,8 +42,51 @@ fn root_level() -> LevelFilter {
     }
 }
 
+/// 解析单条级别覆盖值：error/warn/info/debug/trace（大小写不敏感，
+/// 前后空白容忍，warn 兼容 warning）。非法值返回 None——调用方忽略，
+/// 绝不因环境变量写错而炸启动。
+fn parse_level_override(raw: &str) -> Option<LevelFilter> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "off" => Some(LevelFilter::Off),
+        "error" => Some(LevelFilter::Error),
+        "warn" | "warning" => Some(LevelFilter::Warn),
+        "info" => Some(LevelFilter::Info),
+        "debug" => Some(LevelFilter::Debug),
+        "trace" => Some(LevelFilter::Trace),
+        _ => None,
+    }
+}
+
+/// 全局阈值解析优先级：ZFFMPEG_LOG > RUST_LOG > 默认。
+/// 专有变量优先（避免 RUST_LOG 被其他库污染时误伤本应用阈值），
+/// 两者都缺失/非法时回退到 `root_level()`。
+fn resolve_level() -> LevelFilter {
+    std::env::var("ZFFMPEG_LOG")
+        .ok()
+        .and_then(|v| parse_level_override(&v))
+        .or_else(|| {
+            std::env::var("RUST_LOG")
+                .ok()
+                .and_then(|v| parse_level_override(&v))
+        })
+        .unwrap_or_else(root_level)
+}
+
 /// 构建日志插件：release 仅 `LogDir`，dev 额外 `Stdout` + `Webview`。
 pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    // 全局 format：级别 + target + 本地 HH:mm:ss.SSS，写盘前二次脱敏
+    //（调用方偶发直接打全路径/token，format 层统一兜底）。
+    let fmt = |out: tauri_plugin_log::fern::FormatCallback,
+               message: &std::fmt::Arguments,
+               record: &log::Record| {
+        out.finish(format_args!(
+            "[{}][{}][{}] {}",
+            chrono::Local::now().format("%H:%M:%S%.3f"),
+            record.level(),
+            record.target(),
+            redact(&message.to_string())
+        ))
+    };
     let targets: Vec<Target> = if cfg!(debug_assertions) {
         vec![
             Target::new(TargetKind::LogDir { file_name: None }),
@@ -53,7 +98,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     };
 
     tauri_plugin_log::Builder::new()
-        .level(root_level())
+        .level(resolve_level())
         // 编码进度是高频噪音源：只允许 Info 及以上落盘（dev 放宽到 Debug，禁止 Trace）
         .level_for("zffmpeg_lib::encoder", encoder_level())
         // 第三方噪音一并压住
@@ -65,7 +110,8 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .level_for("hyper", LevelFilter::Warn)
         .level_for("tungstenite", LevelFilter::Warn)
         .targets(targets)
-        .rotation_strategy(RotationStrategy::KeepAll)
+        .format(fmt)
+        .rotation_strategy(RotationStrategy::KeepSome(KEEP_ROTATED))
         .max_file_size(MAX_FILE_SIZE)
         .timezone_strategy(TimezoneStrategy::UseLocal)
         .build()
@@ -252,9 +298,10 @@ fn is_expired(modified: SystemTime, now: SystemTime) -> bool {
         .unwrap_or(false)
 }
 
-/// 修剪策略：删 7 天前文件；总量超 20MB 按 mtime 从旧到新删。只管 *.log。
+/// 修剪策略：删 14 天前文件；总量超 25MB 按 mtime 从旧到新删。只管 *.log。
 pub fn prune(dir: &Path) {
     let now = SystemTime::now();
+    let mut removed: u32 = 0;
     let entries: Vec<_> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(Result::ok)
@@ -269,7 +316,7 @@ pub fn prune(dir: &Path) {
         })
         .unwrap_or_default();
 
-    // 1) 超 7 天直接删
+    // 1) 超 14 天直接删
     for entry in &entries {
         let path = entry.path();
         let old_enough = entry
@@ -278,12 +325,12 @@ pub fn prune(dir: &Path) {
             .ok()
             .map(|t| is_expired(t, now))
             .unwrap_or(false);
-        if old_enough {
-            std::fs::remove_file(&path).ok();
+        if old_enough && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
         }
     }
 
-    // 2) 总量水位：超 20MB 按 mtime 从旧到新删
+    // 2) 总量水位：超 25MB 按 mtime 从旧到新删
     let mut files: Vec<(PathBuf, u64, SystemTime)> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(Result::ok)
@@ -309,7 +356,12 @@ pub fn prune(dir: &Path) {
         }
         if std::fs::remove_file(&path).is_ok() {
             total = total.saturating_sub(len);
+            removed += 1;
         }
+    }
+    // 修剪只记删除计数：不记文件名（可能含用户目录片段）
+    if removed > 0 {
+        log::debug!("zlog pruned count={removed}");
     }
 }
 
@@ -389,6 +441,60 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parse_level_override_accepts_known_levels() {
+        assert_eq!(parse_level_override("error"), Some(LevelFilter::Error));
+        assert_eq!(parse_level_override("WARN"), Some(LevelFilter::Warn));
+        assert_eq!(parse_level_override("warning"), Some(LevelFilter::Warn));
+        assert_eq!(parse_level_override("  info  "), Some(LevelFilter::Info));
+        assert_eq!(parse_level_override("Debug"), Some(LevelFilter::Debug));
+        assert_eq!(parse_level_override("trace"), Some(LevelFilter::Trace));
+        assert_eq!(parse_level_override("off"), Some(LevelFilter::Off));
+        assert_eq!(parse_level_override("verbose"), None);
+        assert_eq!(parse_level_override(""), None);
+        assert_eq!(parse_level_override("info2"), None);
+    }
+
+    #[test]
+    fn resolve_level_prefers_zffmpeg_log_over_rust_log() {
+        // 单测内串行操作进程级环境变量：一个用例走完完整优先级链，
+        // 避免多用例并行读写互相干扰；结尾恢复现场。
+        let old_z = std::env::var("ZFFMPEG_LOG").ok();
+        let old_r = std::env::var("RUST_LOG").ok();
+        let restore = || {
+            match &old_z {
+                Some(v) => std::env::set_var("ZFFMPEG_LOG", v),
+                None => std::env::remove_var("ZFFMPEG_LOG"),
+            }
+            match &old_r {
+                Some(v) => std::env::set_var("RUST_LOG", v),
+                None => std::env::remove_var("RUST_LOG"),
+            }
+        };
+
+        std::env::remove_var("ZFFMPEG_LOG");
+        std::env::remove_var("RUST_LOG");
+        assert_eq!(resolve_level(), root_level());
+
+        // RUST_LOG 生效
+        std::env::set_var("RUST_LOG", "warn");
+        assert_eq!(resolve_level(), LevelFilter::Warn);
+
+        // ZFFMPEG_LOG 压过 RUST_LOG
+        std::env::set_var("ZFFMPEG_LOG", "error");
+        assert_eq!(resolve_level(), LevelFilter::Error);
+
+        // ZFFMPEG_LOG 非法时回退到 RUST_LOG（而非直接默认）
+        std::env::set_var("ZFFMPEG_LOG", "verbose");
+        assert_eq!(resolve_level(), LevelFilter::Warn);
+
+        // 两者都非法时回退默认
+        std::env::set_var("RUST_LOG", "nope");
+        assert_eq!(resolve_level(), root_level());
+
+        restore();
+    }
+
+    #[test]
     fn encoder_level_is_info_in_release_or_debug_in_dev() {
         let expected = if cfg!(debug_assertions) {
             LevelFilter::Debug
@@ -404,6 +510,26 @@ mod tests {
         assert!(!out.contains("user@example.com"), "email leaked: {out}");
         assert!(!out.contains("abc123"), "token leaked: {out}");
         assert!(!out.contains("\\Bob\\"), "username leaked: {out}");
+    }
+
+    #[test]
+    fn redact_masks_code_value_and_home_dirs() {
+        // 激活码/验证码类 `code[:=] value` 必须脱敏
+        let out = redact("verify code=ABCD-1234-EFGH-5678 done");
+        assert!(!out.contains("ABCD-1234-EFGH-5678"), "code leaked: {out}");
+        assert!(out.contains("[redacted]"), "code not masked: {out}");
+        let out2 = redact("license code: SECRETVALUE ok");
+        assert!(!out2.contains("SECRETVALUE"), "code leaked: {out2}");
+        // Unix /home/ 与 macOS /Users/ 用户名片段必须脱敏
+        let nix = redact("open /home/alice/video/a.mp4 failed");
+        assert!(!nix.contains("/home/alice"), "username leaked: {nix}");
+        assert!(nix.contains("/home/[user]"), "home not masked: {nix}");
+        let mac = redact("open /Users/Bob/a.mp4 failed");
+        assert!(!mac.contains("/Users/Bob"), "username leaked: {mac}");
+        assert!(mac.contains("/Users/[user]"), "Users not masked: {mac}");
+        // Windows 小写 users 同样处理
+        let win = redact("open C:\\users\\eve\\a.mp4 failed");
+        assert!(!win.contains("\\eve\\"), "username leaked: {win}");
     }
 
     #[test]
@@ -444,11 +570,22 @@ mod tests {
     }
 
     #[test]
-    fn is_expired_flags_files_older_than_7_days() {
+    fn is_expired_flags_files_older_than_14_days() {
+        const DAY: u64 = 24 * 60 * 60;
         let now = SystemTime::now();
-        let eight_days = now - std::time::Duration::from_secs(8 * 24 * 60 * 60);
+        // 边界：恰 14 天未过期，14 天 + 1 秒过期（is_expired 用 `>` 比较）
+        let exactly_14d = now - std::time::Duration::from_secs(14 * DAY);
+        let just_over_14d = now - std::time::Duration::from_secs(14 * DAY + 1);
+        let just_under_14d = now - std::time::Duration::from_secs(14 * DAY - 1);
+        let fifteen_days = now - std::time::Duration::from_secs(15 * DAY);
         let one_hour = now - std::time::Duration::from_secs(3600);
-        assert!(is_expired(eight_days, now));
+        assert!(is_expired(fifteen_days, now));
+        assert!(is_expired(just_over_14d, now));
+        assert!(!is_expired(exactly_14d, now));
+        assert!(!is_expired(just_under_14d, now));
         assert!(!is_expired(one_hour, now));
+        // 未来 mtime（时钟回拨）不过期
+        let future = now + std::time::Duration::from_secs(3600);
+        assert!(!is_expired(future, now));
     }
 }
