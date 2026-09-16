@@ -15,7 +15,7 @@ cd src-tauri && cargo clippy -- -D warnings # Rust 代码检查
 pnpm exec tsc --noEmit # TS 类型检查
 ```
 
-CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流水线 `release-tauri.yml`（同样 tag 触发）与 CI 并行跑，发布不等待质量门。
+CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流水线 `release-tauri.yml` 先行触发 CI 质量门禁，通过后直接打包并发布。
 
 ## 架构
 

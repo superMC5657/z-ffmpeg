@@ -43,6 +43,10 @@ pub fn run() {
             // 的 identifier，Windows = %APPDATA%\{identifier}）
             let data_dir = get_data_dir(app.handle());
 
+            // 启动时初始化日志目录并执行修剪策略（对齐 docs/logging.md：修剪 7 天前旧日志与 20MB 总容量水位）
+            let log_dir = z_log::log_dir(app.handle());
+            log::debug!("log directory ready: {:?}", log_dir);
+
             // Initialize FFmpeg detection early
             let ffmpeg_status = ffmpeg::library::init_ffmpeg(&data_dir);
 
