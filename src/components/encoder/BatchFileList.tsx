@@ -37,6 +37,8 @@ export default function BatchFileList() {
   const removeFile = useEncoderStore((s) => s.removeFile);
   const clearFiles = useEncoderStore((s) => s.clearFiles);
   const estimatedSizes = useEncoderStore((s) => s.estimatedSizes);
+  const rateControl = useEncoderStore((s) => s.rateControl);
+  const isCrf = rateControl.type === "CRF" || rateControl.type === "CQP";
 
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -75,20 +77,19 @@ export default function BatchFileList() {
     }
   };
 
-  const handleHtmlFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleHtmlFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const paths: string[] = [];
     for (let i = 0; i < files.length; i++) {
-      // @ts-expect-error - path property in Electron/Tauri
+      // @ts-expect-error - path in webview
       paths.push(files[i].path || files[i].name);
     }
     await addFiles(paths);
     useToastStore
       .getState()
       .showToast(`已添加 ${paths.length} 个视频文件`, "success");
+    e.target.value = "";
   };
 
   const handleDrop = useCallback(
@@ -96,7 +97,7 @@ export default function BatchFileList() {
       e.preventDefault();
       setIsDragOver(false);
       const files = e.dataTransfer.files;
-      if (files.length > 0) {
+      if (files && files.length > 0) {
         const paths: string[] = [];
         for (let i = 0; i < files.length; i++) {
           // @ts-expect-error - path in webview
@@ -112,8 +113,16 @@ export default function BatchFileList() {
   );
 
   const totalInputSize = inputFiles.reduce((acc, f) => acc + (f.fileSize || 0), 0);
-  const totalEstimatedSize = Object.values(estimatedSizes).reduce<number>(
-    (a, b) => a + (b ?? 0),
+  const totalEstimatedExpected = Object.values(estimatedSizes).reduce<number>(
+    (a, b) => a + (b?.expected ?? 0),
+    0
+  );
+  const totalEstimatedMin = Object.values(estimatedSizes).reduce<number>(
+    (a, b) => a + (b?.min ?? 0),
+    0
+  );
+  const totalEstimatedMax = Object.values(estimatedSizes).reduce<number>(
+    (a, b) => a + (b?.max ?? 0),
     0
   );
 
@@ -215,7 +224,7 @@ export default function BatchFileList() {
               const estimatedSize = estimatedSizes[file.path];
               const ratio =
                 file.fileSize > 0 && estimatedSize != null
-                  ? Math.round(((estimatedSize - file.fileSize) / file.fileSize) * 100)
+                  ? Math.round(((estimatedSize.expected - file.fileSize) / file.fileSize) * 100)
                   : null;
               const effectiveBitrate =
                 file.bitrate ||
@@ -303,15 +312,21 @@ export default function BatchFileList() {
                           {/* 预估输出体积胶囊 */}
                           {estimatedSize != null && (
                             <span
-                              title="根据当前编码器与质量参数计算出的预期体积"
+                              title={
+                                isCrf && estimatedSize.min !== estimatedSize.max
+                                  ? `CRF/CQP 恒定画质预估区间：${formatFileSize(estimatedSize.min)} ~ ${formatFileSize(estimatedSize.max)}\n预期中位数：约 ${formatFileSize(estimatedSize.expected)}\n说明：实际体积取决于画面动态与纹理复杂度，高动态场景可能偏大`
+                                  : `根据当前编码器与质量参数计算出的预期体积：${formatFileSize(estimatedSize.expected)}`
+                              }
                               className={cn(
-                                "ml-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                                "ml-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-help",
                                 ratio !== null && ratio < 0
                                   ? "bg-success/15 text-success"
                                   : "bg-accent/15 text-accent"
                               )}
                             >
-                              预计 {formatFileSizeCompact(estimatedSize)}
+                              {isCrf && estimatedSize.min !== estimatedSize.max
+                                ? `约 ${formatFileSizeCompact(estimatedSize.min)}~${formatFileSizeCompact(estimatedSize.max)}`
+                                : `预计 ${formatFileSizeCompact(estimatedSize.expected)}`}
                               {ratio !== null && (
                                 <span className="opacity-80 font-normal">
                                   ({ratio > 0 ? `+${ratio}%` : `${ratio}%`})
@@ -366,13 +381,22 @@ export default function BatchFileList() {
               </strong>
             </span>
           </div>
-          {totalEstimatedSize > 0 && (
-            <div className="flex items-center gap-1.5 tabular-nums">
+          {totalEstimatedExpected > 0 && (
+            <div
+              title={
+                isCrf && totalEstimatedMin !== totalEstimatedMax
+                  ? `总体积预估区间：${formatFileSize(totalEstimatedMin)} ~ ${formatFileSize(totalEstimatedMax)}`
+                  : undefined
+              }
+              className="flex items-center gap-1.5 tabular-nums cursor-help"
+            >
               <CheckCircle2 className="h-4 w-4 text-success" />
               <span>
                 预计总体积:{" "}
                 <strong className="text-success font-bold">
-                  ≈ {formatFileSizeCompact(totalEstimatedSize)}
+                  {isCrf && totalEstimatedMin !== totalEstimatedMax
+                    ? `约 ${formatFileSizeCompact(totalEstimatedMin)} ~ ${formatFileSizeCompact(totalEstimatedMax)}`
+                    : `≈ ${formatFileSizeCompact(totalEstimatedExpected)}`}
                 </strong>
               </span>
             </div>

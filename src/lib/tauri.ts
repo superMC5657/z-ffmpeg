@@ -13,6 +13,7 @@ import type {
   FfmpegStatusInfo,
   VmafResult,
   LicenseStatus,
+  EstimatedSize,
 } from "@/types";
 
 // ============================================================
@@ -55,12 +56,12 @@ export async function saveCommandToFile(
   return invoke("save_command_to_file", { content, path });
 }
 
-/** 按当前编码参数预估各输入文件输出体积（字节）；信息不足项为 null */
+/** 按当前编码参数预估各输入文件输出体积区间（字节）；信息不足项为 null */
 export async function estimateOutputSizes(
   config: CodecConfig,
   files: FileInfo[]
-): Promise<(number | null)[]> {
-  return invoke<(number | null)[]>("estimate_output_sizes", { config, files });
+): Promise<(EstimatedSize | null)[]> {
+  return invoke<(EstimatedSize | null)[]>("estimate_output_sizes", { config, files });
 }
 
 // ============================================================

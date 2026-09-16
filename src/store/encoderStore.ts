@@ -9,6 +9,7 @@ import type {
   EncoderPreset,
   RateControl,
   HwAccelConfig,
+  EstimatedSize,
 } from "@/types";
 import { probeFile, startEncode, cancelEncode, estimateOutputSizes } from "@/lib/tauri";
 import { zlog } from "@/lib/z-log";
@@ -64,8 +65,8 @@ interface EncoderState {
   startEncode: (inputPath: string, outputPath: string) => Promise<string>;
   cancelEncode: (jobId: string) => Promise<void>;
 
-  /** 预估输出体积（字节），key = 输入文件 path；参数变化时防抖刷新 */
-  estimatedSizes: Record<string, number | null>;
+  /** 预估输出体积区间，key = 输入文件 path；参数变化时防抖刷新 */
+  estimatedSizes: Record<string, EstimatedSize | null>;
   /** 立即按当前参数刷新所有已探测文件的预估体积（后端纯算术，无 I/O） */
   refreshEstimates: () => Promise<void>;
   /** 参数变化后防抖（150ms）调度刷新预估 */
@@ -405,7 +406,7 @@ export const useEncoderStore = create<EncoderState>()(
       const sizes = await estimateOutputSizes(s.buildConfig(), files);
       // 期间参数/文件列表又变了：丢弃这次结果，避免旧参数覆盖新预估
       if (seq !== estimateRequestSeq) return;
-      const map: Record<string, number | null> = { ...get().estimatedSizes };
+      const map: Record<string, EstimatedSize | null> = { ...get().estimatedSizes };
       files.forEach((f, i) => {
         map[f.path] = sizes[i] ?? null;
       });

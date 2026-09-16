@@ -80,6 +80,15 @@ export interface FileInfo {
   probeError?: boolean;
 }
 
+export interface EstimatedSize {
+  /** 预估期望输出体积（字节） */
+  expected: number;
+  /** 平缓/低动态画面下限预估（字节） */
+  min: number;
+  /** 激烈/高动态/噪点画面上限预估（字节） */
+  max: number;
+}
+
 // ============================================================
 // Encoding progress
 // ============================================================

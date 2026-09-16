@@ -42,7 +42,7 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
         </div>
         <span className="shrink-0">
           {estimatedSizeBytes != null
-            ? <>等待中 · 预计 {formatFileSize(estimatedSizeBytes)}</>
+            ? <>等待中 · 约 {formatFileSize(estimatedSizeBytes)}</>
             : "等待中"}
         </span>
       </div>
