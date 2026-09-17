@@ -42,55 +42,58 @@
     </filter>
   </defs>
 
-  <!-- 1. Squircle 主底座容器（标准 Apple / macOS / Windows 11 Fluent 规范） -->
-  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
-  <rect x="0" y="0" width="1024" height="512" rx="225" ry="225" fill="url(#sheenGrad)"/>
+  <!-- 对齐 z-reader 规范：添加 48px 安全边距并等比缩放 90.625%（有效 Squircle 区域 928x928，居中平移 48px） -->
+  <g id="app-icon-content" transform="translate(48, 48) scale(0.90625)">
+    <!-- 1. Squircle 主底座容器（rx 238.35 * 0.90625 = 216，严格对齐 z-reader 的 rx="216"） -->
+    <rect x="0" y="0" width="1024" height="1024" rx="238.35" ry="238.35" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+    <rect x="0" y="0" width="1024" height="512" rx="238.35" ry="238.35" fill="url(#sheenGrad)"/>
 
-  <!-- 2. 多层胶片卡片队列 (代表 FFmpeg 批处理队列) -->
-  <!-- 底层卡片 -->
-  <g transform="translate(512, 535) scale(0.96) translate(-370, -225)">
-    <rect width="740" height="450" rx="36" fill="url(#cardGrad2)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
-    <!-- 胶片孔 -->
-    <g fill="rgba(0, 30, 80, 0.45)">
-      <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
-      <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
-      <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
-      <rect x="24" y="356" width="38" height="28" rx="8"/>
-      <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
-      <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
-      <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
-      <rect x="678" y="356" width="38" height="28" rx="8"/>
+    <!-- 2. 多层胶片卡片队列 (代表 FFmpeg 批处理队列) -->
+    <!-- 底层卡片 -->
+    <g transform="translate(512, 535) scale(0.96) translate(-370, -225)">
+      <rect width="740" height="450" rx="36" fill="url(#cardGrad2)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+      <!-- 胶片孔 -->
+      <g fill="rgba(0, 30, 80, 0.45)">
+        <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
+        <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
+        <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
+        <rect x="24" y="356" width="38" height="28" rx="8"/>
+        <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
+        <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
+        <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
+        <rect x="678" y="356" width="38" height="28" rx="8"/>
+      </g>
     </g>
-  </g>
 
-  <!-- 顶层主卡片 -->
-  <g transform="translate(512, 485) scale(1.0) translate(-370, -225)">
-    <rect width="740" height="450" rx="36" fill="url(#cardGrad1)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"/>
-    <!-- 胶片孔 -->
-    <g fill="rgba(0, 30, 80, 0.4)">
-      <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
-      <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
-      <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
-      <rect x="24" y="356" width="38" height="28" rx="8"/>
-      <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
-      <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
-      <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
-      <rect x="678" y="356" width="38" height="28" rx="8"/>
+    <!-- 顶层主卡片 -->
+    <g transform="translate(512, 485) scale(1.0) translate(-370, -225)">
+      <rect width="740" height="450" rx="36" fill="url(#cardGrad1)" stroke="rgba(255,255,255,0.22)" stroke-width="2.5"/>
+      <!-- 胶片孔 -->
+      <g fill="rgba(0, 30, 80, 0.4)">
+        <rect x="24" y="32" width="38" height="28" rx="8"/><rect x="24" y="86" width="38" height="28" rx="8"/>
+        <rect x="24" y="140" width="38" height="28" rx="8"/><rect x="24" y="194" width="38" height="28" rx="8"/>
+        <rect x="24" y="248" width="38" height="28" rx="8"/><rect x="24" y="302" width="38" height="28" rx="8"/>
+        <rect x="24" y="356" width="38" height="28" rx="8"/>
+        <rect x="678" y="32" width="38" height="28" rx="8"/><rect x="678" y="86" width="38" height="28" rx="8"/>
+        <rect x="678" y="140" width="38" height="28" rx="8"/><rect x="678" y="194" width="38" height="28" rx="8"/>
+        <rect x="678" y="248" width="38" height="28" rx="8"/><rect x="678" y="302" width="38" height="28" rx="8"/>
+        <rect x="678" y="356" width="38" height="28" rx="8"/>
+      </g>
     </g>
-  </g>
 
-  <!-- 3. 中央高能极速双箭头 (代表跳跃推进转码，纯白高反差，微缩尺寸极度锐利) -->
-  <g filter="url(#arrowShadow)">
-    <!-- 箭头 1 (左) -->
-    <polyline points="375,320 515,480 375,640" fill="none"
-              stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
-    <polyline points="375,320 515,480 375,640" fill="none"
-              stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 3. 中央高能极速双箭头 (代表跳跃推进转码，纯白高反差，微缩尺寸极度锐利) -->
+    <g filter="url(#arrowShadow)">
+      <!-- 箭头 1 (左) -->
+      <polyline points="375,320 515,480 375,640" fill="none"
+                stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="375,320 515,480 375,640" fill="none"
+                stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
 
-    <!-- 箭头 2 (右) -->
-    <polyline points="545,320 685,480 545,640" fill="none"
-              stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
-    <polyline points="545,320 685,480 545,640" fill="none"
-              stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- 箭头 2 (右) -->
+      <polyline points="545,320 685,480 545,640" fill="none"
+                stroke="url(#arrowGrad)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+      <polyline points="545,320 685,480 545,640" fill="none"
+                stroke="url(#arrowBevel)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
   </g>
 </svg>

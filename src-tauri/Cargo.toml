@@ -1,6 +1,6 @@
 [package]
 name = "z-ffmpeg"
-version = "0.1.2"
+version = "0.1.3"
 description = "Cross-platform video encoding application powered by FFmpeg"
 authors = ["z-ffmpeg"]
 edition = "2021"
