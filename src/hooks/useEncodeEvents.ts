@@ -9,15 +9,15 @@ import {
 import { isTauriRuntime } from "@/lib/utils";
 
 /**
- * Global hook that listens for encoding events from the Tauri backend
- * and updates the queue/progress stores accordingly.
+ * 全局 Hook，监听来自 Tauri 后端的编码事件，
+ * 并相应更新队列与进度 Store。
  */
 export function useEncodeEvents() {
   const updateProgress = useQueueStore((s) => s.updateProgress);
   const updateJobStatus = useQueueStore((s) => s.updateJobStatus);
 
   useEffect(() => {
-    // Tauri event listeners only exist inside the WebView runtime
+    // Tauri 事件监听器仅在 WebView 运行时中存在
     if (!isTauriRuntime()) return;
 
     const unlistenProgress = onEncodeProgress((progress) => {

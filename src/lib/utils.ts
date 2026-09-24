@@ -1,7 +1,7 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-/** Whether the app is running inside the Tauri WebView (not a plain browser). */
+/** 判断应用是否在 Tauri WebView 运行时中运行（而非普通浏览器）。 */
 export function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

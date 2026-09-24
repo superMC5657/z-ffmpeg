@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::ffmpeg;
 
-/// Hardware accelerator types and their encoder prefixes and candidate codecs
+/// 硬件加速器类型及其编码器前缀和候选编解码器
 const HW_ENCODERS: &[(&str, &str, &[&str])] = &[
     ("NVENC", "nvenc", &["h264", "hevc", "av1"]),
     ("AMF", "amf", &["h264", "hevc", "av1"]),
@@ -22,8 +22,8 @@ pub struct HwAccelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HwCodecInfo {
-    pub codec: String,       // "h264", "hevc", "av1"
-    pub encoder: String,     // "h264_nvenc", "hevc_nvenc", etc.
+    pub codec: String,       // "h264", "hevc", "av1"（编解码器名称）
+    pub encoder: String,     // "h264_nvenc", "hevc_nvenc" 等（FFmpeg 编码器）
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,12 +65,12 @@ impl DiscoveredGpu {
         }
     }
 
-    /// Whether this specific GPU generation supports hardware AV1 encode
+    /// 判断特定 GPU 代次是否支持硬件 AV1 编码
     pub fn supports_av1(&self) -> bool {
         let name_l = self.name.to_lowercase();
         match self.vendor() {
             GpuVendor::Nvidia => {
-                // Ada Lovelace (RTX 40-series, RTX 4000/4500/5000/6000 Ada, L4/L40) and Blackwell (RTX 50-series)
+                // Ada Lovelace（RTX 40 系列、RTX 4000/4500/5000/6000 Ada、L4/L40）和 Blackwell（RTX 50 系列）
                 name_l.contains("rtx 40")
                     || name_l.contains("rtx 50")
                     || name_l.contains("ada")
@@ -82,7 +82,7 @@ impl DiscoveredGpu {
                     || name_l.contains("l40")
             }
             GpuVendor::Amd => {
-                // RDNA 3 / 3.5 / 4: RX 7000-series, RX 8000, Radeon 780M, 880M, 890M, Radeon Pro W7000
+                // RDNA 3 / 3.5 / 4：RX 7000 系列、RX 8000、Radeon 780M、880M、890M、Radeon Pro W7000
                 name_l.contains("rx 7")
                     || name_l.contains("rx 8")
                     || name_l.contains("780m")
@@ -91,13 +91,13 @@ impl DiscoveredGpu {
                     || name_l.contains("w7")
             }
             GpuVendor::Intel => {
-                // Intel Arc Alchemist / Battlemage, Core Ultra (Meteor Lake, Lunar Lake, Arrow Lake)
+                // Intel Arc Alchemist / Battlemage、Core Ultra（Meteor Lake、Lunar Lake、Arrow Lake）
                 name_l.contains("arc")
                     || (name_l.contains("core") && name_l.contains("ultra"))
                     || name_l.contains("battlemage")
             }
             GpuVendor::Apple => {
-                // Apple M3, M4
+                // Apple M3、M4
                 name_l.contains("m3") || name_l.contains("m4")
             }
             GpuVendor::Other => false,
@@ -105,7 +105,7 @@ impl DiscoveredGpu {
     }
 }
 
-/// Detect system GPUs across platforms
+/// 跨平台检测系统 GPU
 pub fn detect_system_gpus() -> Vec<DiscoveredGpu> {
     #[cfg(target_os = "windows")]
     {
@@ -193,14 +193,14 @@ pub fn detect_system_gpus() -> Vec<DiscoveredGpu> {
     }
 }
 
-/// Detect all available hardware accelerators by querying ffmpeg,
-/// then matching against physically discovered GPUs and platform capabilities.
+/// 通过查询 ffmpeg 并结合物理检测到的 GPU 及平台能力，
+/// 检测所有可用的硬件加速器。
 pub fn detect_all(cpu_brand: &str, platform: &str) -> Vec<HwAccelInfo> {
     let gpus = detect_system_gpus();
     detect_all_with_gpus(cpu_brand, platform, &gpus)
 }
 
-/// Inner detection logic allowing mock GPU and encoder injection for unit tests
+/// 内部检测逻辑，允许注入模拟 GPU 和编码器以进行单元测试
 pub fn detect_all_with_gpus(
     cpu_brand: &str,
     platform: &str,
@@ -222,7 +222,7 @@ pub fn detect_all_inner(
     let mut results = Vec::new();
 
     for &(device_name, suffix, codecs) in HW_ENCODERS {
-        // Find matching GPU if system GPU discovery succeeded
+        // 系统 GPU 探测成功时查找匹配的 GPU
         let matched_gpu = gpus.iter().find(|g| match device_name {
             "NVENC" => g.vendor() == GpuVendor::Nvidia,
             "AMF" => g.vendor() == GpuVendor::Amd,
@@ -231,9 +231,9 @@ pub fn detect_all_inner(
             _ => false,
         });
 
-        // Determine availability
+        // 判定可用性
         let is_available = if !gpus.is_empty() {
-            // High-precision GPU hardware detection
+            // 高精度 GPU 硬件检测
             match device_name {
                 "NVENC" => matched_gpu.is_some() && (platform == "windows" || platform == "linux"),
                 "AMF" => matched_gpu.is_some() && (platform == "windows" || platform == "linux"),
@@ -243,16 +243,16 @@ pub fn detect_all_inner(
                 _ => false,
             }
         } else {
-            // Fallback to CPU/platform heuristic if GPU registry/sysfs query was empty
+            // 若 GPU 注册表/sysfs 查询为空，回退到基于 CPU/平台的启发式检测
             platform_supports_device_fallback(device_name, cpu_brand, platform)
         };
 
-        // Filter supported codecs based on both FFmpeg compilation AND physical GPU generation
+        // 结合 FFmpeg 编译支持与物理 GPU 代次共同过滤支持的编解码器
         let supported: Vec<HwCodecInfo> = if is_available {
             codecs
                 .iter()
                 .filter_map(|&codec| {
-                    // Check if physical GPU supports AV1 (e.g. RTX 30-series has NO av1_nvenc)
+                    // 检查物理 GPU 是否支持 AV1（例如 RTX 30 系列无 av1_nvenc 硬件支持）
                     if codec == "av1" {
                         if let Some(gpu) = matched_gpu {
                             if !gpu.supports_av1() {
@@ -297,7 +297,7 @@ pub fn detect_all_inner(
     results
 }
 
-/// Fallback heuristic when system GPU discovery is unavailable
+/// 当系统 GPU 探测不可用时的回退启发式检测
 fn platform_supports_device_fallback(device: &str, cpu_brand: &str, platform: &str) -> bool {
     let cpu = cpu_brand.to_lowercase();
     let is_intel = cpu.contains("intel");
@@ -312,7 +312,7 @@ fn platform_supports_device_fallback(device: &str, cpu_brand: &str, platform: &s
     }
 }
 
-/// Query ffmpeg -encoders and parse the list
+/// 查询 ffmpeg -encoders 并解析编码器列表
 fn query_encoders(ffmpeg_path: &std::path::PathBuf) -> Vec<String> {
     let output = match ffmpeg::hidden_command(ffmpeg_path)
         .args(["-encoders"])
@@ -325,7 +325,7 @@ fn query_encoders(ffmpeg_path: &std::path::PathBuf) -> Vec<String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
         .lines()
-        .filter(|l| l.starts_with(" V"))  // Video encoders
+        .filter(|l| l.starts_with(" V"))  // 仅保留视频编码器
         .filter_map(|l| {
             let parts: Vec<&str> = l.split_whitespace().collect();
             if parts.len() >= 3 {
@@ -337,7 +337,7 @@ fn query_encoders(ffmpeg_path: &std::path::PathBuf) -> Vec<String> {
         .collect()
 }
 
-/// Generic human-readable GPU name for a device type fallback
+/// 设备类型回退时的通用易读 GPU 名称
 fn get_default_gpu_name(device: &str) -> String {
     match device {
         "NVENC" => "NVIDIA GPU (NVENC)".into(),
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn gpu_av1_support_matrix() {
-        // NVIDIA: RTX 40/50 series support AV1; RTX 30 / 20 / 10 series do NOT
+        // NVIDIA：RTX 40/50 系列支持 AV1；RTX 30 / 20 / 10 系列不支持
         assert!(DiscoveredGpu::new("NVIDIA GeForce RTX 4090", "").supports_av1());
         assert!(DiscoveredGpu::new("NVIDIA GeForce RTX 4060 Ti", "").supports_av1());
         assert!(DiscoveredGpu::new("NVIDIA RTX 4000 Ada Generation", "").supports_av1());
@@ -380,7 +380,7 @@ mod tests {
         assert!(!DiscoveredGpu::new("NVIDIA GeForce RTX 2070 Super", "").supports_av1());
         assert!(!DiscoveredGpu::new("NVIDIA GeForce GTX 1660 Super", "").supports_av1());
 
-        // AMD: RX 7000 / 8000 and 780M/880M/890M support AV1; RX 6000 / 5000 do NOT
+        // AMD：RX 7000 / 8000 及 780M/880M/890M 支持 AV1；RX 6000 / 5000 不支持
         assert!(DiscoveredGpu::new("AMD Radeon RX 7900 XTX", "").supports_av1());
         assert!(DiscoveredGpu::new("AMD Radeon RX 7600", "").supports_av1());
         assert!(DiscoveredGpu::new("AMD Radeon 780M Graphics", "").supports_av1());
@@ -388,13 +388,13 @@ mod tests {
         assert!(!DiscoveredGpu::new("AMD Radeon RX 6700 XT", "").supports_av1());
         assert!(!DiscoveredGpu::new("AMD Radeon RX 5700 XT", "").supports_av1());
 
-        // Intel: Arc and Core Ultra support AV1; UHD 770 does NOT
+        // Intel：Arc 和 Core Ultra 支持 AV1；UHD 770 不支持
         assert!(DiscoveredGpu::new("Intel(R) Arc(TM) A770 Graphics", "").supports_av1());
         assert!(DiscoveredGpu::new("Intel(R) Arc(TM) A380 Graphics", "").supports_av1());
         assert!(DiscoveredGpu::new("Intel(R) Core(TM) Ultra 7 155H", "").supports_av1());
         assert!(!DiscoveredGpu::new("Intel(R) UHD Graphics 770", "").supports_av1());
 
-        // Apple: M3 / M4 support AV1; M1 / M2 do NOT
+        // Apple：M3 / M4 支持 AV1；M1 / M2 不支持
         assert!(DiscoveredGpu::new("Apple M3 Pro", "").supports_av1());
         assert!(DiscoveredGpu::new("Apple M4 Max", "").supports_av1());
         assert!(!DiscoveredGpu::new("Apple M1 Max", "").supports_av1());
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_detect_all_filters_codecs_and_device_availability() {
-        // Machine with only an RTX 3080 (Windows)
+        // 仅配备 RTX 3080 的设备（Windows）
         let rtx3080 = vec![DiscoveredGpu::new(
             "NVIDIA GeForce RTX 3080",
             "pci\\ven_10de&dev_2206",
@@ -420,17 +420,17 @@ mod tests {
         let nvenc = results.iter().find(|r| r.device == "NVENC").unwrap();
         assert!(nvenc.available);
         assert_eq!(nvenc.device_name, "NVIDIA GeForce RTX 3080");
-        // RTX 3080 must NOT have AV1 in supported codecs even if ffmpeg has av1_nvenc
+        // 即使 ffmpeg 包含 av1_nvenc，RTX 3080 也绝不能在支持列表中包含 AV1
         let codecs: Vec<&str> = nvenc.supported_codecs.iter().map(|c| c.codec.as_str()).collect();
         assert!(!codecs.contains(&"av1"), "RTX 3080 should not support AV1: {codecs:?}");
         assert!(codecs.contains(&"h264"));
         assert!(codecs.contains(&"hevc"));
 
-        // AMF must be unavailable even though CPU is AMD Ryzen
+        // 即使 CPU 是 AMD Ryzen，因无 AMD GPU，AMF 也必须不可用
         let amf = results.iter().find(|r| r.device == "AMF").unwrap();
         assert!(!amf.available, "AMF must be unavailable when no AMD GPU is installed");
 
-        // QSV must be unavailable
+        // QSV 必须不可用
         let qsv = results.iter().find(|r| r.device == "QSV").unwrap();
         assert!(!qsv.available);
     }
@@ -439,7 +439,7 @@ mod tests {
     fn test_real_system_gpu_detection_runs_without_panic() {
         let gpus = detect_system_gpus();
         // 仅断言不打印：测试输出禁 println!（日志收敛）
-        // On Windows or systems with GPUs, it should find GPUs without crashing
+        // 在 Windows 或配备 GPU 的系统上，检测 GPU 应正常运行且不崩溃
         for gpu in &gpus {
             assert!(!gpu.name.is_empty());
         }

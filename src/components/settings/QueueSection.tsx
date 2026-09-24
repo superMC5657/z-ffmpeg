@@ -6,7 +6,7 @@ import Card from "@/components/layout/Card";
 import AppleInput from "@/components/layout/AppleInput";
 
 export default function QueueSection() {
-  // Shared with Queue page — editing here syncs there and vice versa
+  // 与队列页面共享——此处修改将双向同步
   const maxConcurrent = useQueueStore((s) => s.maxConcurrent);
   const maxConcurrentLoaded = useQueueStore((s) => s.maxConcurrentLoaded);
   const fetchMaxConcurrent = useQueueStore((s) => s.fetchMaxConcurrent);

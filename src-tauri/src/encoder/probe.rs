@@ -5,7 +5,7 @@ use crate::commands::encode::FileInfo;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
 
-/// ffprobe args shared by both the sync and async probing paths.
+/// ffprobe 参数，供同步和异步探测路径共用。
 fn ffprobe_args(input_path: &str) -> Vec<String> {
     vec![
         "-v".into(),
@@ -18,14 +18,14 @@ fn ffprobe_args(input_path: &str) -> Vec<String> {
     ]
 }
 
-/// Parse ffprobe's JSON stdout into a serde value.
+/// 将 ffprobe 的 JSON 标准输出解析为 serde Value。
 fn parse_ffprobe_stdout(stdout: &[u8]) -> AppResult<serde_json::Value> {
     let stdout = String::from_utf8_lossy(stdout);
     serde_json::from_str(&stdout)
         .map_err(|e| AppError::Ffmpeg(format!("Failed to parse ffprobe output: {}", e)))
 }
 
-/// Run ffprobe to get file information (blocking — call from spawn_blocking contexts).
+/// 运行 ffprobe 获取文件信息（阻塞执行——需在 spawn_blocking 上下文中调用）。
 pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
     let ffprobe = ffmpeg::get_ffprobe_path()
         .ok_or(AppError::FfmpegNotFound)?;
@@ -38,16 +38,16 @@ pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
     parse_ffprobe_stdout(&output.stdout)
 }
 
-/// Run ffprobe asynchronously — never blocks the async runtime thread.
+/// 异步运行 ffprobe 获取文件信息——不会阻塞异步运行时线程。
 pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> {
     let ffprobe = ffmpeg::get_ffprobe_path()
         .ok_or(AppError::FfmpegNotFound)?;
 
     let mut cmd = tokio::process::Command::new(ffprobe);
-    // Windows: keep the console window hidden, same as the sync `hidden_command`.
+    // Windows: 保持控制台窗口隐藏，与同步版 `hidden_command` 一致。
     #[cfg(windows)]
     {
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW（隐藏控制台窗口）
     }
     let output = cmd
         .args(ffprobe_args(input_path))
@@ -93,7 +93,7 @@ pub(crate) fn fallback_audio_bps(container_bps: f64, video_bps: Option<f64>) -> 
     }
 }
 
-/// Parse ffprobe JSON into structured file info
+/// 将 ffprobe 的 JSON 结果解析为结构化的文件信息 FileInfo
 pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<FileInfo> {
     let format = json.get("format").ok_or_else(|| AppError::Ffmpeg("No format info".into()))?;
     let streams = json.get("streams").ok_or_else(|| AppError::Ffmpeg("No streams".into()))?;
@@ -115,7 +115,7 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<f64>().ok());
 
-    // Find main video stream (skips embedded cover/attached_pic streams)
+    // 查找主视频流（跳过内嵌封面/attached_pic 流）
     let video_stream = find_main_video_stream(streams);
 
     let audio_stream = streams

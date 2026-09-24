@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::encoder::codec::EncodeConfig;
 
-/// Status of an encoding job in the queue
+/// 队列中编码任务的状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub enum JobStatus {
@@ -35,7 +35,7 @@ impl JobStatus {
     }
 }
 
-/// One task in the encoding queue
+/// 编码队列中的单个任务
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodeJob {
@@ -45,7 +45,7 @@ pub struct EncodeJob {
     #[serde(skip)]
     pub config: Option<EncodeConfig>,
     pub status: JobStatus,
-    pub progress: Option<f64>, // 0.0 - 100.0
+    pub progress: Option<f64>, // 0.0 - 100.0 进度百分比
     /// 原始文件体积（字节）；add_to_queue 入队时读取，用于完成时计算压缩率
     pub input_size: Option<u64>,
     /// 编码开始前的预估输出体积（字节）；add_to_queue 时由 ffprobe + 配置推算
@@ -92,7 +92,7 @@ impl EncodeJob {
     }
 }
 
-/// Serializable snapshot for the frontend
+/// 发送给前端的可序列化任务快照
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JobSnapshot {
@@ -140,7 +140,7 @@ impl From<&EncodeJob> for JobSnapshot {
     }
 }
 
-/// Full queue state sent to frontend
+/// 发送给前端的完整队列状态快照
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueStatus {

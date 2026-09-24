@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { readFileSync } from "fs";
 
-// Read the app version from package.json so UI can display it without duplication
+// 从 package.json 读取应用版本号，以便 UI 可以复用展示而无需重复定义
 const pkg = JSON.parse(
   readFileSync(path.resolve(import.meta.dirname, "./package.json"), "utf-8")
 );
@@ -13,12 +13,12 @@ const pkg = JSON.parse(
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
-  // Inject the version from package.json at build time
+  // 在构建时注入 package.json 中的版本号
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
 
-  // index.html lives in src/, so the Vite root is src
+  // index.html 位于 src/ 目录，因此 Vite 根目录设为 src
   root: "src",
 
   resolve: {
@@ -27,29 +27,29 @@ export default defineConfig({
     },
   },
 
-  // Prevent vite from obscuring Rust errors
+  // 阻止 Vite 清屏，以免掩盖 Rust 的错误输出
   clearScreen: false,
 
   server: {
-    // Tauri expects a fixed port, fail if that port is not available
+    // Tauri 期望固定端口，如果该端口不可用则直接报错失败
     strictPort: true,
-    // Only listen on localhost
+    // 仅监听本地 localhost
     host: "localhost",
     port: 1430,
   },
 
-  // Env variables starting with TAURI_ will be exposed to tauri's source code
+  // 以 TAURI_ 开头的环境变量将暴露给 Tauri 源码
   envPrefix: ["VITE_", "TAURI_"],
 
   build: {
-    // Emit the bundle to the project root's dist/ for Tauri's frontendDist
+    // 将打包产物输出到项目根目录的 dist/，供 Tauri 的 frontendDist 使用
     outDir: "../dist",
     emptyOutDir: true,
-    // Tauri v2 uses Chromium on Windows (Edge WebView2) and WebKit on macOS/Linux
+    // Tauri v2 在 Windows 上使用 Chromium (Edge WebView2)，在 macOS/Linux 上使用 WebKit
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome120" : "safari16",
-    // Don't minify for debug builds
+    // Debug 调试构建时不压缩代码
     minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
-    // Produce sourcemaps for debug builds
+    // Debug 调试构建时生成 SourceMap
     sourcemap: !!process.env.TAURI_DEBUG,
   },
 });

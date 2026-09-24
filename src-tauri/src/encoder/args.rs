@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::encoder::codec::{EncodeConfig, VideoCodec};
 
-/// Build the ffmpeg command arguments from config
+/// 从配置构建 ffmpeg 命令行参数
 pub fn build_ffmpeg_args(
     config: &EncodeConfig,
     input_path: &str,
@@ -14,7 +14,7 @@ pub fn build_ffmpeg_args(
     build_ffmpeg_args_with_bitrate(config, input_path, output_path, None)
 }
 
-/// Build the ffmpeg command arguments from config with optional input bitrate safety guard
+/// 从配置构建 ffmpeg 命令行参数，并附带可选的输入码率安全防护
 pub fn build_ffmpeg_args_with_bitrate(
     config: &EncodeConfig,
     input_path: &str,
@@ -23,24 +23,24 @@ pub fn build_ffmpeg_args_with_bitrate(
 ) -> Vec<String> {
     let mut args: Vec<String> = vec![];
 
-    // Input
-    args.push("-y".into()); // Overwrite output
+    // 输入文件
+    args.push("-y".into()); // 覆盖输出文件
     args.push("-i".into());
     args.push(input_path.into());
 
-    // Video encoder
+    // 视频编码器
     let encoder = config.video_codec.encoder_name(config.hw_accel.as_ref());
     if config.video_codec != VideoCodec::Copy {
         args.push("-c:v".into());
         args.push(encoder.into());
 
-        // Encoder preset (value depends on the encoder — see encoder_preset_args)
+        // 编码器预设 preset（具体取值取决于具体编码器——参见 encoder_preset_args）
         args.extend(encoder_preset_args(config));
 
-        // Rate control (mapped to encoder capabilities)
+        // 码率控制（根据编码器特性映射）
         args.extend(rate_control_args(config, encoder));
 
-        // Auto Maxrate Guard:
+        // 自动最大码率保护（Auto Maxrate Guard）:
         // 当使用硬件加速（如 NVENC/AMF/QSV/VAAPI）恒定画质（CRF/CQP）转码时，
         // 面对高帧率(如 60fps)、复杂噪点或高动态源视频，硬件芯片在恒定质量量化下
         // 容易分配极大码率，导致转码后文件体积反超原片数倍。
@@ -66,19 +66,19 @@ pub fn build_ffmpeg_args_with_bitrate(
             }
         }
 
-        // Profile
+        // Profile 配置
         if let Some(ref profile) = config.video_settings.profile {
             args.push("-profile:v".into());
             args.push(profile.clone());
         }
 
-        // Pixel format
+        // 像素格式
         if let Some(ref pix_fmt) = config.video_settings.pixel_format {
             args.push("-pix_fmt".into());
             args.push(pix_fmt.clone());
         }
 
-        // Resolution scaling (force even dimensions for chroma subsampling compatibility)
+        // 分辨率缩放（强制偶数尺寸以满足色度抽样兼容性要求）
         if let Some(ref res) = config.video_settings.resolution {
             let mut w = res.width.max(2);
             let mut h = res.height.max(2);
@@ -88,7 +88,7 @@ pub fn build_ffmpeg_args_with_bitrate(
             args.push(format!("scale={}:{}", w, h));
         }
 
-        // Frame rate
+        // 帧率设置
         if let Some(fps) = config.video_settings.frame_rate {
             args.push("-r".into());
             args.push(fps.to_string());
@@ -98,33 +98,32 @@ pub fn build_ffmpeg_args_with_bitrate(
         args.push("copy".into());
     }
 
-    // Audio settings
+    // 音频设置
     args.extend(config.audio_settings.to_args());
 
-    // Additional params
+    // 附加自定义参数
     args.extend(config.video_settings.additional_params.clone());
 
-    // Output
+    // 输出路径
     args.push(output_path.into());
 
     args
 }
 
-/// Map the x264-style named preset to the value accepted by the actual encoder.
+/// 将 x264 风格的命名预设（preset）映射为实际编码器所接受的参数。
 ///
-/// Software encoders:
-/// - libx264 / libx265: accept the names directly (`-preset medium`).
-/// - libsvtav1 (AV1): only accepts `-preset <0-13>` (0 = slowest/best, 13 = fastest).
-/// - libvpx-vp9 (VP9): has NO `-preset` option — it uses `-cpu-used <0-8>`
-///   (0 = slowest/best, 8 = fastest).
+/// 软件编码器：
+/// - libx264 / libx265：直接接受名称（`-preset medium`）。
+/// - libsvtav1 (AV1)：仅接受 `-preset <0-13>`（0 最慢/画质最好，13 最快）。
+/// - libvpx-vp9 (VP9)：无 `-preset` 选项——使用 `-cpu-used <0-8>`
+///   （0 最慢/画质最好，8 最快）。
 ///
-/// Hardware encoders each have their own preset vocabulary:
-/// - NVENC: `-preset p1`(fastest)..`p7`(best quality); legacy names still work.
-/// - QSV:   `-preset veryfast..veryslow` accepted as-is.
-/// - AMF:   `-quality speed|balanced|quality` (`-preset` is a synonym).
-/// - VAAPI: no `-preset` — uses `-compression_level` (1 = best quality .. 7 = fastest).
-/// - VideoToolbox: modern FFmpeg (5.0+) removed `-preset` entirely, so the
-///   option is omitted.
+/// 硬件编码器各有自己的预设词汇表：
+/// - NVENC：`-preset p1`（最快）..`p7`（最高画质）；传统预设名称依然兼容。
+/// - QSV：直接接受 `veryfast..veryslow` 名称。
+/// - AMF：`-quality speed|balanced|quality`（`-preset` 为其别名）。
+/// - VAAPI：无 `-preset`——使用 `-compression_level`（1 最慢/最高画质 .. 7 最快）。
+/// - VideoToolbox：现代 FFmpeg (5.0+) 已完全移除 `-preset`，因此省略该参数。
 fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
     use crate::encoder::codec::HwAccelDevice;
 
@@ -132,7 +131,7 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
 
     match config.hw_accel.as_ref().map(|h| &h.device) {
         Some(HwAccelDevice::NVENC) => {
-            // NVENC: p1 = fastest, p7 = best quality.
+            // NVENC: p1 最快，p7 最高画质。
             let p = match name.as_str() {
                 "ultrafast" | "superfast" => "p1",
                 "veryfast" | "faster" => "p2",
@@ -141,26 +140,26 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
                 "slow" => "p5",
                 "slower" => "p6",
                 "veryslow" => "p7",
-                other => other, // p1..p7 / legacy values pass through
+                other => other, // p1..p7 或传统预设值直接透传
             };
             vec!["-preset".into(), p.into()]
         }
         Some(HwAccelDevice::QSV) => {
-            // QSV accepts the veryfast..veryslow names directly.
+            // QSV 直接接受 veryfast..veryslow 预设名称。
             vec!["-preset".into(), name.clone()]
         }
         Some(HwAccelDevice::AMF) => {
-            // AMF uses -quality (or the synonym -preset): speed / balanced / quality.
+            // AMF 使用 -quality（或别名 -preset）：speed / balanced / quality。
             let q = match name.as_str() {
                 "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" => "speed",
                 "medium" => "balanced",
                 "slow" | "slower" | "veryslow" => "quality",
-                other => other, // speed / balanced / quality / high_quality pass through
+                other => other, // speed / balanced / quality / high_quality 直接透传
             };
             vec!["-quality".into(), q.into()]
         }
         Some(HwAccelDevice::VAAPI) => {
-            // VAAPI: -compression_level, 1 = slowest/best quality, 7 = fastest.
+            // VAAPI: 使用 -compression_level，1 为最慢/最高画质，7 为最快。
             let lvl = match name.as_str() {
                 "ultrafast" => "7",
                 "superfast" | "veryfast" => "6",
@@ -169,12 +168,12 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
                 "slow" => "3",
                 "slower" => "2",
                 "veryslow" => "1",
-                other => other, // numeric levels pass through
+                other => other, // 数字级别直接透传
             };
             vec!["-compression_level".into(), lvl.into()]
         }
         Some(HwAccelDevice::VideoToolbox) => {
-            // VideoToolbox dropped -preset in FFmpeg 5.0; omit it entirely.
+            // VideoToolbox 在 FFmpeg 5.0 中移除了 -preset；完全省略该参数。
             vec![]
         }
         None => {
@@ -189,7 +188,7 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
                     "slow" => 4,
                     "slower" => 3,
                     "veryslow" => 1,
-                    _ => 8, // SVT-AV1 default
+                    _ => 8, // SVT-AV1 默认预设
                 }
             };
             let vp9_map = |n: &str| -> i32 {
@@ -203,7 +202,7 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
                     "slow" => 2,
                     "slower" => 1,
                     "veryslow" => 0,
-                    _ => 1, // libvpx-vp9 default
+                    _ => 1, // libvpx-vp9 默认 cpu-used
                 }
             };
 
@@ -216,17 +215,17 @@ fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
     }
 }
 
-/// Map rate control configuration according to the target encoder.
+/// 根据目标编码器映射码率控制配置。
 ///
-/// Hardware and specialty software encoders have divergent rate control CLI options:
-/// - NVENC: does not support -crf; constant quality uses `-rc:v vbr -cq <val>`, CQP uses `-rc:v constqp -qp <val>`.
-/// - QSV: constant quality uses `-global_quality <val>`, CQP uses `-q:v <val>`.
-/// - AMF: CQP uses `-rc cqp -qp_i <val> -qp_p <val>`.
-/// - VAAPI: `-qp <val>`.
-/// - VideoToolbox: `-q:v <val>`.
-/// - libvpx-vp9: constant quality requires `-crf <val> -b:v 0`.
-/// - libsvtav1: does not support -qp; uses `-crf <val>`.
-/// - libx264 / libx265: standard `-crf <val>` or `-qp <val>`.
+/// 硬件及特定软件编码器的码率控制 CLI 选项各不相同：
+/// - NVENC：不支持 -crf；恒定质量使用 `-rc:v vbr -cq <val>`，CQP 使用 `-rc:v constqp -qp <val>`。
+/// - QSV：恒定质量使用 `-global_quality <val>`，CQP 使用 `-q:v <val>`。
+/// - AMF：CQP 使用 `-rc cqp -qp_i <val> -qp_p <val>`。
+/// - VAAPI：`-qp <val>`。
+/// - VideoToolbox：`-q:v <val>`。
+/// - libvpx-vp9：恒定质量需要 `-crf <val> -b:v 0`。
+/// - libsvtav1：不支持 -qp；使用 `-crf <val>`。
+/// - libx264 / libx265：标准的 `-crf <val>` 或 `-qp <val>`。
 fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
     use crate::encoder::codec::RateControl;
 
@@ -296,7 +295,7 @@ fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
     }
 }
 
-/// Build output path from input path + config (shared by queue and command preview)
+/// 根据输入路径 + 配置构建输出路径（供队列和命令预览共用）
 pub fn derive_output_path(input: &str, config: &EncodeConfig, output_dir: Option<&str>) -> String {
     let path = std::path::Path::new(input);
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -313,7 +312,7 @@ pub fn derive_output_path(input: &str, config: &EncodeConfig, output_dir: Option
         .to_string()
 }
 
-/// Helper to normalize path string for key lookup in in-memory sets (case-insensitive on Windows)
+/// 辅助函数：标准化路径字符串以便在内存集合中进行键匹配（Windows 下不区分大小写）
 fn normalize_path_key(path: &str) -> String {
     #[cfg(windows)]
     {
@@ -325,15 +324,15 @@ fn normalize_path_key(path: &str) -> String {
     }
 }
 
-/// Derive unique output paths for a batch of inputs.
+/// 为批量输入文件推导互不冲突的唯一输出路径。
 ///
-/// Ensures output paths avoid colliding with:
-/// 1. Files already existing on disk
-/// 2. Active or pending jobs in the queue (via `already_claimed`)
-/// 3. Earlier inputs in the same batch
+/// 确保输出路径避免与以下项发生碰撞：
+/// 1. 磁盘上已存在的文件
+/// 2. 队列中正在运行或等待的任务（通过 `already_claimed`）
+/// 3. 同一批次中较早的输入文件
 ///
-/// If a collision occurs with `{stem}_encoded.{ext}`, numeric suffixes (`_1`, `_2`, `_3`, ...)
-/// are incrementally appended before the extension until an unoccupied filename is found.
+/// 如果与 `{stem}_encoded.{ext}` 发生重名冲突，会在扩展名前递增追加
+/// 数字后缀（`_1`、`_2`、`_3`...），直到找到未被占用的文件名。
 #[allow(dead_code)]
 pub fn derive_output_paths_unique(
     inputs: &[String],
@@ -343,8 +342,8 @@ pub fn derive_output_paths_unique(
     derive_output_paths_unique_with_claimed(inputs, config, output_dir, &[])
 }
 
-/// Derive unique output paths for a batch of inputs with an explicit set of already-claimed
-/// paths (e.g. from currently active/pending queue jobs).
+/// 为批量输入推导唯一输出路径，并附带已占用的显式路径集合
+/// （例如当前活跃/排队的任务路径）。
 pub fn derive_output_paths_unique_with_claimed(
     inputs: &[String],
     config: &EncodeConfig,
@@ -362,7 +361,7 @@ pub fn derive_output_paths_unique_with_claimed(
             let base = derive_output_path(f, config, output_dir);
             let base_key = normalize_path_key(&base);
 
-            // If base does not exist on disk AND has not been claimed yet, use base
+            // 若 base 文件在磁盘上不存在且尚未被占用，直接使用 base
             if !std::path::Path::new(&base).exists() && !claimed.contains(&base_key) {
                 claimed.insert(base_key);
                 return base;
@@ -400,8 +399,8 @@ pub fn derive_output_paths_unique_with_claimed(
         .collect()
 }
 
-/// Format an array of ffmpeg arguments into a single display-ready shell command line.
-/// Arguments containing spaces, quotes, or empty strings are safely quoted.
+/// 将 ffmpeg 参数数组格式化为可直接在终端展示与运行的 shell 命令行。
+/// 包含空格、引号或空字符串的参数会被安全加上双引号包裹。
 pub fn format_command_line(args: &[String]) -> String {
     let mut parts = vec!["ffmpeg".to_string()];
     for arg in args {
@@ -414,9 +413,8 @@ pub fn format_command_line(args: &[String]) -> String {
     parts.join(" ")
 }
 
-/// Build a display-ready ffmpeg command line (`ffmpeg <args...>`) from a config.
-/// Paths containing spaces or quotes are quoted so the command can be copied
-/// and pasted into a terminal directly.
+/// 根据配置构建可直接展示与运行的 ffmpeg 命令行（`ffmpeg <args...>`）。
+/// 包含空格或引号的路径会被加上双引号，以便直接复制粘贴到终端运行。
 pub fn build_ffmpeg_command_line(
     config: &EncodeConfig,
     input_path: &str,
@@ -455,7 +453,7 @@ mod tests {
     #[test]
     fn derive_output_paths_unique_avoids_collisions() {
         let config = sample_config();
-        // Without an output dir, inputs in different folders get distinct paths
+        // 不指定输出目录时，不同文件夹下的输入会生成不同的路径
         let outputs = derive_output_paths_unique(
             &[
                 r"C:\a\movie.mp4".into(),
@@ -467,8 +465,7 @@ mod tests {
         assert_eq!(outputs[0], r"C:\a\movie_encoded.mp4");
         assert_eq!(outputs[1], r"C:\b\movie_encoded.mp4");
 
-        // Custom output dir: same basename from different folders collides and
-        // later entries get a numeric suffix
+        // 自定义输出目录：来自不同文件夹的同名文件会发生冲突，后续条目会追加数字后缀
         let outputs = derive_output_paths_unique(
             &[
                 r"C:\a\movie.mp4".into(),
@@ -482,7 +479,7 @@ mod tests {
         assert_eq!(outputs[1], r"D:\out\movie_encoded_1.mp4");
         assert_eq!(outputs[2], r"D:\out\movie_encoded_2.mp4");
 
-        // The same file added twice collides even without an output dir
+        // 同一文件被添加两次时，即使不指定输出目录也会发生冲突
         let outputs = derive_output_paths_unique(
             &[r"C:\a\movie.mp4".into(), r"C:\a\movie.mp4".into()],
             &config,
@@ -501,29 +498,29 @@ mod tests {
         let config = sample_config();
         let input = "video.mp4";
 
-        // Pre-create base output file on disk: video_encoded.mp4
+        // 预先在磁盘上创建基础输出文件：video_encoded.mp4
         let base_file = temp_dir.join("video_encoded.mp4");
         std::fs::write(&base_file, b"existing").unwrap();
 
-        // 1st derivation: should detect video_encoded.mp4 exists, and produce video_encoded_1.mp4
+        // 第 1 次推导：应检测到 video_encoded.mp4 已存在，并生成 video_encoded_1.mp4
         let outputs = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
         assert_eq!(
             outputs[0],
             temp_dir.join("video_encoded_1.mp4").to_string_lossy().to_string()
         );
 
-        // Pre-create video_encoded_1.mp4 on disk as well
+        // 同样在磁盘上预先创建 video_encoded_1.mp4
         let second_file = temp_dir.join("video_encoded_1.mp4");
         std::fs::write(&second_file, b"existing 1").unwrap();
 
-        // 2nd derivation: should detect both exist and produce video_encoded_2.mp4
+        // 第 2 次推导：应检测到两者均存在，并生成 video_encoded_2.mp4
         let outputs_next = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
         assert_eq!(
             outputs_next[0],
             temp_dir.join("video_encoded_2.mp4").to_string_lossy().to_string()
         );
 
-        // Clean up temp directory
+        // 清理临时目录
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
 
@@ -540,7 +537,7 @@ mod tests {
         assert_eq!(outputs[0], r"D:\out\movie_encoded_1.mp4");
     }
 
-    // ---- build_ffmpeg_args ----
+    // ---- build_ffmpeg_args 测试 ----
 
     fn config_with_hw(hw: Option<HwAccelConfig>) -> EncodeConfig {
         let mut c = sample_config();
@@ -628,7 +625,7 @@ mod tests {
         let mut config = sample_config();
         config.video_codec = VideoCodec::AV1;
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        // medium → 6
+        // medium 映射为数值 6
         assert_args_contain(&args, &["-c:v", "libsvtav1", "-preset", "6", "-crf", "23"]);
     }
 
@@ -637,7 +634,7 @@ mod tests {
         let mut config = sample_config();
         config.video_codec = VideoCodec::VP9;
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        // medium → 3, VP9 requires -crf 23 -b:v 0
+        // medium → 3, VP9 需要 -crf 23 -b:v 0
         assert_args_contain(&args, &["-c:v", "libvpx-vp9", "-cpu-used", "3", "-crf", "23", "-b:v", "0"]);
     }
 
@@ -707,15 +704,15 @@ mod tests {
             device: HwAccelDevice::NVENC,
             device_index: None,
         }));
-        // Input bitrate 4000 kbps -> maxrate = 4000 * 1.25 = 5000k, bufsize = 10000k
+        // 输入码率 4000 kbps -> maxrate = 4000 * 1.25 = 5000k, bufsize = 10000k
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
         assert_args_contain(&args, &["-maxrate", "5000k", "-bufsize", "10000k"]);
 
-        // When CPU encoding (hw is None), auto maxrate guard should NOT be injected
+        // CPU 编码（hw 为 None）时，不应注入自动 maxrate 保护
         let cpu_args = build_ffmpeg_args_with_bitrate(&sample_config(), "in.mp4", "out.mp4", Some(4000));
         assert!(!cpu_args.contains(&"-maxrate".to_string()));
 
-        // When user explicitly supplied -maxrate in additional_params, do not override
+        // 当用户在 additional_params 中显式提供了 -maxrate 时，不要覆盖
         let mut custom = config;
         custom.video_settings.additional_params = vec!["-maxrate".into(), "3000k".into()];
         let custom_args = build_ffmpeg_args_with_bitrate(&custom, "in.mp4", "out.mp4", Some(4000));

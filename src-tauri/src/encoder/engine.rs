@@ -19,13 +19,13 @@ use super::args::{build_ffmpeg_args_with_bitrate, format_command_line};
 use super::probe::probe_file;
 use super::progress::{compute_percentage, parse_bitrate_kbps};
 
-/// A running ffmpeg process, registered so it can be forcibly killed.
+/// 正在运行的 ffmpeg 进程，已注册以便可以强制终止。
 struct ActiveProcess {
     cancel: Arc<AtomicBool>,
     child: std::process::Child,
 }
 
-/// Global registry: job_id -> running ffmpeg process
+/// 全局注册表：job_id -> 运行中的 ffmpeg 进程
 static PROCESSES: OnceLock<Mutex<HashMap<String, ActiveProcess>>> = OnceLock::new();
 
 /// 编码失败时附加到错误信息中的 stderr 尾部行数（ffmpeg 把真正的报错原因
@@ -62,8 +62,8 @@ impl EncodeResult {
     }
 }
 
-/// Request cancellation of a running encode: set the cancel flag and kill
-/// the ffmpeg process immediately (works even when ffmpeg is not emitting output).
+/// 请求取消正在运行的编码任务：设置取消标记并立即终止
+/// ffmpeg 进程（即使 ffmpeg 没有输出时也能立即生效）。
 pub fn cancel_process(job_id: &str) -> bool {
     if let Some(map) = PROCESSES.get() {
         if let Ok(mut map) = map.lock() {
@@ -77,7 +77,7 @@ pub fn cancel_process(job_id: &str) -> bool {
     false
 }
 
-/// Kill all running encoding child processes (invoked on application exit).
+/// 终止所有正在运行的编码子进程（在应用退出时调用）。
 pub fn kill_all_processes() {
     if let Some(map) = PROCESSES.get() {
         if let Ok(mut map) = map.lock() {
@@ -89,8 +89,8 @@ pub fn kill_all_processes() {
     }
 }
 
-/// Start encoding with progress reporting via Tauri events.
-/// The `cancel` flag can be set to true to request cancellation.
+/// 启动编码并通过 Tauri 事件上报进度。
+/// 可将 `cancel` 标记设为 true 以请求取消编码。
 pub fn start_encode(
     app_handle: AppHandle,
     job_id: String,
@@ -110,14 +110,13 @@ pub fn start_encode(
         return Err(AppError::FfmpegNotFound);
     };
 
-    // Start the clock before probing so both cancellation paths (pre-spawn and
-    // post-registration) can report an accurate duration.
+    // 在探测前启动计时器，使两条取消路径（创建前和
+    // 注册后）都能准确报告耗时。
     let start_time = std::time::Instant::now();
 
-    // Cancellation may arrive before the process is spawned — e.g. the job was
-    // cancelled while waiting for a blocking worker thread (the ffmpeg child is
-    // only registered in PROCESSES after spawn, so cancel_process can't find it
-    // yet). Honour the flag here so the encode never starts at all.
+    // 取消请求可能在进程启动前到达——例如任务在等待阻塞工作线程时被取消
+    // （ffmpeg 子进程仅在 spawn 后才注册到 PROCESSES 中，此时 cancel_process
+    // 尚无法找到它）。在此响应标记，使编码根本无需启动。
     if cancel.load(Ordering::Relaxed) {
         let elapsed = start_time.elapsed().as_secs_f64();
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage pre-spawn elapsed {elapsed:.1}s");
@@ -130,7 +129,7 @@ pub fn start_encode(
 
     let input_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
 
-    // First, probe to get total duration and bitrate for progress and auto maxrate guard
+    // 首先进行探测以获取总时长和码率，用于进度计算和自动最大码率保护
     let probe_json = probe_file(&input_path).ok();
     let total_duration = probe_json.as_ref().and_then(|json| {
         json.get("format")
@@ -158,17 +157,17 @@ pub fn start_encode(
     let args = build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
     let cmd_preview = format_command_line(&args);
 
-    // Ensure output destination directory exists before ffmpeg writes to it
+    // 确保在 ffmpeg 写入前输出目标目录已存在
     if let Some(parent) = std::path::Path::new(&output_path).parent() {
         if !parent.as_os_str().is_empty() {
             let _ = std::fs::create_dir_all(parent);
         }
     }
 
-    // Spawn ffmpeg (hidden console on Windows).
-    // `-progress pipe:1` writes machine-readable key=value reports to stdout —
-    // this is the reliable progress source when ffmpeg is spawned with piped
-    // stdio (its human-readable stats on stderr are only emitted to a terminal).
+    // 启动 ffmpeg（在 Windows 上隐藏控制台窗口）。
+    // `-progress pipe:1` 将机器可读的 key=value 报告写入 stdout——
+    // 当 ffmpeg 使用管道 stdio 启动时，这是可靠的进度来源
+    // （其在 stderr 上的易读统计信息仅在终端下输出）。
     let mut child = ffmpeg::hidden_command(ffmpeg_path)
         .args(args)
         .arg("-progress")
@@ -178,11 +177,11 @@ pub fn start_encode(
         .spawn()
         .map_err(|e| AppError::Ffmpeg(format!("Failed to spawn ffmpeg: {}", e)))?;
 
-    // Take the pipes first so the child can be moved into the registry.
+    // 先取出管道，以便将子进程移入注册表。
     let stdout = child.stdout.take().expect("failed to get stdout");
     let stderr = child.stderr.take().expect("failed to get stderr");
 
-    // Register the process so it can be forcibly killed by job id.
+    // 注册进程以便可以通过 job_id 强制终止。
     PROCESSES
         .get_or_init(Default::default)
         .lock()
@@ -197,14 +196,13 @@ pub fn start_encode(
         total_duration.unwrap_or(0.0)
     );
 
-    // Re-check cancellation after the child is registered: the user may have
-    // cancelled during the probe/spawn window, when no child was registered
-    // yet so `cancel_process` could not kill anything. Kill it now if so —
-    // otherwise the encode would run to completion in the background while
-    // the UI shows the job as Cancelled.
+    // 子进程注册后重新检查取消状态：用户可能在 probe/spawn 期间取消了任务，
+    // 此时子进程尚未注册，因此 `cancel_process` 无法终止任何进程。
+    // 若此时已取消则立即终止——否则编码会在后台持续运行直到完成，
+    // 而 UI 上任务状态却显示为“已取消”。
     if cancel.load(Ordering::Relaxed) {
-        // Take the process out of the registry first, then drop the lock before
-        // wait() — a kill that blocks must not stall other cancel_process calls.
+        // 先从注册表中移除进程，并在 wait() 前释放锁——
+        // 阻塞的 kill 操作绝不能阻塞其他 cancel_process 调用。
         let mut proc_to_kill = None;
         if let Some(map) = PROCESSES.get() {
             if let Ok(mut map) = map.lock() {
@@ -225,9 +223,8 @@ pub fn start_encode(
         return Ok(());
     }
 
-    // Drain stderr so ffmpeg never blocks on a full pipe; keep the last
-    // STDERR_TAIL_LINES lines for failure diagnostics (ffmpeg reports the
-    // actual error reason at the end of stderr).
+    // 持续读取 stderr 以免 ffmpeg 因管道写满而阻塞；保留最后
+    // STDERR_TAIL_LINES 行用于失败诊断（ffmpeg 会将真正的错误原因报告在 stderr 末尾）。
     let stderr_thread = std::thread::spawn(move || {
         let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
@@ -239,8 +236,8 @@ pub fn start_encode(
         tail
     });
 
-    // Parse `-progress` reports from stdout. Each report is a block of
-    // `key=value` lines terminated by `progress=continue|end`.
+    // 解析来自 stdout 的 `-progress` 报告。每段报告是一组
+    // 以 `progress=continue|end` 结尾的 `key=value` 行。
     let mut kv: HashMap<String, String> = HashMap::new();
     let mut last_milestone: u32 = 0;
     for line in BufReader::new(stdout).lines() {
@@ -260,7 +257,7 @@ pub fn start_encode(
         let value = value.trim().to_string();
 
         if key == "progress" {
-            // End of one report block: emit progress and reset
+            // 一段报告块结束：发送进度事件并重置
             let percentage = compute_percentage(&kv, total_duration);
             let elapsed = start_time.elapsed();
             let total_size_kb = kv
@@ -313,7 +310,7 @@ pub fn start_encode(
         }
     }
 
-    // Reap the process (removed from the registry so cancel_process can't kill it twice)
+    // 回收子进程（从注册表中移除，防止 cancel_process 重复终止）
     let status = match PROCESSES.get() {
         Some(map) => map
             .lock()
@@ -380,7 +377,7 @@ pub fn start_encode(
         _ => {
             let exit_code = status.as_ref().and_then(|s| s.code()).unwrap_or(-1);
 
-            // Clean up partial output file on error
+            // 发生错误时清理残留的未完成输出文件
             let _ = std::fs::remove_file(&output_path);
 
             // 附加 stderr 尾部，让用户能在 UI 直接看到 ffmpeg 的报错原因

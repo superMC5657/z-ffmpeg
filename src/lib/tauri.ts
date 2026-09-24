@@ -17,7 +17,7 @@ import type {
 } from "@/types";
 
 // ============================================================
-// Encoding commands
+// 编码相关命令
 // ============================================================
 
 export async function probeFile(filePath: string): Promise<FileInfo> {
@@ -52,7 +52,7 @@ export async function estimateOutputSizes(
 }
 
 // ============================================================
-// Queue commands
+// 队列相关命令
 // ============================================================
 
 export async function addToQueue(
@@ -107,7 +107,7 @@ export async function setMaxConcurrent(value: number): Promise<number> {
 }
 
 // ============================================================
-// Preset commands
+// 预设相关命令
 // ============================================================
 
 export async function loadPresets(): Promise<Preset[]> {
@@ -136,7 +136,7 @@ export async function getBuiltinPresets(): Promise<Preset[]> {
 }
 
 // ============================================================
-// History commands
+// 历史记录命令
 // ============================================================
 
 export async function getHistory(query?: HistoryQuery): Promise<HistoryPageResult> {
@@ -157,7 +157,7 @@ export async function clearHistory(): Promise<void> {
 }
 
 // ============================================================
-// VMAF quality commands
+// VMAF 画质相关命令
 // ============================================================
 
 /** 计算已完成编码任务的 VMAF 得分。segments=0 全量对比，否则 N 段 × 5 秒均匀采样 */
@@ -176,7 +176,7 @@ export async function setVmafSegments(value: number): Promise<number> {
 }
 
 // ============================================================
-// System commands
+// 系统相关命令
 // ============================================================
 
 /** 系统信息唯一入口（后端已合并原 detect_hw_accel 重复命令） */
@@ -223,7 +223,7 @@ export async function trackEvent(name: string): Promise<void> {
 
 
 // ============================================================
-// Event listeners
+// 事件监听器
 // ============================================================
 
 /** 事件订阅统一辅助函数 */

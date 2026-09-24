@@ -40,8 +40,8 @@ pub async fn get_history(
     status: Option<String>,
     search: Option<String>,
 ) -> AppResult<HistoryPageResult> {
-    // History is read straight from the database so it survives app restarts
-    // (the in-memory queue only restores active jobs on startup).
+    // 历史记录直接从数据库读取，因此在应用重启后依然保留
+    //（内存中的队列在启动时仅恢复活动任务）。
     let queue = match state.queue_manager.as_ref() {
         Some(q) => q,
         None => return Ok(HistoryPageResult { entries: vec![], total: 0 }),
@@ -75,7 +75,7 @@ pub async fn get_history(
     Ok(HistoryPageResult { entries, total })
 }
 
-/// Delete specific history entries by id.
+/// 按 ID 删除指定的历史记录条目。
 #[tauri::command]
 pub async fn delete_history(
     state: tauri::State<'_, AppState>,
@@ -89,7 +89,7 @@ pub async fn delete_history(
     Ok(())
 }
 
-/// Clear ALL history entries (Completed / Failed / Cancelled).
+/// 清空所有历史记录条目（已完成 / 失败 / 已取消）。
 #[tauri::command]
 pub async fn clear_history(
     state: tauri::State<'_, AppState>,

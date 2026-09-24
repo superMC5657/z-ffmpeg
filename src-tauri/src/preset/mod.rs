@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// A reusable encoding configuration preset.
-/// Built-in presets are constructed in code; custom presets are persisted in SQLite.
+/// 可复用的视频编码配置预设。
+/// 内置预设在代码中定义；自定义预设持久化存储在 SQLite 中。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Preset {

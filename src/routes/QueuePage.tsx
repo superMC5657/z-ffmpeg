@@ -9,7 +9,7 @@ export default function QueuePage() {
   const fetchVmafSegments = useQueueStore((s) => s.fetchVmafSegments);
 
   useEffect(() => {
-    // Initial load
+    // 初始加载
     refreshQueue();
     fetchMaxConcurrent();
     fetchVmafSegments();

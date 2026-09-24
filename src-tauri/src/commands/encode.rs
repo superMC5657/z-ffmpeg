@@ -2,12 +2,12 @@ use serde::{Deserialize, Serialize};
 use crate::encoder::{args, estimate, probe};
 use crate::error::{AppError, AppResult};
 
-// Re-export types for convenience
+// 为调用方便重新导出类型
 pub use crate::encoder::codec::{
     EncodeConfig,
 };
 
-/// File info returned by probe_file
+/// 由 probe_file 返回的文件元信息结构体
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
@@ -27,7 +27,7 @@ pub struct FileInfo {
 }
 
 // ============================================================
-// Commands
+// 命令处理器
 // ============================================================
 
 #[tauri::command]
@@ -47,7 +47,7 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
         )));
     }
 
-    // Use ffprobe to get detailed info (async — doesn't block the runtime)
+    // 使用 ffprobe 异步获取详细信息（不阻塞异步运行时线程）
     let json = match probe::probe_file_async(&file_path).await {
         Ok(json) => json,
         Err(e) => {
@@ -77,11 +77,10 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     Ok(info)
 }
 
-/// Build display-ready ffmpeg command lines from a codec config — one per
-/// input file. The output path for each is derived the same way as the queue
-/// (input dir + `_encoded.ext`), honoring the configured output directory.
-/// Colliding output paths within the batch get a numeric suffix so the
-/// preview never shows two commands writing the same file.
+/// 根据编码配置为每个输入文件构建可展示的 ffmpeg 命令行。
+/// 每个文件的输出路径与队列构建方式相同（输入目录 + `_encoded.ext`），
+/// 同时遵从用户配置的输出目录。
+/// 批处理中发生冲突的输出路径会添加数字后缀，避免预览中出现两条命令写入同一文件。
 #[tauri::command]
 pub async fn build_ffmpeg_commands(
     state: tauri::State<'_, crate::AppState>,
@@ -108,7 +107,7 @@ pub async fn build_ffmpeg_commands(
     Ok(cmds)
 }
 
-/// Write a text file (e.g. a saved ffmpeg command) to the given path.
+/// 将文本内容（如保存的 ffmpeg 命令）写入指定路径。
 /// Pro 功能：把命令保存为 .txt/.bat/.sh 文件（复制到剪贴板保持免费）。
 #[tauri::command]
 pub async fn save_command_to_file(

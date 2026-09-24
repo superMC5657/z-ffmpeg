@@ -33,7 +33,7 @@ export default function PresetsPage() {
       const content = await readTextFile(path);
       setPendingImport({ content, defaultName: defaultNameFromPath(path) });
     } catch {
-      // Fallback to prompt
+      // 降级为浏览器 prompt 输入框
       const text = prompt("粘贴预设 JSON：");
       if (text) setPendingImport({ content: text, defaultName: "导入的预设" });
     }

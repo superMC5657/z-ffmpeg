@@ -5,7 +5,7 @@ import Card from "@/components/layout/Card";
 import { isTauriRuntime } from "@/lib/utils";
 
 export default function UpdateSection() {
-  // ---- Update checking (Tauri only; browsers have no updater) ----
+  // ---- 检查更新（仅 Tauri 运行时有效；浏览器无更新器） ----
   const [updating, setUpdating] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{
     available: boolean;

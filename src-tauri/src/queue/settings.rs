@@ -7,12 +7,12 @@ use rusqlite::Connection;
 pub const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
 pub const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
 
-/// Read a usize setting from the settings table.
+/// 从 settings 表读取 usize 类型的设置项。
 pub fn load_usize(db: &Connection, key: &str) -> Option<usize> {
     load_string(db, key)?.trim().parse().ok()
 }
 
-/// Read a string setting from the settings table.
+/// 从 settings 表读取字符串类型的设置项。
 pub fn load_string(db: &Connection, key: &str) -> Option<String> {
     db.query_row(
         "SELECT value FROM settings WHERE key = ?1",
@@ -22,12 +22,12 @@ pub fn load_string(db: &Connection, key: &str) -> Option<String> {
     .ok()
 }
 
-/// Persist a usize setting (insert or replace).
+/// 持久化保存 usize 类型的设置项（插入或替换）。
 pub fn save_usize(db: &Connection, key: &str, value: usize) {
     save_string(db, key, &value.to_string())
 }
 
-/// Persist a string setting (insert or replace).
+/// 持久化保存字符串类型的设置项（插入或替换）。
 pub fn save_string(db: &Connection, key: &str, value: &str) {
     let _ = db.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",

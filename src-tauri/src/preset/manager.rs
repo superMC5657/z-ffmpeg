@@ -3,9 +3,9 @@ use rusqlite::Connection;
 use crate::error::AppResult;
 use crate::preset::Preset;
 
-/// SQLite-backed persistence for custom presets.
+/// 基于 SQLite 的自定义预设持久化存储。
 pub struct PresetManager {
-    db: StdMutex<Connection>, // std Mutex because Connection is Send but not Sync
+    db: StdMutex<Connection>, // 使用 std Mutex，因为 Connection 实现了 Send 但未实现 Sync
 }
 
 impl PresetManager {
@@ -29,7 +29,7 @@ impl PresetManager {
         }))
     }
 
-    /// Load all custom presets (is_builtin is always false for persisted presets).
+    /// 加载所有自定义预设（持久化预设的 is_builtin 始终为 false）。
     pub fn load(&self) -> Vec<Preset> {
         let db = self.db.lock().unwrap();
         let mut stmt = match db.prepare(
@@ -56,7 +56,7 @@ impl PresetManager {
         .unwrap_or_default()
     }
 
-    /// Insert or replace a preset.
+    /// 插入或替换预设。
     pub fn insert(&self, preset: &Preset) -> AppResult<()> {
         let db = self.db.lock().unwrap();
         db.execute(
@@ -75,7 +75,7 @@ impl PresetManager {
         Ok(())
     }
 
-    /// Fetch a single preset by id.
+    /// 按 ID 获取单个预设。
     pub fn get(&self, id: &str) -> Option<Preset> {
         let db = self.db.lock().unwrap();
         db.query_row(
@@ -97,7 +97,7 @@ impl PresetManager {
         .ok()
     }
 
-    /// Delete a preset by id.
+    /// 按 ID 删除预设。
     pub fn delete(&self, id: &str) -> AppResult<()> {
         let db = self.db.lock().unwrap();
         db.execute("DELETE FROM presets WHERE id = ?1", rusqlite::params![id])
@@ -130,10 +130,10 @@ mod tests {
 
         let manager = PresetManager::new(&db_path).unwrap();
 
-        // Empty initially
+        // 初始为空
         assert!(manager.load().is_empty());
 
-        // Insert two presets
+        // 插入两个预设
         manager.insert(&sample_preset("p1", "预设一")).unwrap();
         manager.insert(&sample_preset("p2", "预设二")).unwrap();
 
@@ -143,18 +143,18 @@ mod tests {
         assert!(!loaded[0].is_builtin);
         assert_eq!(loaded[0].config["videoCodec"], "H264");
 
-        // Get single
+        // 获取单个预设
         let got = manager.get("p2").unwrap();
         assert_eq!(got.name, "预设二");
 
-        // Delete
+        // 删除预设
         manager.delete("p1").unwrap();
         let loaded = manager.load();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].id, "p2");
         assert!(manager.get("p1").is_none());
 
-        // Persistence: reopen the same database
+        // 持久化验证：重新打开同一个数据库
         drop(manager);
         let reopened = PresetManager::new(&db_path).unwrap();
         let loaded = reopened.load();

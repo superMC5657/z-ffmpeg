@@ -5,7 +5,7 @@ use crate::error::AppResult;
 static FFMPEG_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 static FFPROBE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-/// Represents the FFmpeg status on this system
+/// 表示当前系统上的 FFmpeg 状态
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegStatus {
@@ -16,7 +16,7 @@ pub struct FfmpegStatus {
     pub codecs: Vec<String>,
 }
 
-/// Executable file name for the current platform
+/// 当前平台对应的可执行文件名
 fn exe_name(name: &str) -> String {
     if cfg!(windows) {
         format!("{}.exe", name)
@@ -25,7 +25,7 @@ fn exe_name(name: &str) -> String {
     }
 }
 
-/// Find an executable in system PATH
+/// 在系统环境变量 PATH 中查找指定可执行文件
 fn find_in_path(name: &str) -> Option<PathBuf> {
     let exe_name = exe_name(name);
     std::env::var_os("PATH").and_then(|paths| {
@@ -40,12 +40,12 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     })
 }
 
-/// Directory where the app installs FFmpeg: {app_data_dir}/ffmpeg.
+/// 本应用安装 FFmpeg 的目标目录：{app_data_dir}/ffmpeg。
 pub fn local_install_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("ffmpeg")
 }
 
-/// Initialize FFmpeg detection. Called once at app startup.
+/// 初始化 FFmpeg 检测。在应用启动时调用一次。
 pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
     let status = detect_ffmpeg(data_dir).unwrap_or(FfmpegStatus {
         available: false,
@@ -84,21 +84,21 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
     status
 }
 
-/// Detect FFmpeg installation on the system
+/// 检测系统中安装的 FFmpeg
 fn detect_ffmpeg(data_dir: &Path) -> AppResult<FfmpegStatus> {
-    // Try system PATH
+    // 尝试从系统环境变量 PATH 中查找
     if let Some(ffmpeg_path) = find_in_path("ffmpeg") {
         let ffprobe_path = find_in_path("ffprobe")
             .or_else(|| find_local_install(&local_install_dir(data_dir)).map(|(_, p)| p));
         return get_status_from_paths(ffmpeg_path, ffprobe_path);
     }
 
-    // Try the local install directory (auto-downloaded by the app).
+    // 尝试从本地安装目录（由应用自动下载）中查找。
     if let Some((ffmpeg_path, ffprobe_path)) = find_local_install(&local_install_dir(data_dir)) {
         return get_status_from_paths(ffmpeg_path, Some(ffprobe_path));
     }
 
-    // Not found
+    // 未找到
     Ok(FfmpegStatus {
         available: false,
         version: None,
@@ -108,16 +108,16 @@ fn detect_ffmpeg(data_dir: &Path) -> AppResult<FfmpegStatus> {
     })
 }
 
-/// Check the local install directory for FFmpeg binaries.
-/// Require BOTH binaries so a half-installed ffmpeg.exe (e.g. from an
-/// interrupted extraction) is not mistaken for a working install.
+/// 检查本地安装目录下的 FFmpeg 可执行二进制文件。
+/// 必须同时包含 ffmpeg 和 ffprobe 两个二进制文件，
+/// 避免将仅解压一半的文件（如解压中断）误判为可用安装。
 pub(crate) fn find_local_install(install_dir: &std::path::Path) -> Option<(PathBuf, PathBuf)> {
     let ffmpeg_path = install_dir.join(exe_name("ffmpeg"));
     let ffprobe_path = install_dir.join(exe_name("ffprobe"));
     (ffmpeg_path.is_file() && ffprobe_path.is_file()).then_some((ffmpeg_path, ffprobe_path))
 }
 
-/// Get detailed status from known FFmpeg paths
+/// 从已知的 FFmpeg 路径获取详细状态
 pub fn get_status_from_paths(
     ffmpeg_path: PathBuf,
     ffprobe_path: Option<PathBuf>,
@@ -134,13 +134,13 @@ pub fn get_status_from_paths(
     })
 }
 
-/// Update the globally cached binary paths (used after auto-download).
+/// 更新全局缓存的二进制文件路径（在自动下载完成后调用）。
 pub fn set_installed_paths(ffmpeg: PathBuf, ffprobe: Option<PathBuf>) {
     *FFMPEG_PATH.lock() = Some(ffmpeg);
     *FFPROBE_PATH.lock() = ffprobe;
 }
 
-/// Run ffmpeg -version and parse output
+/// 执行 ffmpeg -version 并解析输出
 fn get_ffmpeg_version(ffmpeg_path: &PathBuf) -> AppResult<String> {
     let output = crate::ffmpeg::hidden_command(ffmpeg_path)
         .arg("-version")
@@ -152,7 +152,7 @@ fn get_ffmpeg_version(ffmpeg_path: &PathBuf) -> AppResult<String> {
     Ok(version)
 }
 
-/// List available encoders
+/// 获取所有可用的编码器列表
 fn get_available_encoders(ffmpeg_path: &PathBuf) -> AppResult<Vec<String>> {
     let output = crate::ffmpeg::hidden_command(ffmpeg_path)
         .args(["-encoders"])
@@ -176,7 +176,7 @@ fn get_available_encoders(ffmpeg_path: &PathBuf) -> AppResult<Vec<String>> {
     Ok(codecs)
 }
 
-/// Check if FFmpeg is ready
+/// 检查 FFmpeg 是否已就绪
 ///
 /// 仅测试使用（`mod tests` 里断言全局缓存就绪状态）；生产代码走
 /// `get_status_from_paths`，故 `#[cfg(test)]` 限定编译范围，消除 dead_code 警告。
@@ -189,12 +189,12 @@ pub fn is_ffmpeg_ready() -> bool {
         .unwrap_or(false)
 }
 
-/// Get the ffmpeg path
+/// 获取当前缓存的 ffmpeg 路径
 pub fn get_ffmpeg_path() -> Option<PathBuf> {
     FFMPEG_PATH.lock().clone()
 }
 
-/// Get the ffprobe path
+/// 获取当前缓存的 ffprobe 路径
 pub fn get_ffprobe_path() -> Option<PathBuf> {
     FFPROBE_PATH.lock().clone()
 }

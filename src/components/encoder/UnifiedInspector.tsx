@@ -309,7 +309,7 @@ export default function UnifiedInspector() {
             return "(体积优先)";
           },
         };
-      default: // H264
+      default: // H264 默认分支
         return {
           modeName,
           paramName,

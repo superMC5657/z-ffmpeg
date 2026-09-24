@@ -24,8 +24,8 @@ pub async fn add_to_queue(
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
 
-    // Build (input, output) pairs. Output paths are deduplicated against existing disk files,
-    // active queue jobs, and earlier items within this batch to prevent unintended overwrites.
+    // 构建 (输入, 输出) 文件路径对。输出路径会对磁盘已有文件、当前队列中的活动任务
+    // 以及批处理中排在前面的项目进行去重，防止发生意外覆盖。
     let active_outputs = queue.get_active_output_paths();
     let outputs = args::derive_output_paths_unique_with_claimed(
         &files,
@@ -62,13 +62,13 @@ pub async fn add_to_queue(
 
     let ids = queue.add_jobs_estimated(pairs, estimates, config);
 
-    // Emit updated queue state
+    // 发送更新后的队列状态事件
     emit_queue(&app_handle, queue);
 
     Ok(ids)
 }
 
-/// Start processing the queue (user-triggered, not automatic on add)
+/// 启动队列处理（由用户触发，添加任务时不自动启动）
 #[tauri::command]
 pub async fn start_queue(
     app_handle: tauri::AppHandle,
@@ -95,7 +95,7 @@ pub async fn remove_from_queue(
     Ok(())
 }
 
-/// Cancel a queue job: kills the running ffmpeg process (if any) and marks the job cancelled
+/// 取消队列任务：终止正在运行的 ffmpeg 子进程（如果有），并将任务标记为已取消
 #[tauri::command]
 pub async fn cancel_job(
     app_handle: tauri::AppHandle,
@@ -167,7 +167,7 @@ pub async fn clear_completed(
     Ok(())
 }
 
-/// Re-queue a finished (Failed / Cancelled) job and start processing again.
+/// 将已结束（失败 / 已取消）的任务重新加入队列并开始处理。
 #[tauri::command]
 pub async fn retry_job(
     app_handle: tauri::AppHandle,
@@ -184,7 +184,7 @@ pub async fn retry_job(
     Ok(retried)
 }
 
-/// Get the current max concurrent encoding jobs limit.
+/// 获取当前最大并发编码任务数限制。
 #[tauri::command]
 pub async fn get_max_concurrent(
     state: State<'_, crate::AppState>,
@@ -194,7 +194,7 @@ pub async fn get_max_concurrent(
     Ok(queue.max_concurrent())
 }
 
-/// Set the max concurrent encoding jobs limit (clamped to 1..=16, persisted).
+/// 设置最大并发编码任务数限制（限制在 1..=16 范围，并持久化到设置中）。
 #[tauri::command]
 pub async fn set_max_concurrent(
     state: State<'_, crate::AppState>,

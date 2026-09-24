@@ -22,7 +22,7 @@ function WindowsWindowControls() {
         const max = await appWindow.isMaximized();
         setIsMaximized(max);
       } catch {
-        // ignore
+        // 忽略错误
       }
     });
 
@@ -44,7 +44,7 @@ function WindowsWindowControls() {
         const max = await appWindow.isMaximized();
         setIsMaximized(max);
       } catch {
-        // ignore
+        // 忽略错误
       }
     } else {
       setIsMaximized((prev) => !prev);

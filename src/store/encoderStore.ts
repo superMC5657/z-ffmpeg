@@ -20,13 +20,13 @@ let estimateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let estimateRequestSeq = 0;
 
 interface EncoderState {
-  // File selection
+  // 文件选择
   inputFiles: FileInfo[];
   addFiles: (paths: string[]) => Promise<void>;
   removeFile: (index: number) => void;
   clearFiles: () => void;
 
-  // Codec settings
+  // 编解码器设置
   videoCodec: VideoCodec;
   setVideoCodec: (codec: VideoCodec) => void;
   rateControl: RateControl;
@@ -40,23 +40,23 @@ interface EncoderState {
   pixelFormat: string | null;
   setPixelFormat: (fmt: string | null) => void;
 
-  // Audio settings
+  // 音频设置
   audioCodec: AudioCodec;
   setAudioCodec: (codec: AudioCodec) => void;
   audioBitrate: number;
   setAudioBitrate: (br: number) => void;
 
-  // Output settings
+  // 输出设置
   outputDir: string;
   setOutputDir: (dir: string) => void;
   containerFormat: ContainerFormat;
   setContainerFormat: (fmt: ContainerFormat) => void;
 
-  // HW acceleration
+  // 硬件加速
   hwAccel: HwAccelConfig | null;
   setHwAccel: (config: HwAccelConfig | null) => void;
 
-  // Actions
+  // 操作方法
   buildConfig: () => CodecConfig;
   /** 把一份完整配置(如预设的 config)应用到当前表单状态 */
   applyConfig: (config: CodecConfig) => void;
@@ -122,7 +122,7 @@ export function getRecommendedQuality(
   if (videoCodec === "VP9") {
     return 32;
   }
-  return 23; // H264
+  return 23; // H264 默认值
 }
 
 /** 各视频格式的量化范围 [min, max] */
@@ -130,13 +130,13 @@ export function getQualityRange(videoCodec: VideoCodec): { min: number; max: num
   if (videoCodec === "AV1" || videoCodec === "VP9") {
     return { min: 0, max: 63 };
   }
-  return { min: 0, max: 51 }; // H264, H265
+  return { min: 0, max: 51 }; // H264、H265 量化范围
 }
 
 export const useEncoderStore = create<EncoderState>()(
   persist(
     (set, get) => ({
-  // File selection
+  // 文件选择
   inputFiles: [],
   addFiles: async (paths: string[]) => {
     void zlog.uiAction("添加文件", {
@@ -198,7 +198,7 @@ export const useEncoderStore = create<EncoderState>()(
     set({ inputFiles: [], estimatedSizes: {} });
   },
 
-  // Codec settings
+  // 编解码器设置
   videoCodec: "H264",
   setVideoCodec: (codec) => {
     void zlog.uiSetting("videoCodec", codec);
@@ -253,7 +253,7 @@ export const useEncoderStore = create<EncoderState>()(
     set({ pixelFormat: fmt });
   },
 
-  // Audio settings
+  // 音频设置
   audioCodec: "AAC",
   setAudioCodec: (codec) => {
     void zlog.uiSetting("audioCodec", codec);
@@ -267,7 +267,7 @@ export const useEncoderStore = create<EncoderState>()(
     get().scheduleEstimateRefresh();
   },
 
-  // Output settings
+  // 输出设置
   outputDir: "",
   setOutputDir: (dir) => {
     void zlog.uiSetting("outputDir", dir);
@@ -280,7 +280,7 @@ export const useEncoderStore = create<EncoderState>()(
     get().scheduleEstimateRefresh();
   },
 
-  // HW acceleration
+  // 硬件加速
   hwAccel: null,
   setHwAccel: (config) => {
     void zlog.uiSetting("hwAccel", config ? config.device : "none");
@@ -300,7 +300,7 @@ export const useEncoderStore = create<EncoderState>()(
     get().scheduleEstimateRefresh();
   },
 
-  // Actions
+  // 操作方法
   buildConfig: () => {
     const s = get();
     return {

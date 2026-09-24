@@ -4,7 +4,7 @@ use crate::preset::Preset;
 
 fn builtin_presets() -> Vec<Preset> {
     vec![
-        // --- H.264 Software ---
+        // --- H.264 软编 ---
         p("builtin-h264-fast", "H.264 快速", "ultrafast, CRF 23 — 最快编码",
             "H264", "ultrafast", "CRF", 23, "MP4", "AAC"),
         p("builtin-h264-balanced", "H.264 平衡", "medium, CRF 23 — 通用编码",
@@ -14,7 +14,7 @@ fn builtin_presets() -> Vec<Preset> {
         p("builtin-h264-archive", "H.264 无损存档", "veryslow, CRF 0 — 最大画质",
             "H264", "veryslow", "CRF", 0, "MKV", "Opus"),
 
-        // --- H.265 Software ---
+        // --- H.265 软编 ---
         p("builtin-h265-fast", "H.265 快速", "fast, CRF 28 — HEVC 快速",
             "H265", "fast", "CRF", 28, "MKV", "AAC"),
         p("builtin-h265-balanced", "H.265 平衡", "medium, CRF 24 — HEVC 通用",
@@ -22,15 +22,15 @@ fn builtin_presets() -> Vec<Preset> {
         p("builtin-h265-hq", "H.265 高质量", "slower, CRF 20, main10 — HEVC 高画质",
             "H265", "slower", "CRF", 20, "MKV", "Opus"),
 
-        // --- AV1 ---
+        // --- AV1 软编 ---
         p("builtin-av1", "AV1 通用", "preset 6, CRF 30 — SVT-AV1",
             "AV1", "medium", "CRF", 30, "MKV", "Opus"),
 
-        // --- VP9 ---
+        // --- VP9 软编 ---
         p("builtin-vp9", "VP9 Web", "CRF 30 — Web 优化",
             "VP9", "medium", "CRF", 30, "WebM", "Opus"),
 
-        // --- NVENC ---
+        // --- NVENC 硬编 ---
         hw_p("builtin-nvenc-h264", "NVENC H.264", "h264_nvenc — NVIDIA GPU 加速",
             "H264", "p4", "NVENC", 23),
         hw_p("builtin-nvenc-h265", "NVENC H.265", "hevc_nvenc — NVIDIA GPU 加速",
@@ -38,19 +38,19 @@ fn builtin_presets() -> Vec<Preset> {
         hw_p("builtin-nvenc-av1", "NVENC AV1", "av1_nvenc — NVIDIA RTX 40+",
             "AV1", "p4", "NVENC", 32),
 
-        // --- QSV ---
+        // --- QSV 硬编 ---
         hw_p("builtin-qsv-h264", "QSV H.264", "h264_qsv — Intel GPU 加速",
             "H264", "medium", "QSV", 23),
         hw_p("builtin-qsv-h265", "QSV H.265", "hevc_qsv — Intel GPU 加速",
             "H265", "medium", "QSV", 26),
 
-        // --- AMF ---
+        // --- AMF 硬编 ---
         hw_p("builtin-amf-h264", "AMF H.264", "h264_amf — AMD GPU 加速",
             "H264", "balanced", "AMF", 23),
         hw_p("builtin-amf-h265", "AMF H.265", "hevc_amf — AMD GPU 加速",
             "H265", "balanced", "AMF", 26),
 
-        // --- VideoToolbox (macOS) ---
+        // --- VideoToolbox 硬编 (macOS) ---
         hw_p("builtin-vt-h264", "VideoToolbox H.264", "h264_videotoolbox — Apple 硬件加速",
             "H264", "medium", "VideoToolbox", 23),
         hw_p("builtin-vt-h265", "VideoToolbox H.265", "hevc_videotoolbox — Apple 硬件加速",
@@ -68,7 +68,7 @@ fn audio_json(codec: &str) -> serde_json::Value {
     })
 }
 
-/// Helper for software presets
+/// 软编预设构造辅助函数
 #[allow(clippy::too_many_arguments)]
 fn p(
     id: &str, name: &str, desc: &str,
@@ -100,7 +100,7 @@ fn p(
     }
 }
 
-/// Helper for HW-accelerated presets
+/// 硬件加速预设构造辅助函数
 fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
     Preset {
         id: id.into(),
@@ -127,7 +127,7 @@ fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &st
     }
 }
 
-/// Load all custom (imported) presets from the persistent store.
+/// 从持久化存储中加载所有自定义（已导入）预设。
 #[tauri::command]
 pub async fn load_presets(state: State<'_, crate::AppState>) -> AppResult<Vec<Preset>> {
     match state.preset_manager.as_ref() {
@@ -136,7 +136,7 @@ pub async fn load_presets(state: State<'_, crate::AppState>) -> AppResult<Vec<Pr
     }
 }
 
-/// Delete a custom preset by id.
+/// 按 ID 删除自定义预设。
 #[tauri::command]
 pub async fn delete_preset(state: State<'_, crate::AppState>, id: String) -> AppResult<()> {
     match state.preset_manager.as_ref() {
@@ -145,10 +145,9 @@ pub async fn delete_preset(state: State<'_, crate::AppState>, id: String) -> App
     }
 }
 
-/// Serialize a preset (built-in or custom) to the portable JSON format
-/// { name, description, config }.
+/// 将预设（内置或自定义）序列化为便携的 JSON 格式 { name, description, config }。
 fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
-    // Built-in presets come from code
+    // 内置预设来自代码定义
     if let Some(p) = builtin_presets().iter().find(|p| p.id == id) {
         return Ok(serde_json::to_string_pretty(&serde_json::json!({
             "name": p.name,
@@ -156,7 +155,7 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
             "config": p.config,
         }))?);
     }
-    // Custom presets come from the database
+    // 自定义预设来自 SQLite 数据库
     if let Some(m) = state.preset_manager.as_ref() {
         if let Some(p) = m.get(id) {
             return Ok(serde_json::to_string_pretty(&serde_json::json!({
@@ -173,17 +172,15 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
     Err(err)
 }
 
-/// Export a preset as a JSON string (name + description + config),
-/// so it can be re-imported later.
+/// 将预设导出为 JSON 字符串（包含名称、描述和配置），便于后续重新导入。
 #[tauri::command]
 pub async fn export_preset(state: State<'_, crate::AppState>, id: String) -> AppResult<String> {
     crate::analytics::bump(&crate::analytics::COUNTERS.presets_exported, 1);
     preset_export_json(&state, &id)
 }
 
-/// Export a preset directly to a JSON file at the given path.
-/// The file is written by the Rust backend, so it is not subject to the
-/// frontend fs-plugin scope restrictions.
+/// 直接将预设导出为指定路径的 JSON 文件。
+/// 文件由 Rust 后端直接写入，因此不受前端 fs 插件的作用域限制。
 #[tauri::command]
 pub async fn export_preset_to_file(
     state: State<'_, crate::AppState>,
@@ -204,10 +201,9 @@ pub async fn export_preset_to_file(
     Ok(path)
 }
 
-/// Import a preset from JSON and persist it to the store.
-/// Accepts either the full export format ({ name, description, config })
-/// or a bare codec config JSON. `name` (from the frontend, defaulting to the
-/// imported file name without extension) takes precedence over the JSON name.
+/// 从 JSON 导入预设并持久化保存到数据库。
+/// 支持完整导出格式（{ name, description, config }）或纯编解码配置 JSON。
+/// `name`（由前端传入，默认取导入文件的文件名无后缀）优先级高于 JSON 中的名称。
 #[tauri::command]
 pub async fn import_preset(
     state: State<'_, crate::AppState>,

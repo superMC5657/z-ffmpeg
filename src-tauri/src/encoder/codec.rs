@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Video encoder configuration
+/// 视频编码配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncodeConfig {
@@ -27,7 +27,7 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
-    /// Map to FFmpeg encoder name
+    /// 映射到 FFmpeg 编码器名称
     pub fn encoder_name(&self, hw: Option<&HwAccelConfig>) -> &'static str {
         match hw {
             Some(HwAccelConfig { device: HwAccelDevice::NVENC, .. }) => match self {

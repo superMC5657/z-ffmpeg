@@ -30,7 +30,7 @@ export default function FfmpegSection() {
       });
   }, []);
 
-  // Listen for FFmpeg download progress & completion events
+  // 监听 FFmpeg 下载进度与完成事件
   useEffect(() => {
     if (!isTauriRuntime()) return;
     const unlisteners: UnlistenFn[] = [];

@@ -1,6 +1,5 @@
-//! FFmpeg auto-download: fetch a Windows build, extract ffmpeg.exe /
-//! ffprobe.exe into {app_data_dir}/ffmpeg, verify it, and refresh the
-//! cached status.
+//! FFmpeg 自动下载：获取 Windows 构建包，解压 ffmpeg.exe 与 ffprobe.exe
+//! 到 {app_data_dir}/ffmpeg，验证可用性并刷新缓存状态。
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -20,12 +19,11 @@ const FFMPEG_SOURCES: &[&str] = &[
     "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
 ];
 
-/// Guards against concurrent download invocations (e.g. page remounts).
+/// 防止并发下载调用（如页面重新挂载等）。
 static DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Download & install FFmpeg into {app_data_dir}/ffmpeg, then refresh the
-/// cached status. Emits `ffmpeg://download-progress` (f64, 0-100) while
-/// downloading so the UI can show a progress bar.
+/// 下载并安装 FFmpeg 到 {app_data_dir}/ffmpeg，随后刷新缓存状态。
+/// 下载期间发送 `ffmpeg://download-progress` 事件（f64, 0-100），以便 UI 展示进度条。
 pub async fn download_ffmpeg(
     app: &tauri::AppHandle,
     status_lock: &Mutex<FfmpegStatus>,
@@ -36,7 +34,7 @@ pub async fn download_ffmpeg(
         ));
     }
 
-    // Serialize downloads so two calls can't clobber the same zip path.
+    // 串行化下载操作，防止两次并发调用破坏同一个 zip 文件。
     let _lock = DOWNLOAD_LOCK.lock().await;
 
     let install_dir = library::local_install_dir(&crate::get_data_dir(app));
@@ -75,9 +73,8 @@ pub async fn download_ffmpeg(
     .await
     .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
 
-    // Best-effort cleanup of the zip and temp dir on every path,
-    // BEFORE unpacking the result — an Err from `result?` below must
-    // not skip this cleanup.
+    // 无论走哪条路径，均尽最大努力清理 zip 文件与临时解压目录。
+    // 在解包结果之前执行——下方 `result?` 的 Err 绝不能跳过此项清理。
     let _ = std::fs::remove_file(&zip_path);
     let _ = std::fs::remove_dir_all(&temp_dir);
 
@@ -88,7 +85,7 @@ pub async fn download_ffmpeg(
     Ok(status)
 }
 
-/// Replace `dest` with `src` (std::fs::rename fails if `dest` exists on Windows).
+/// 用 `src` 替换 `dest`（在 Windows 上若 `dest` 已存在，std::fs::rename 会失败）。
 fn replace_file(src: &Path, dest: &Path) -> AppResult<()> {
     if dest.exists() {
         std::fs::remove_file(dest)?;
@@ -178,7 +175,7 @@ fn install_from_url(
         }
     };
 
-    // 3) Move into place (same volume; Windows rename doesn't overwrite).
+    // 3) 移动到目标位置（同卷移动；Windows rename 不支持覆盖已存在文件）。
     //    任一文件移动失败即整体失败,并回滚已移动的文件,
     //    避免 install 根下残留半安装状态。
     let ffmpeg_final = install_dir.join("ffmpeg.exe");
@@ -203,10 +200,10 @@ fn install_from_url(
     Ok(())
 }
 
-/// Strictly verify that an ffmpeg binary starts and prints a version line.
-/// Unlike `library::get_status_from_paths` (which swallows errors via
-/// `.ok()`), this fails the whole install when the binary cannot run —
-/// e.g. a proxy-served stub or a blocked executable.
+/// 严格验证 ffmpeg 二进制可启动并输出版本行。
+/// 与 `library::get_status_from_paths`（通过 `.ok()` 吞掉错误）不同，
+/// 当二进制无法运行时（例如代理返回的错误页面伪装文件或被系统拦截的可执行文件），
+/// 此处直接判定整个安装失败。
 fn verify_binary(ffmpeg_path: &Path) -> AppResult<()> {
     let output = crate::ffmpeg::hidden_command(ffmpeg_path)
         .arg("-version")
@@ -225,7 +222,7 @@ fn verify_binary(ffmpeg_path: &Path) -> AppResult<()> {
     Ok(())
 }
 
-/// Download a single source into `dest`, emitting progress events.
+/// 从单个源下载到 `dest`，并发送下载进度事件。
 fn download_from(
     client: &reqwest::blocking::Client,
     url: &str,
@@ -286,9 +283,8 @@ fn write_response(
     Ok(done)
 }
 
-/// Extract ffmpeg.exe / ffprobe.exe from the zip into `install_dir`.
-/// Only file names are used for matching; output paths are always
-/// constructed by us, so zip entries cannot escape the install dir.
+/// 从 zip 压缩包中解压 ffmpeg.exe 和 ffprobe.exe 到 `install_dir`。
+/// 仅使用文件名进行匹配；输出路径始终由我们构建，防止 zip 条目路径穿越逃出安装目录。
 fn extract_binaries(zip_path: &Path, install_dir: &Path) -> AppResult<(PathBuf, PathBuf)> {
     let file = std::fs::File::open(zip_path)?;
     let mut archive = zip::ZipArchive::new(file)
@@ -366,7 +362,7 @@ mod tests {
         std::fs::read(path).unwrap()
     }
 
-    // ---- extract_binaries ----
+    // ---- extract_binaries 测试 ----
 
     #[test]
     fn extract_binaries_extracts_ffmpeg_and_ffprobe() {
@@ -450,7 +446,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- replace_file ----
+    // ---- replace_file 测试 ----
 
     #[test]
     fn replace_file_overwrites_existing_dest() {
@@ -478,7 +474,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- verify_binary ----
+    // ---- verify_binary 测试 ----
 
     #[test]
     fn verify_binary_fails_on_missing_path() {
@@ -488,7 +484,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- write_response ----
+    // ---- write_response 测试 ----
 
     #[test]
     fn write_response_writes_bytes_and_emits_progress() {
@@ -529,7 +525,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ---- install_from_sources (逐源回退) ----
+    // ---- install_from_sources (逐源回退测试) ----
 
     #[test]
     fn sources_fall_back_to_next_on_failure() {

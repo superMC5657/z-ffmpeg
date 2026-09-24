@@ -46,9 +46,9 @@ pub async fn get_system_info(
     let detect_cpu = cpu_name.clone();
     let detect_platform = platform.clone();
 
-    // Detect hardware accelerators via ffmpeg + platform/CPU constraints.
-    // `detect_all` 内部会跑阻塞的 ffmpeg -encoders 子进程,
-    // 放到 blocking 线程池执行,避免卡住 async runtime。
+    // 通过 ffmpeg 以及平台/CPU 约束检测硬件加速器。
+    // `detect_all` 内部会运行阻塞的 ffmpeg -encoders 子进程，
+    // 放到 blocking 线程池执行，避免阻塞异步运行时。
     let hw_accels = tauri::async_runtime::spawn_blocking(move || {
         hw_accel::detect_all(&detect_cpu, &detect_platform)
     })

@@ -237,7 +237,7 @@ fn source_codec_factor(codec_name: Option<&str>) -> f64 {
         "mpeg4" | "msmpeg4" | "xvid" => 1.30,
         "mpeg2video" => 1.80,
         "prores" | "dnxhd" | "dnxhr" | "mjpeg" | "rawvideo" => 3.5,
-        _ => 1.0, // default h264 or standard
+        _ => 1.0, // 默认 H264 或标准格式
     }
 }
 
@@ -492,7 +492,7 @@ mod tests {
             bitrate_kbps: 2000,
             max_bitrate_kbps: None,
         };
-        // (2000 + 128) kbps × 100s → bytes
+        // (2000 + 128) kbps × 100s → 字节数
         let expected = (2128.0 * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
             estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000)),
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn crf_scales_with_input_bitrate() {
-        let cfg = base_config(); // H264 CRF 23
+        let cfg = base_config(); // 默认 H264 CRF 23 配置
         let est = estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000));
         // 输入 8000kbps × 0.8 × 2^((18-23)/6) ≈ 3592kbps + 128kbps 音频
         assert!(est.is_some());
@@ -618,7 +618,7 @@ mod tests {
     /// FileInfo 输入与 probe JSON 输入应共用同一推算核心，结果一致
     #[test]
     fn from_info_matches_probe_version() {
-        let mut cfg = base_config(); // H264 CRF 23
+        let mut cfg = base_config(); // 默认 H264 CRF 23 配置
         // 设置输出分辨率/帧率，验证缩放逻辑在两个入口完全一致
         cfg.video_settings.resolution = Some(Resolution { width: 1280, height: 720 });
         cfg.video_settings.frame_rate = Some(24.0);

@@ -23,7 +23,7 @@ interface QueueState {
   /** 队列级暂停：暂停后不再自动启动下一个任务（正在编码的不受影响） */
   paused: boolean;
 
-  // Concurrency limit (shared by Queue page and Settings page)
+  // 并发数上限（队列页与设置页共享）
   maxConcurrent: number;
   maxConcurrentLoaded: boolean;
   fetchMaxConcurrent: () => Promise<void>;

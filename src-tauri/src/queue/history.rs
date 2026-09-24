@@ -31,17 +31,16 @@ impl QueueManager {
         let _ = self.db.lock().unwrap().execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![id]);
     }
 
-    /// Delete specific history entries (Completed / Failed / Cancelled) from the
-    /// database, and drop them from the in-memory queue if present.
+    /// 从数据库中删除指定的历史条目（已完成 / 失败 / 已取消），
+    /// 并从内存队列中同步移除（若存在）。
     pub fn delete_history(&self, ids: &[String]) {
         let mut jobs = self.jobs.write();
         for id in ids { self.delete_job_db(id); }
         jobs.retain(|j| !ids.contains(&j.id));
     }
 
-    /// Remove ALL history entries (Completed / Failed / Cancelled) from the
-    /// database and the in-memory queue. Works even after a restart when the
-    /// in-memory queue is empty (unlike `clear_completed`).
+    /// 从数据库和内存队列中删除所有历史记录条目（已完成 / 失败 / 已取消）。
+    /// 即使在重启后内存队列为空时也能正常生效（与 `clear_completed` 不同）。
     pub fn clear_history(&self) {
         {
             let db = self.db.lock().unwrap();
@@ -98,9 +97,9 @@ impl QueueManager {
         );
     }
 
-    /// Load history entries (Completed / Failed / Cancelled) directly from the
-    /// database. Unlike the in-memory queue — which only restores active jobs on
-    /// startup — the DB keeps finished jobs, so history survives app restarts.
+    /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
+    /// 与内存队列（启动时仅恢复活动任务）不同，数据库会持久保留已结束任务，
+    /// 使历史记录在应用重启后依然有效。
     pub fn history(&self) -> Vec<JobSnapshot> {
         self.history_filtered(None, 0, None, None).0
     }
@@ -213,7 +212,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
-        // First "session": add a job and complete it
+        // 第一次“会话”：添加任务并完成它
         let manager = QueueManager::new(&db_path).unwrap();
         let ids = manager.add_jobs(
             vec![("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into())],
@@ -221,7 +220,7 @@ mod tests {
         );
         manager.complete_job(&ids[0], true, None);
 
-        // Second "session": restart the manager — only the DB remains
+        // 第二次“会话”：重启管理器——仅数据库数据保留
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
         assert_eq!(reopened.jobs.read().len(), 0, "active queue should be empty after restart");
@@ -254,13 +253,13 @@ mod tests {
         manager.complete_job(&ids[2], true, None);
         assert_eq!(manager.history().len(), 3);
 
-        // Delete a single entry
+        // 删除单个条目
         manager.delete_history(&[ids[1].clone()]);
         let history = manager.history();
         assert_eq!(history.len(), 2);
         assert!(history.iter().all(|h| h.id != ids[1]));
 
-        // Clear the rest
+        // 清空剩余条目
         manager.clear_history();
         assert!(manager.history().is_empty());
 
@@ -417,15 +416,14 @@ mod tests {
         );
         manager.complete_job(&ids[0], true, None);
         manager.complete_job(&ids[1], false, Some("boom".into()));
-        // c stays Pending
+        // c 保持 Pending
 
-        // Queue's "清除已完成" must only drop finished jobs from the in-memory
-        // queue — the History page reads the same DB table.
+        // 队列页的“清除已完成”仅从内存队列中移出已结束任务——历史页面读取同一张数据库表。
         manager.clear_completed();
         assert_eq!(manager.jobs.read().len(), 1, "only the pending job remains");
         assert_eq!(manager.jobs.read()[0].id, ids[2]);
 
-        // History records are untouched
+        // 历史记录保持不受影响
         let history = manager.history();
         assert_eq!(history.len(), 2, "finished jobs must survive clear_completed");
         assert!(history.iter().any(|h| h.id == ids[0]));
@@ -449,19 +447,18 @@ mod tests {
             ],
             sample_config(),
         );
-        manager.complete_job(&ids[0], true, None); // finished -> history
-        // b stays Pending, c stays Pending
+        manager.complete_job(&ids[0], true, None); // 已完成 -> 历史记录
+        // b 保持 Pending，c 保持 Pending
 
-        // Queue page removes one finished and one pending job
+        // 队列页移除一个已完成任务和一个待处理任务
         manager.remove_jobs(&[ids[0].clone(), ids[1].clone()]);
 
-        // History still has the finished record
+        // 历史记录中仍然保留该已完成记录
         let history = manager.history();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, ids[0]);
 
-        // The pending job's DB row was deleted: after a restart it must not
-        // resurrect, and only c remains queued.
+        // 待处理任务的数据库行已被删除：重启后不得复活，仅保留 c 任务排队。
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
         let remaining: Vec<String> = reopened

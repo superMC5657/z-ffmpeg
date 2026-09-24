@@ -21,7 +21,7 @@ pub enum AppError {
     Internal(String),
 }
 
-// Implement Serialize for Tauri command results
+// 为 Tauri 命令返回值实现 Serialize 特征
 impl Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

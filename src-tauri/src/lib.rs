@@ -16,7 +16,7 @@ use crate::license::LicenseManager;
 use crate::preset::manager::PresetManager;
 use crate::queue::QueueManager;
 
-/// Application state shared across all Tauri commands
+/// 在所有 Tauri 命令间共享的应用全局状态
 pub struct AppState {
     pub ffmpeg_status: Mutex<FfmpegStatus>,
     pub queue_manager: Option<Arc<QueueManager>>,
@@ -47,14 +47,14 @@ pub fn run() {
             // 返回值丢弃：路径本身不打日志（ trivia + 全路径脱敏），只保留修剪副作用
             let _ = z_log::log_dir(app.handle());
 
-            // Initialize FFmpeg detection early
+            // 尽早初始化 FFmpeg 环境检测
             let ffmpeg_status = ffmpeg::library::init_ffmpeg(&data_dir);
 
-            // Determine queue database path and initialize queue manager
+            // 确定队列数据库路径并初始化队列管理器
             let queue_db_path = data_dir.join("queue.db").to_string_lossy().into_owned();
             let queue = QueueManager::new(&queue_db_path).ok();
 
-            // Determine preset database path and initialize preset manager
+            // 确定预设数据库路径并初始化预设管理器
             let preset_db_path = data_dir.join("presets.db").to_string_lossy().into_owned();
             let preset_manager = PresetManager::new(&preset_db_path).ok();
 

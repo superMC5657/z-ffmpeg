@@ -18,13 +18,11 @@ pub struct QueueManager {
     pub(crate) jobs: RwLock<VecDeque<EncodeJob>>,
     active_count: RwLock<usize>,
     max_concurrent: RwLock<usize>,
-    pub(crate) db: StdMutex<Connection>,  // std Mutex because Connection is Send but not Sync
-    /// Per-job cancellation flags. Set by `cancel_job` and read by the encode
-    /// worker, so a job cancelled before its ffmpeg child is registered (in the
-    /// window between `dequeue_next` and PROCESSES.insert) still cancels.
+    pub(crate) db: StdMutex<Connection>,  // 使用 std Mutex，因为 Connection 实现了 Send 但未实现 Sync
+    /// 针对每个任务的取消标记。由 `cancel_job` 设置并由编码 worker 读取，
+    /// 确保在 ffmpeg 子进程尚未注册的窗口期间（即 `dequeue_next` 与 PROCESSES.insert 之间）取消的任务仍能生效取消。
     cancel_flags: RwLock<HashMap<String, Arc<AtomicBool>>>,
-    /// Serializes `process_queue` loops so concurrent invocations (user button
-    /// + auto-advance) can't over-spawn past max_concurrent.
+    /// 串行化 `process_queue` 循环，防止并发调用（用户点击按钮与自动推进竞态）产生超出 max_concurrent 的任务。
     processing: tokio::sync::Mutex<()>,
     /// 队列级暂停开关：true 时 can_start 恒为 false，不再自动启动新任务；
     /// 正在编码的任务不受影响。仅运行态，不持久化（重启后默认恢复调度）。
@@ -136,7 +134,7 @@ impl QueueManager {
             rows.filter_map(|r| r.ok())
                 .map(|mut j| {
                     if j.status == JobStatus::Encoding {
-                        // Interrupted jobs are re-queued after restart
+                        // 重启后被中断的任务重新排队
                         j.status = JobStatus::Pending;
                     }
                     j
@@ -146,7 +144,7 @@ impl QueueManager {
         .unwrap_or_default()
     }
 
-    // --- Public API ---
+    // --- 公共 API ---
 
     pub fn add_jobs(&self, files: Vec<(String, String)>, config: EncodeConfig) -> Vec<String> {
         self.add_jobs_estimated(files, vec![], config)
@@ -179,12 +177,11 @@ impl QueueManager {
         ids
     }
 
-    /// Remove jobs from the in-memory queue.
+    /// 从内存队列中移除任务。
     ///
-    /// Pending/Encoding entries are also deleted from the DB (otherwise they'd
-    /// resurrect on restart); Finished entries (Completed / Failed / Cancelled)
-    /// are kept — their DB rows are the History page's records, which is the
-    /// only place that manages them (see `delete_history` / `clear_history`).
+    /// Pending/Encoding 状态的条目会同时从数据库中删除（否则重启后会复活）；
+    /// 已结束（Completed / Failed / Cancelled）的条目会被保留——其数据库记录属于历史页面管理，
+    /// 仅由历史记录功能操作（参见 `delete_history` / `clear_history`）。
     pub fn remove_jobs(&self, ids: &[String]) {
         let mut jobs = self.jobs.write();
         log::info!("queue remove jobs count={} ids={:?}", ids.len(), ids);
@@ -196,9 +193,8 @@ impl QueueManager {
                     j.status,
                     JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
                 ))
-                // Unknown id (e.g. only a History row remains): treat as
-                // finished so we never delete a DB record the queue page
-                // doesn't own.
+                // 未知 ID（例如仅在历史记录中残留）：视为已结束任务处理，
+                // 绝不删除不属于队列页面拥有的数据库记录。
                 .unwrap_or(true);
             if !is_finished {
                 self.delete_job_db(id);
@@ -207,10 +203,9 @@ impl QueueManager {
         jobs.retain(|j| !ids.contains(&j.id));
     }
 
-    /// Remove finished jobs (Completed / Failed / Cancelled) from the in-memory
-    /// queue only. The DB records are intentionally kept — the History page
-    /// reads from the same table and manages its entries via `delete_history` /
-    /// `clear_history`, so the queue's "清除已完成" must not wipe them.
+    /// 仅从内存队列中移除已结束的任务（Completed / Failed / Cancelled）。
+    /// 数据库记录会被特意保留——历史页面读取同一张表，
+    /// 并通过 `delete_history` / `clear_history` 进行管理，因此队列的“清除已完成”绝不能抹除它们。
     pub fn clear_completed(&self) {
         let mut jobs = self.jobs.write();
         let before = jobs.len();
@@ -239,14 +234,13 @@ impl QueueManager {
     }
 
     pub fn cancel_job(&self, job_id: &str) {
-        // 1. Signal the job's cancel flag first — this covers the window where
-        //    the ffmpeg child has not been registered yet (still queued on a
-        //    blocking worker, or between dequeue and spawn). `start_encode`
-        //    checks this flag before spawning the process.
+        // 1. 先触发任务的取消标记——这覆盖了 ffmpeg 子进程尚未注册的时间窗口
+        //    （仍在 blocking worker 队列中，或处于出队与启动之间）。
+        //    `start_encode` 会在启动进程前检查此标记。
         if let Some(flag) = self.cancel_flags.read().get(job_id) {
             flag.store(true, Ordering::Relaxed);
         }
-        // 2. Kill the underlying ffmpeg process if it is already running
+        // 2. 如果底层的 ffmpeg 进程已经在运行，则终止该进程
         crate::encoder::engine::cancel_process(job_id);
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
@@ -266,8 +260,8 @@ impl QueueManager {
         }
     }
 
-    /// Re-queue a finished job (Failed / Cancelled) so it can be encoded again.
-    /// Returns false if the job doesn't exist or isn't in a retryable state.
+    /// 将已结束的任务（Failed / Cancelled）重新加入队列，以便重新编码。
+    /// 若任务不存在或不处于可重试状态，则返回 false。
     pub fn retry_job(&self, job_id: &str) -> bool {
         let mut jobs = self.jobs.write();
         let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) else {
@@ -295,7 +289,7 @@ impl QueueManager {
     /// 完成收尾（`history.rs` 的回归测试经此路径覆盖 DB 落盘，crate 内可见）。
     pub(crate) fn complete_job(&self, job_id: &str, success: bool, error: Option<String>) {
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
-            // Never overwrite a user-cancelled job
+            // 绝不覆盖已被用户取消的任务
             if job.status == JobStatus::Cancelled {
                 return;
             }
@@ -388,14 +382,13 @@ impl QueueManager {
     fn inc_active(&self) { *self.active_count.write() += 1; }
     fn dec_active(&self) { let mut c = self.active_count.write(); if *c > 0 { *c -= 1; } }
 
-    /// Current maximum number of concurrent encoding jobs.
+    /// 当前最大并发编码任务数。
     pub fn max_concurrent(&self) -> usize {
         *self.max_concurrent.read()
     }
 
-    /// Update the concurrency limit. Clamped to 1..=16 and persisted so the
-    /// choice survives app restarts. Only takes effect for jobs started after
-    /// the change (already-running jobs are not affected).
+    /// 更新并发数限制。限制在 1..=16 范围并持久化，使选择在应用重启后依然有效。
+    /// 仅对修改后启动的任务生效（已在运行的任务不受影响）。
     pub fn set_max_concurrent(&self, value: usize) -> usize {
         let clamped = value.clamp(1, 16);
         *self.max_concurrent.write() = clamped;
@@ -403,11 +396,9 @@ impl QueueManager {
         clamped
     }
 
-    /// Core: process queue, starting jobs up to max_concurrent.
-    /// After each job finishes, this method is called again to start the next.
-    /// A per-manager lock serializes the check-then-act loop so concurrent
-    /// invocations (the user's 开始执行 button racing auto-advance) can't
-    /// over-spawn past max_concurrent.
+    /// 核心逻辑：处理队列，启动最多 max_concurrent 个任务。
+    /// 每个任务结束后，会再次调用此方法启动下一个任务。
+    /// 实例级锁串行化了“检查-执行”循环，防止并发调用（用户“开始执行”按钮与自动推进竞态）突破最大并发数。
     pub fn process_queue(self: &Arc<Self>, app_handle: AppHandle) {
         let qm = self.clone();
 
@@ -439,21 +430,20 @@ impl QueueManager {
                     *qm.max_concurrent.read()
                 );
 
-                // Shared cancel flag: cancel_job sets it even before the ffmpeg
-                // child exists; start_encode checks it before spawning.
+                // 共享取消标记：即使在 ffmpeg 子进程创建之前，cancel_job 也可以设置该标记；
+                // start_encode 会在派生进程前进行检查。
                 let cancel_flag = Arc::new(AtomicBool::new(false));
                 qm.cancel_flags.write().insert(job_id.clone(), cancel_flag.clone());
-                // Close the window between dequeue_next and flag registration:
-                // cancel_job that ran in that gap couldn't find a flag, but did
-                // mark the job Cancelled — honour it so the encode never starts.
+                // 消除 dequeue_next 与标记注册之间的时间窗口：
+                // 如果 cancel_job 在该间隙运行而未找到标记，但已将任务标记为 Cancelled，
+                // 则在此予以识别，阻止编码启动。
                 if qm.jobs.read().iter().any(|j| j.id == job_id && j.status == JobStatus::Cancelled) {
                     cancel_flag.store(true, Ordering::Relaxed);
                 }
 
-                // Spawn encoding on blocking thread
+                // 在 blocking 线程池中启动编码
                 tokio::task::spawn_blocking(move || {
-                    // Run the encoding engine; surface its error instead of the
-                    // misleading "Output file not created" for every failure.
+                    // 运行编码引擎；遇到失败时抛出具体错误，而不是对所有失败都显示具误导性的“未创建输出文件”。
                     let result = engine::start_encode(
                         app.clone(),
                         job_id.clone(),
@@ -469,10 +459,9 @@ impl QueueManager {
                         Ok(()) => (false, Some("Output file not created".into())),
                         Err(e) => (false, Some(e.to_string())),
                     };
-                    // complete_job never overwrites a user-cancelled job
+                    // complete_job 绝不覆盖已被用户取消的任务
                     manager.complete_job(&job_id, success, error);
-                    // Remove our cancel flag only — a retried job may have
-                    // re-inserted a fresh flag under the same id.
+                    // 仅移除我们自己的取消标记——被重试的任务可能已在相同 ID 下插入了新标记。
                     {
                         let mut flags = manager.cancel_flags.write();
                         if let Some(flag) = flags.get(&job_id) {
@@ -483,11 +472,11 @@ impl QueueManager {
                     }
                     manager.dec_active();
 
-                    // Emit updated queue state
+                    // 发送更新后的队列状态事件
                     let status = manager.get_status();
                     let _ = app.emit("queue://updated", &status);
 
-                    // Auto-advance: process next pending job
+                    // 自动推进：处理下一个待处理任务
                     manager.process_queue(app.clone());
                 });
             }
@@ -545,15 +534,15 @@ mod tests {
         let manager = QueueManager::new(&db_path).unwrap();
         assert_eq!(manager.max_concurrent(), 2, "default should be 2");
 
-        // Set a custom value and verify it is applied
+        // 设置自定义值并验证是否生效
         assert_eq!(manager.set_max_concurrent(4), 4);
         assert_eq!(manager.max_concurrent(), 4);
 
-        // Values outside 1..=16 are clamped
+        // 超出 1..=16 范围的值会被截断限制
         assert_eq!(manager.set_max_concurrent(0), 1);
         assert_eq!(manager.set_max_concurrent(99), 16);
 
-        // Persisted across restart
+        // 重启后保持持久化
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
         assert_eq!(reopened.max_concurrent(), 16);
@@ -573,11 +562,11 @@ mod tests {
             sample_config(),
         );
 
-        // Cancel while the job is still Pending (no ffmpeg child exists yet).
+        // 当任务仍处于 Pending 状态时取消（此时尚未创建 ffmpeg 子进程）。
         manager.cancel_job(&ids[0]);
 
-        // dequeue_next must never start a Cancelled job — the encode would
-        // otherwise run in the background while the UI shows 已取消.
+        // dequeue_next 绝不能启动已取消（Cancelled）的任务——
+        // 否则 UI 显示“已取消”时后台却仍在运行编码。
         assert!(manager.dequeue_next().is_none(), "cancelled job must not be dequeued");
         let job = manager.jobs.read().iter().find(|j| j.id == ids[0]).unwrap().clone();
         assert_eq!(job.status, JobStatus::Cancelled);
@@ -605,18 +594,18 @@ mod tests {
         manager.cancel_job(&ids[1]);
         assert!(!manager.retry_job(&ids[2]), "pending jobs are not retryable");
 
-        // Retry failed job
+        // 重试失败的任务
         assert!(manager.retry_job(&ids[0]));
         let job = manager.jobs.read().iter().find(|j| j.id == ids[0]).unwrap().clone();
         assert_eq!(job.status, JobStatus::Pending);
         assert!(job.error.is_none());
         assert!(job.completed_at.is_none());
 
-        // Retry cancelled job (no ffmpeg process was ever started)
+        // 重试已取消的任务（未曾启动过 ffmpeg 进程）
         assert!(manager.retry_job(&ids[1]));
         assert!(manager.jobs.read().iter().find(|j| j.id == ids[1]).unwrap().status == JobStatus::Pending);
 
-        // Unknown id
+        // 未知 ID
         assert!(!manager.retry_job("nope"));
 
         let _ = std::fs::remove_dir_all(&dir);
