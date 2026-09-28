@@ -176,6 +176,33 @@ impl ContainerFormat {
     }
 }
 
+/// 解析 ffprobe 的帧率字符串为 fps：兼容 "30000/1001" 分数形式与 "30" 整数形式。
+/// 统一裁剪前后空白；分母 ≤ 0、解析失败或结果 ≤ 0 时返回 None。
+pub fn parse_fraction_fps(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let fps = if let Some((num, den)) = s.split_once('/') {
+        let num = num.trim().parse::<f64>().ok()?;
+        let den = den.trim().parse::<f64>().ok()?;
+        if den <= 0.0 {
+            return None;
+        }
+        num / den
+    } else {
+        s.parse::<f64>().ok()?
+    };
+    (fps > 0.0).then_some(fps)
+}
+
+/// 将尺寸对齐为偶数（编码器色度抽样兼容性要求）：最小为 2，奇数向下取偶。
+pub fn ensure_even_dimension(val: u32) -> u32 {
+    let v = val.max(2);
+    if v % 2 == 1 {
+        v.saturating_sub(1).max(2)
+    } else {
+        v
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HwAccelConfig {

@@ -14,7 +14,7 @@ import type { EncoderPreset, AudioCodec } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useQueueStore } from "@/store/queueStore";
 import { usePresetStore } from "@/store/presetStore";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { useNavigate } from "react-router-dom";
 import { isTauriRuntime, cn } from "@/lib/utils";
 import { buildFfmpegCommands } from "@/lib/tauri";
@@ -127,10 +127,7 @@ export default function UnifiedInspector() {
       );
       setCommandDialogOpen(true);
     } catch (err) {
-      useToastStore.getState().showToast(
-        `生成命令失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("生成命令失败", err);
     } finally {
       setBuilding(false);
     }
@@ -149,10 +146,7 @@ export default function UnifiedInspector() {
         .showToast(`已将 ${paths.length} 个任务加入转码队列`, "success");
       navigate("/queue");
     } catch (err) {
-      useToastStore.getState().showToast(
-        `添加队列失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("添加队列失败", err);
     }
   };
 

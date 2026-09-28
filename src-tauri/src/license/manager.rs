@@ -362,7 +362,7 @@ impl LicenseManager {
                     self.delete_stored();
                     Err(LicenseFlowError::Api(api))
                 } else {
-                    // EMAIL_MISMATCH 等其他错误：旧版本令牌场景，保留凭证等待重新激活
+                    // 其他服务端错误：保留凭证，等待重新激活
                     log::debug!("license verify deferred: {}", api.code);
                     Ok(false)
                 }

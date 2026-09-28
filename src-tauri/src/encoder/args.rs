@@ -333,7 +333,7 @@ fn normalize_path_key(path: &str) -> String {
 ///
 /// 如果与 `{stem}_encoded.{ext}` 发生重名冲突，会在扩展名前递增追加
 /// 数字后缀（`_1`、`_2`、`_3`...），直到找到未被占用的文件名。
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn derive_output_paths_unique(
     inputs: &[String],
     config: &EncodeConfig,

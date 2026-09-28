@@ -1,10 +1,10 @@
-import type { EncodeProgress } from "@/types";
+import { isEncodeProgress, type EncodeProgress } from "@/types";
 import {
   formatFps,
   formatSpeed,
   formatBitrate,
   formatFileSize,
-  formatFileSizeCompact,
+  formatCompressionRatio,
   formatDuration,
   estimateRemainingSeconds,
 } from "@/lib/utils";
@@ -27,11 +27,11 @@ interface ProgressBarProps {
 const TRACK = "h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong";
 
 export default function ProgressBar({ progress, status, estimatedSizeBytes = null, outputSizeBytes = null, inputSizeBytes = null, vmafScore = null }: ProgressBarProps) {
-  const isLive = typeof progress === "object" && progress !== null;
-  const pct = isLive ? (progress as EncodeProgress).percentage : (progress as number) ?? 0;
+  const isLive = isEncodeProgress(progress);
+  const pct = isLive ? progress.percentage : progress ?? 0;
   // 编码中：按已用时长与进度线性外推剩余时间（进度过小/不可解析时为 null）
   const etaSeconds = isLive
-    ? estimateRemainingSeconds((progress as EncodeProgress).elapsed, (progress as EncodeProgress).percentage)
+    ? estimateRemainingSeconds(progress.elapsed, progress.percentage)
     : null;
 
   if (status === "Pending" || status === "Queued") {
@@ -52,19 +52,12 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
   if (status === "Completed") {
     const parts = ["完成"];
     // 压缩率 + 实际体积合并为一行：↓30.1% 20MB（增大时 ↑20.0%）
-    if (outputSizeBytes != null && inputSizeBytes != null && inputSizeBytes > 0) {
-      const ratio = (1 - outputSizeBytes / inputSizeBytes) * 100;
-      const arrow = ratio >= 0 ? "↓" : "↑";
-      parts.push(`${arrow}${Math.abs(ratio).toFixed(1)}% ${formatFileSizeCompact(outputSizeBytes)}`);
-    } else if (outputSizeBytes != null) {
-      parts.push(formatFileSizeCompact(outputSizeBytes));
-    }
+    const compression = formatCompressionRatio(inputSizeBytes, outputSizeBytes);
+    if (compression.text) parts.push(compression.text);
     if (vmafScore != null) parts.push(`VMAF ${vmafScore.toFixed(1)}`);
     // 输出变大时整体用警示色
-    const enlarged =
-      outputSizeBytes != null && inputSizeBytes != null && inputSizeBytes > 0 && outputSizeBytes > inputSizeBytes;
     return (
-      <div className={cn("flex items-center gap-2.5 text-[11px]", enlarged ? "text-warning" : "text-success")}>
+      <div className={cn("flex items-center gap-2.5 text-[11px]", compression.enlarged ? "text-warning" : "text-success")}>
         <div className={TRACK}>
           <div className="h-full w-full rounded-full bg-success" />
         </div>
@@ -96,7 +89,7 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
         </span>
         {isLive && (
           <span className="truncate">
-            {formatFps((progress as EncodeProgress).fps)} · {formatSpeed((progress as EncodeProgress).speed)} · {formatBitrate((progress as EncodeProgress).bitrate)}
+            {formatFps(progress.fps)} · {formatSpeed(progress.speed)} · {formatBitrate(progress.bitrate)}
             {etaSeconds != null && <> · 剩余 {formatDuration(etaSeconds)}</>}
           </span>
         )}

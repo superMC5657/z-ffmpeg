@@ -1,5 +1,11 @@
 import { create } from "zustand";
-import type { EncodeJob, EncodeProgress, JobStatus, CodecConfig } from "@/types";
+import {
+  isEncodeProgress,
+  type EncodeJob,
+  type EncodeProgress,
+  type JobStatus,
+  type CodecConfig,
+} from "@/types";
 import {
   addToQueue,
   removeFromQueue,
@@ -203,7 +209,7 @@ export const useQueueStore = create<QueueState>((set, get) => ({
       jobs: jobs.map((j) => {
         if (j.status === "Encoding") {
           const live = s.jobs.find((e) => e.id === j.id);
-          if (live?.progress && typeof live.progress === "object") {
+          if (isEncodeProgress(live?.progress)) {
             return { ...j, progress: live.progress };
           }
         }

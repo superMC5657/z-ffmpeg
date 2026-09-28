@@ -3,11 +3,14 @@ import {
   cn,
   estimateRemainingSeconds,
   formatBitrate,
+  formatCompressionRatio,
   formatDuration,
+  formatError,
   formatFileSize,
   formatFileSizeCompact,
   formatPercentage,
   formatSpeed,
+  getFileName,
   isTauriRuntime,
   parseElapsedSeconds,
 } from "@/lib/utils";
@@ -52,7 +55,57 @@ describe("formatBitrate", () => {
 describe("misc formatters", () => {
   it("formatSpeed / formatFps / formatPercentage", () => {
     expect(formatSpeed(1.234)).toBe("1.23x");
+    expect(formatSpeed(1.234, 1)).toBe("1.2x");
     expect(formatPercentage(33.33)).toBe("33.3%");
+  });
+});
+
+describe("formatCompressionRatio", () => {
+  it("reports shrinkage as a positive ratio with a down arrow", () => {
+    const r = formatCompressionRatio(100 * 1024 * 1024, 70 * 1024 * 1024);
+    expect(r.text).toBe("↓30.0% 70MB");
+    expect(r.ratio).toBeCloseTo(30);
+    expect(r.enlarged).toBe(false);
+  });
+
+  it("reports enlargement as a negative ratio with an up arrow", () => {
+    const r = formatCompressionRatio(10 * 1024 * 1024, 12 * 1024 * 1024);
+    expect(r.text).toBe("↑20.0% 12MB");
+    expect(r.ratio).toBeCloseTo(-20);
+    expect(r.enlarged).toBe(true);
+  });
+
+  it("degrades to output size text when input size is missing or invalid", () => {
+    expect(formatCompressionRatio(null, 20 * 1024 * 1024)).toEqual({
+      text: "20MB",
+      ratio: null,
+      enlarged: false,
+    });
+    expect(formatCompressionRatio(0, 20 * 1024 * 1024).ratio).toBeNull();
+  });
+
+  it("returns empty text when there is no output size", () => {
+    expect(formatCompressionRatio(100, null)).toEqual({
+      text: "",
+      ratio: null,
+      enlarged: false,
+    });
+  });
+});
+
+describe("getFileName", () => {
+  it("extracts the file name from windows and posix paths", () => {
+    expect(getFileName("C:\\videos\\a.mp4")).toBe("a.mp4");
+    expect(getFileName("/home/u/b.mkv")).toBe("b.mkv");
+    expect(getFileName("plain.mp4")).toBe("plain.mp4");
+  });
+});
+
+describe("formatError", () => {
+  it("uses Error.message when available and stringifies other values", () => {
+    expect(formatError(new Error("boom"))).toBe("boom");
+    expect(formatError("nope")).toBe("nope");
+    expect(formatError(42)).toBe("42");
   });
 });
 

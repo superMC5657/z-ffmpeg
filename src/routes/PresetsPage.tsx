@@ -6,6 +6,7 @@ import PresetPanel from "@/components/preset/PresetPanel";
 import ImportPresetDialog from "@/components/preset/ImportPresetDialog";
 import PageHeader from "@/components/layout/PageHeader";
 import { usePresetStore } from "@/store/presetStore";
+import { getFileName } from "@/lib/utils";
 
 interface PendingImport {
   content: string;
@@ -14,7 +15,7 @@ interface PendingImport {
 
 /** 从路径中提取文件名并去掉扩展名（默认保存名） */
 function defaultNameFromPath(path: string): string {
-  const fileName = path.split(/[\\/]/).pop() ?? "";
+  const fileName = getFileName(path);
   const stem = fileName.replace(/\.[^.]+$/, "");
   return stem || fileName;
 }

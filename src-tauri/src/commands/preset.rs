@@ -68,6 +68,46 @@ fn audio_json(codec: &str) -> serde_json::Value {
     })
 }
 
+/// 统一的 EncodeConfig JSON 构造：软编/硬编共用同一 VideoSettings 组装，
+/// 避免各处裸写重复的字段结构（字段名与 `EncodeConfig` 的 camelCase 对齐）。
+fn preset_config(
+    codec: &str,
+    preset: &str,
+    container: &str,
+    audio: &str,
+    rate_control: serde_json::Value,
+    device: Option<&str>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "videoCodec": codec,
+        "videoSettings": {
+            "rateControl": rate_control,
+            "encoderPreset": preset,
+            "resolution": null,
+            "frameRate": null,
+            "pixelFormat": null,
+            "profile": null,
+            "additionalParams": []
+        },
+        "audioSettings": audio_json(audio),
+        "containerFormat": container,
+        "hwAccel": device.map(|d| serde_json::json!({ "device": d, "deviceIndex": null }))
+    })
+}
+
+/// 预设公共外壳（id/名称/描述/配置）
+fn build_preset(id: &str, name: &str, desc: &str, config: serde_json::Value) -> Preset {
+    Preset {
+        id: id.into(),
+        name: name.into(),
+        description: desc.into(),
+        config,
+        is_builtin: true,
+        created_at: String::new(),
+        updated_at: String::new(),
+    }
+}
+
 /// 软编预设构造辅助函数
 #[allow(clippy::too_many_arguments)]
 fn p(
@@ -75,56 +115,36 @@ fn p(
     codec: &str, preset: &str, rc: &str, value: u32,
     container: &str, audio: &str,
 ) -> Preset {
-    Preset {
-        id: id.into(),
-        name: name.into(),
-        description: desc.into(),
-        config: serde_json::json!({
-            "videoCodec": codec,
-            "videoSettings": {
-                "rateControl": { "type": rc, "value": value },
-                "encoderPreset": preset,
-                "resolution": null,
-                "frameRate": null,
-                "pixelFormat": null,
-                "profile": null,
-                "additionalParams": []
-            },
-            "audioSettings": audio_json(audio),
-            "containerFormat": container,
-            "hwAccel": null
-        }),
-        is_builtin: true,
-        created_at: String::new(),
-        updated_at: String::new(),
-    }
+    build_preset(
+        id,
+        name,
+        desc,
+        preset_config(
+            codec,
+            preset,
+            container,
+            audio,
+            serde_json::json!({ "type": rc, "value": value }),
+            None,
+        ),
+    )
 }
 
 /// 硬件加速预设构造辅助函数
 fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
-    Preset {
-        id: id.into(),
-        name: name.into(),
-        description: desc.into(),
-        config: serde_json::json!({
-            "videoCodec": codec,
-            "videoSettings": {
-                "rateControl": { "type": "CRF", "value": value },
-                "encoderPreset": preset,
-                "resolution": null,
-                "frameRate": null,
-                "pixelFormat": null,
-                "profile": null,
-                "additionalParams": []
-            },
-            "audioSettings": audio_json("AAC"),
-            "containerFormat": if codec == "AV1" { "MKV" } else { "MP4" },
-            "hwAccel": { "device": device, "deviceIndex": null }
-        }),
-        is_builtin: true,
-        created_at: String::new(),
-        updated_at: String::new(),
-    }
+    build_preset(
+        id,
+        name,
+        desc,
+        preset_config(
+            codec,
+            preset,
+            if codec == "AV1" { "MKV" } else { "MP4" },
+            "AAC",
+            serde_json::json!({ "type": "CRF", "value": value }),
+            Some(device),
+        ),
+    )
 }
 
 /// 从持久化存储中加载所有自定义（已导入）预设。

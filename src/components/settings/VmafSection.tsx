@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import Card from "@/components/layout/Card";
 import AppleInput from "@/components/layout/AppleInput";
 
@@ -26,10 +26,7 @@ export default function VmafSection() {
         "success"
       );
     } catch (e) {
-      useToastStore.getState().showToast(
-        `保存失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("保存失败", e);
     } finally {
       setSavingVmaf(false);
     }

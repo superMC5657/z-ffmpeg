@@ -48,8 +48,44 @@ export function formatFps(fps: number): string {
   return `${fps.toFixed(1)} fps`;
 }
 
-export function formatSpeed(speed: number): string {
-  return `${speed.toFixed(2)}x`;
+export function formatSpeed(speed: number, precision = 2): string {
+  return `${speed.toFixed(precision)}x`;
+}
+
+/** 压缩率结果：text 为可直接展示的完整文本，ratio 为百分比（正 = 体积变小） */
+export interface CompressionRatio {
+  /** 形如 "↓30.1% 20MB"；无有效输入体积时为输出体积文本，输出体积为空时为空串 */
+  text: string;
+  /** 压缩率百分比（正 = 体积变小，负 = 体积变大）；输入体积无效时为 null */
+  ratio: number | null;
+  /** 输出体积大于输入（UI 展示警示色用） */
+  enlarged: boolean;
+}
+
+/**
+ * 统一压缩率计算：ratio = (1 - out / in) × 100。
+ * 输入体积有效时输出体积显示为压缩率 + 实际体积；否则退化为仅输出体积文本。
+ */
+export function formatCompressionRatio(
+  inBytes: number | null | undefined,
+  outBytes: number | null | undefined
+): CompressionRatio {
+  if (outBytes == null) return { text: "", ratio: null, enlarged: false };
+  if (inBytes == null || inBytes <= 0) {
+    return { text: formatFileSizeCompact(outBytes), ratio: null, enlarged: false };
+  }
+  const ratio = (1 - outBytes / inBytes) * 100;
+  const arrow = ratio >= 0 ? "↓" : "↑";
+  return {
+    text: `${arrow}${Math.abs(ratio).toFixed(1)}% ${formatFileSizeCompact(outBytes)}`,
+    ratio,
+    enlarged: ratio < 0,
+  };
+}
+
+/** 从完整路径中提取文件名（兼容 Windows 反斜杠与 POSIX 斜杠） */
+export function getFileName(path: string): string {
+  return path.split(/[/\\]/).pop() || path;
 }
 
 export function formatPercentage(value: number): string {
@@ -73,4 +109,9 @@ export function estimateRemainingSeconds(elapsed: string, percentage: number): n
   const elapsedSec = parseElapsedSeconds(elapsed);
   if (elapsedSec <= 0 || percentage <= 0.5) return null;
   return (elapsedSec / percentage) * (100 - percentage);
+}
+
+/** 统一错误信息提取：Error 取 message，其余类型转字符串 */
+export function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

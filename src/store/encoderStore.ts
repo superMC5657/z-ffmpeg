@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import { probeFile, estimateOutputSizes } from "@/lib/tauri";
 import { zlog } from "@/lib/z-log";
+import { getFileName } from "@/lib/utils";
 
 // 模块级防抖计时器：CRF slider 拖动等高频参数变化时合并为一次预估刷新
 let estimateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -92,7 +93,7 @@ function filePlaceholder(
 ): FileInfo {
   return {
     path,
-    fileName: path.split(/[/\\]/).pop() || path,
+    fileName: getFileName(path),
     fileSize: 0,
     duration: null,
     videoCodec: null,
@@ -133,6 +134,23 @@ export function getQualityRange(videoCodec: VideoCodec): { min: number; max: num
   return { min: 0, max: 51 }; // H264、H265 量化范围
 }
 
+/**
+ * 切换编码器/硬件加速时按推荐值相对偏移迁移质量值（纯函数，不修改入参）。
+ * - 输入为 CRF/CQP 时，把"相对推荐值的偏移"平移并限幅到 [min, max]，归一化为 CRF；
+ * - 输入为 ABR 等非质量模式时原样返回（码率模式不随画质推荐值迁移）。
+ */
+export function adaptRateControl(
+  rc: RateControl,
+  prevRecommended: number,
+  newRecommended: number,
+  range: { min: number; max: number }
+): RateControl {
+  if (rc.type !== "CRF" && rc.type !== "CQP") return rc;
+  const offset = rc.value - prevRecommended;
+  const adapted = Math.min(range.max, Math.max(range.min, newRecommended + offset));
+  return { type: "CRF", value: adapted };
+}
+
 export const useEncoderStore = create<EncoderState>()(
   persist(
     (set, get) => ({
@@ -141,7 +159,7 @@ export const useEncoderStore = create<EncoderState>()(
   addFiles: async (paths: string[]) => {
     void zlog.uiAction("添加文件", {
       count: paths.length,
-      files: paths.map((p) => p.split(/[/\\]/).pop() || p),
+      files: paths.map((p) => getFileName(p)),
     });
     // 1) 立即插入"分析中"占位项,界面即时响应;全部探测完才渲染会造成卡顿感
     const placeholders: FileInfo[] = paths.map((path) =>
@@ -207,14 +225,10 @@ export const useEncoderStore = create<EncoderState>()(
     const newRec = getRecommendedQuality(codec, s.hwAccel?.device);
     const newRange = getQualityRange(codec);
 
-    let nextRateControl = s.rateControl;
-    if (s.rateControl.type === "CRF" || s.rateControl.type === "CQP") {
-      const offset = s.rateControl.value - prevRec;
-      const adapted = Math.min(newRange.max, Math.max(newRange.min, newRec + offset));
-      nextRateControl = { type: "CRF", value: adapted };
-    }
-
-    set({ videoCodec: codec, rateControl: nextRateControl });
+    set({
+      videoCodec: codec,
+      rateControl: adaptRateControl(s.rateControl, prevRec, newRec, newRange),
+    });
     get().scheduleEstimateRefresh();
   },
 
@@ -289,14 +303,10 @@ export const useEncoderStore = create<EncoderState>()(
     const newRec = getRecommendedQuality(s.videoCodec, config?.device);
     const range = getQualityRange(s.videoCodec);
 
-    let nextRateControl = s.rateControl;
-    if (s.rateControl.type === "CRF" || s.rateControl.type === "CQP") {
-      const offset = s.rateControl.value - prevRec;
-      const adapted = Math.min(range.max, Math.max(range.min, newRec + offset));
-      nextRateControl = { type: "CRF", value: adapted };
-    }
-
-    set({ hwAccel: config, rateControl: nextRateControl });
+    set({
+      hwAccel: config,
+      rateControl: adaptRateControl(s.rateControl, prevRec, newRec, range),
+    });
     get().scheduleEstimateRefresh();
   },
 

@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::commands::encode::FileInfo;
 use crate::encoder::codec::{AudioCodec, EncodeConfig, RateControl, VideoCodec};
-use crate::encoder::probe::{fallback_audio_bps, find_main_video_stream};
+use crate::encoder::probe::parse_probe_result;
 
 /// 包含预估期望值（预期中位数）、乐观值（平缓场景下限）与悲观值（剧烈动态/高噪点场景上限）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,46 +34,35 @@ pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64
 ///   4. Auto Maxrate Guard 与用户自定义 -maxrate 硬截断；
 ///   5. 生成平缓场景（下限）与高动态/噪点场景（上限）的合理区间。
 pub fn estimate_output_size(config: &EncodeConfig, probe: &Value) -> Option<EstimatedSize> {
-    let format = probe.get("format")?;
-    let duration = format
-        .get("duration")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())?;
+    // 统一走 probe 解析：时长/码率/尺寸/帧率的读取与 FileInfo 命令完全一致
+    let info = parse_probe_result(probe, "").ok()?;
+
+    let duration = info.duration?;
     if duration <= 0.0 {
         return None;
     }
 
     // 输入平均码率（kbps）：优先 ffprobe 的 format.bit_rate，缺失时由文件大小 / 时长推算
-    let input_kbps = format
-        .get("bit_rate")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
-        .map(|bps| bps / 1000.0)
+    let input_kbps = info
+        .bitrate
+        .map(|bps| bps as f64 / 1000.0)
         .or_else(|| {
-            let size = format
-                .get("size")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok())?;
-            Some(size * 8.0 / 1000.0 / duration)
+            if info.file_size == 0 {
+                return None;
+            }
+            Some(info.file_size as f64 * 8.0 / 1000.0 / duration)
         })?;
     if input_kbps <= 0.0 {
         return None;
     }
 
-    // 输入视频流信息（跳过内嵌封面）
-    let video_stream = probe.get("streams").and_then(find_main_video_stream);
-    let in_width = video_stream.and_then(|s| s.get("width")).and_then(|v| v.as_u64()).map(|w| w as u32);
-    let in_height = video_stream.and_then(|s| s.get("height")).and_then(|v| v.as_u64()).map(|h| h as u32);
-    let in_fps = video_stream.and_then(|s| s.get("r_frame_rate")).and_then(|v| v.as_str()).and_then(parse_fps_str);
-    let source_codec = video_stream.and_then(|s| s.get("codec_name")).and_then(|v| v.as_str());
-
-    let scale = output_scale_factor(config, in_width, in_height, in_fps);
+    let scale = output_scale_factor(config, info.width, info.height, info.frame_rate);
     let media = SourceMediaInfo {
-        source_codec,
-        source_audio_kbps: audio_stream_kbps(probe),
-        in_width,
-        in_height,
-        in_fps,
+        source_codec: info.video_codec.as_deref(),
+        source_audio_kbps: info.audio_bitrate.map(|bps| bps as f64 / 1000.0),
+        in_width: info.width,
+        in_height: info.height,
+        in_fps: info.frame_rate,
         scale,
     };
 
@@ -81,7 +70,8 @@ pub fn estimate_output_size(config: &EncodeConfig, probe: &Value) -> Option<Esti
 }
 
 /// 基于前端已探测的 `FileInfo` 预估输出体积（字节单值）。
-#[allow(dead_code)]
+/// 生产路径用 `estimate_output_size_from_info`（命令返回区间）；单值版仅测试与内部对照使用。
+#[cfg(test)]
 pub fn estimate_output_bytes_from_info(config: &EncodeConfig, info: &FileInfo) -> Option<u64> {
     estimate_output_size_from_info(config, info).map(|e| e.expected)
 }
@@ -148,18 +138,6 @@ fn output_scale_factor(
         }
     }
     factor
-}
-
-/// 解析 ffprobe 的 r_frame_rate（"30000/1001" 或 "30"）为 fps
-fn parse_fps_str(s: &str) -> Option<f64> {
-    let parts: Vec<&str> = s.split('/').collect();
-    if parts.len() == 2 {
-        let num = parts[0].parse::<f64>().ok()?;
-        let den = parts[1].parse::<f64>().ok()?;
-        (den > 0.0).then(|| num / den)
-    } else {
-        s.parse::<f64>().ok().filter(|v| *v > 0.0)
-    }
 }
 
 /// 源媒体流信息打包，避免函数参数过多触发 clippy 告警
@@ -402,41 +380,6 @@ fn input_kbps_to_bytes(kbps: f64, duration: f64) -> Option<u64> {
         return None;
     }
     Some((kbps * 1000.0 / 8.0 * duration) as u64)
-}
-
-/// 源文件中音频流的码率（kbps），供音频 Copy 时估算用。
-fn audio_stream_kbps(probe: &Value) -> Option<f64> {
-    let streams = probe.get("streams")?.as_array()?;
-    let audio = streams.iter().find(|s| {
-        s.get("codec_type").and_then(|v| v.as_str()) == Some("audio")
-    })?;
-    let bps = audio
-        .get("bit_rate")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
-        .or_else(|| {
-            // 个别封装不写 stream bit_rate：用「容器总码率 − 视频流码率」近似，
-            // 与 engine.rs `fallback_audio_bps` 一致，避免把整个容器当成音频
-            let dur = probe
-                .get("format")?
-                .get("duration")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok())?;
-            let size = probe
-                .get("format")?
-                .get("size")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok())?;
-            let container_bps = size * 8.0 / dur;
-            let video_bps = probe
-                .get("streams")
-                .and_then(find_main_video_stream)
-                .and_then(|s| s.get("bit_rate"))
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<f64>().ok());
-            Some(fallback_audio_bps(container_bps, video_bps))
-        })?;
-    (bps > 0.0).then_some(bps / 1000.0)
 }
 
 #[cfg(test)]

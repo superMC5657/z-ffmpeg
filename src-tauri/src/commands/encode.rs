@@ -33,11 +33,7 @@ pub struct FileInfo {
 #[tauri::command]
 pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     // 日志只记 basename，不记全路径
-    let basename = std::path::Path::new(&file_path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let basename = crate::encoder::file_name_from_path(&file_path);
     let path = std::path::Path::new(&file_path);
     if !path.exists() {
         log::warn!("probe failed file {basename} reason not found");

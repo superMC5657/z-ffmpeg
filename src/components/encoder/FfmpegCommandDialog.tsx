@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, Copy, FileDown, X } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { isTauriRuntime } from "@/lib/utils";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { saveCommandToFile } from "@/lib/tauri";
 import ProGate from "@/components/license/ProGate";
 
@@ -61,10 +61,7 @@ export default function FfmpegCommandDialog({
       await saveCommandToFile(combined, path);
       useToastStore.getState().showToast(`命令已保存到 ${path}`, "success");
     } catch (e) {
-      useToastStore.getState().showToast(
-        `保存失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("保存失败", e);
     } finally {
       setSaving(false);
     }

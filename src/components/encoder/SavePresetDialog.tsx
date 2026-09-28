@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Save, X } from "lucide-react";
 import AppleInput from "@/components/layout/AppleInput";
+import { formatError } from "@/lib/utils";
 
 interface SavePresetDialogProps {
   /** 默认保存名(可留空,由用户输入) */
@@ -25,7 +26,7 @@ export default function SavePresetDialog({
     try {
       await onConfirm(name.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(formatError(e));
       setSaving(false);
     }
   };

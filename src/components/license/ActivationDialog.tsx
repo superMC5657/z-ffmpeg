@@ -3,7 +3,7 @@ import { Crown, X, ExternalLink } from "lucide-react";
 import AppleInput from "@/components/layout/AppleInput";
 import { useLicenseStore } from "@/store/licenseStore";
 import { useToastStore } from "@/store/toastStore";
-import { isTauriRuntime } from "@/lib/utils";
+import { isTauriRuntime, formatError } from "@/lib/utils";
 
 /**
  * 全局激活对话框：由 licenseStore.activationOpen 驱动，
@@ -51,7 +51,7 @@ export default function ActivationDialog() {
       setEmail("");
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(formatError(e));
     }
   };
 

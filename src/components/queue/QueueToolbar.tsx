@@ -1,6 +1,6 @@
 import { Layers, Pause, Play, Trash2, Zap } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import AppleSelect from "@/components/layout/AppleSelect";
 
 export default function QueueToolbar() {
@@ -27,10 +27,7 @@ export default function QueueToolbar() {
       await startJobs();
       useToastStore.getState().showToast("队列开始执行", "success");
     } catch (err) {
-      useToastStore.getState().showToast(
-        `开始执行失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("开始执行失败", err);
     }
   };
 
@@ -44,10 +41,7 @@ export default function QueueToolbar() {
         useToastStore.getState().showToast("队列已暂停：正在编码的任务继续，剩余任务暂不开始", "info");
       }
     } catch (err) {
-      useToastStore.getState().showToast(
-        `${paused ? "恢复" : "暂停"}失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast(`${paused ? "恢复" : "暂停"}失败`, err);
     }
   };
 
@@ -59,10 +53,7 @@ export default function QueueToolbar() {
         "success"
       );
     } catch (err) {
-      useToastStore.getState().showToast(
-        `更新失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("更新失败", err);
     }
   };
 

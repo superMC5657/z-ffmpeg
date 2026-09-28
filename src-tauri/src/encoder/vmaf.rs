@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::encoder::codec::ensure_even_dimension;
+use crate::encoder::file_name_from_path;
 use crate::encoder::probe;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
@@ -79,57 +81,20 @@ struct VideoInfo {
 /// 用 ffprobe 读取视频基础信息
 fn probe_video_info(path: &str) -> AppResult<VideoInfo> {
     let json = probe::probe_file(path)?;
-    let format = json
-        .get("format")
-        .ok_or_else(|| AppError::Ffmpeg("No format info".into()))?;
-    let duration = format
-        .get("duration")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(0.0);
-
-    let video = json
-        .get("streams")
-        .and_then(|v| v.as_array())
-        .and_then(|arr| arr.iter().find(|s| s.get("codec_type").and_then(|t| t.as_str()) == Some("video")));
-
-    let (width, height, fps) = match video {
-        Some(v) => (
-            v.get("width").and_then(|w| w.as_u64()).unwrap_or(0) as u32,
-            v.get("height").and_then(|h| h.as_u64()).unwrap_or(0) as u32,
-            parse_fraction(v.get("r_frame_rate").and_then(|r| r.as_str()).unwrap_or("")),
-        ),
-        None => (0, 0, 0.0),
-    };
-
-    if duration <= 0.0 {
-        let file_name = std::path::Path::new(path)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+    // 统一走 probe 解析：主视频流选择（跳过封面）与帧率解析与其余模块一致
+    let info = probe::parse_probe_result(&json, path)?;
+    if info.duration.unwrap_or(0.0) <= 0.0 {
         return Err(AppError::Ffmpeg(format!(
             "Cannot read duration of {} (ffprobe returned 0)",
-            file_name
+            file_name_from_path(path)
         )));
     }
-    Ok(VideoInfo { duration, width, height, fps })
-}
-
-/// 解析 "30000/1001" 形式的帧率
-fn parse_fraction(s: &str) -> f64 {
-    let mut it = s.split('/');
-    let (Some(num), Some(den)) = (it.next(), it.next()) else {
-        return 0.0;
-    };
-    let (Ok(num), Ok(den)) = (num.trim().parse::<f64>(), den.trim().parse::<f64>()) else {
-        return 0.0;
-    };
-    if den <= 0.0 {
-        0.0
-    } else {
-        num / den
-    }
+    Ok(VideoInfo {
+        duration: info.duration.unwrap_or(0.0),
+        width: info.width.unwrap_or(0),
+        height: info.height.unwrap_or(0),
+        fps: info.frame_rate.unwrap_or(0.0),
+    })
 }
 
 /// 构造单段 VMAF 计算的 ffmpeg 参数。
@@ -162,10 +127,8 @@ fn build_segment_args(
     args.push("-i".into());
     args.push(distorted.into());
 
-    let mut w = info.width.max(2);
-    let mut h = info.height.max(2);
-    if w % 2 == 1 { w = w.saturating_sub(1).max(2); }
-    if h % 2 == 1 { h = h.saturating_sub(1).max(2); }
+    let w = ensure_even_dimension(info.width);
+    let h = ensure_even_dimension(info.height);
     let fps = if info.fps > 0.0 { format!("{:.3}", info.fps) } else { "30.0".to_string() };
     let filter = format!(
         "[0:v]fps={fps},scale={w}:{h}:flags=bicubic,format=yuv420p[ref];\
@@ -371,6 +334,7 @@ pub fn compute_vmaf_sampled(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encoder::codec::parse_fraction_fps;
 
     #[test]
     fn plan_normal_video_uses_four_five_second_segments() {
@@ -419,11 +383,28 @@ mod tests {
     }
 
     #[test]
-    fn parse_fraction_handles_common_forms() {
-        assert!((parse_fraction("30000/1001") - 29.97).abs() < 0.01);
-        assert_eq!(parse_fraction("30/1"), 30.0);
-        assert_eq!(parse_fraction(""), 0.0);
-        assert_eq!(parse_fraction("30"), 0.0);
+    fn parse_fraction_fps_handles_common_forms() {
+        // 分数帧率：trim + 分母<=0/非正结果返回 None
+        assert!((parse_fraction_fps("30000/1001").unwrap() - 29.97).abs() < 0.01);
+        assert_eq!(parse_fraction_fps("30/1"), Some(30.0));
+        assert_eq!(parse_fraction_fps("30"), Some(30.0));
+        assert_eq!(parse_fraction_fps(" 25 "), Some(25.0));
+        assert_eq!(parse_fraction_fps(""), None);
+        assert_eq!(parse_fraction_fps("abc"), None);
+        // 分母 ≤ 0 / 非正结果一律 None
+        assert_eq!(parse_fraction_fps("30/0"), None);
+        assert_eq!(parse_fraction_fps("30/-1"), None);
+        assert_eq!(parse_fraction_fps("0/1"), None);
+        assert_eq!(parse_fraction_fps("-30/1"), None);
+    }
+
+    #[test]
+    fn ensure_even_dimension_edges() {
+        assert_eq!(ensure_even_dimension(1920), 1920);
+        assert_eq!(ensure_even_dimension(1921), 1920);
+        assert_eq!(ensure_even_dimension(1), 2);
+        assert_eq!(ensure_even_dimension(3), 2);
+        assert_eq!(ensure_even_dimension(0), 2);
     }
 
     #[test]

@@ -169,11 +169,7 @@ impl QueueManager {
                     id: row.get(0)?,
                     input_path: input_path.clone(),
                     output_path: row.get(2)?,
-                    file_name: std::path::Path::new(&input_path)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string(),
+                    file_name: crate::encoder::file_name_from_path(&input_path),
                     status: row.get(3)?,
                     progress: row.get(4)?,
                     input_size: row.get(5)?,

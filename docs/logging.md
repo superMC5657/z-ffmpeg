@@ -103,8 +103,7 @@
 ## 前端接入（`src/lib/z-log.ts`）
 
 - `initZLog()`（`src/main.tsx` 初始化）：DEV 下 `attachConsole()`；注册全局 `window.onerror` / `onunhandledrejection` 转发为 `error` 落盘。
-- `zlog.{debug,info,warn,error}`：经 IPC 落到 Rust 日志文件。
-- `getLogDir()` / `exportLogBundle()`：invoke 对应 Rust 命令。
+- `zlog.{debug,info,warn,error,route,uiAction,uiSetting}`：经 IPC 落到 Rust 日志文件。
 
 ## 约束边界
 

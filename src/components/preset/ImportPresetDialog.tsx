@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import AppleInput from "@/components/layout/AppleInput";
+import { formatError } from "@/lib/utils";
 
 interface ImportPresetDialogProps {
   /** 默认保存名:导入文件的文件名去掉扩展名 */
@@ -25,7 +26,7 @@ export default function ImportPresetDialog({
     try {
       await onConfirm(name.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(formatError(e));
       setSaving(false);
     }
   };

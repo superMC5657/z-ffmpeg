@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Crown } from "lucide-react";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { useLicenseStore } from "@/store/licenseStore";
 import Card from "@/components/layout/Card";
 import { cn } from "@/lib/utils";
@@ -18,10 +18,7 @@ export default function LicenseSection() {
       await deactivateLicenseAction();
       useToastStore.getState().showToast("已注销激活，本机已停用 Pro 功能", "success");
     } catch (e) {
-      useToastStore.getState().showToast(
-        `注销失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("注销失败", e);
     } finally {
       setConfirmingDeactivate(false);
     }

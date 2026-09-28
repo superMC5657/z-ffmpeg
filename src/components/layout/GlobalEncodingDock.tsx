@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Play, Pause, X, ExternalLink, Loader2 } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
-import type { EncodeProgress } from "@/types";
+import { isEncodeProgress } from "@/types";
+import { formatSpeed, getFileName } from "@/lib/utils";
 
 export default function GlobalEncodingDock() {
   const navigate = useNavigate();
@@ -35,9 +36,7 @@ export default function GlobalEncodingDock() {
   }
 
   const rawProgress = currentJob?.progress;
-  const isProgressObj =
-    typeof rawProgress === "object" && rawProgress !== null;
-  const progressObj = isProgressObj ? (rawProgress as EncodeProgress) : null;
+  const progressObj = isEncodeProgress(rawProgress) ? rawProgress : null;
 
   const percentage = Math.round(
     progressObj?.percentage ??
@@ -48,7 +47,7 @@ export default function GlobalEncodingDock() {
   const time = progressObj?.time ?? progressObj?.elapsed ?? "";
 
   const fileName = currentJob
-    ? currentJob.inputPath.split(/[/\\]/).pop() || currentJob.inputPath
+    ? getFileName(currentJob.inputPath)
     : "准备中…";
 
   const isQueuePage = location.pathname === "/queue";
@@ -95,7 +94,7 @@ export default function GlobalEncodingDock() {
             {speed > 0 && (
               <>
                 <span className="text-tertiary">·</span>
-                <span>{speed.toFixed(1)}x</span>
+                <span>{formatSpeed(speed, 1)}</span>
               </>
             )}
             {time && (

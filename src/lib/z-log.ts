@@ -5,7 +5,6 @@ import {
   info,
   warn,
 } from "@tauri-apps/plugin-log";
-import { invoke } from "@tauri-apps/api/core";
 
 // 前端日志：直接转发模式（ffmpeg 前端日志量小，无需批处理队列）。
 // Rust 侧落盘，DEV 下 attachConsole 把日志同时镜像到 devtools console。
@@ -128,13 +127,3 @@ export const zlog = {
   /** 记录用户修改参数（使用 debug 级别避免日常使用过度刷屏） */
   uiSetting: logUiSetting,
 };
-
-/** 取后端日志目录（“打开日志目录”按钮用）。 */
-export function getLogDir(): Promise<string> {
-  return invoke<string>("zlog_get_dir");
-}
-
-/** 导出诊断包（zip 路径在系统 temp 下），不上报、仅本地导出。 */
-export function exportLogBundle(): Promise<string> {
-  return invoke<string>("zlog_export_bundle");
-}

@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use tauri::{AppHandle, Emitter};
 use crate::encoder::codec::EncodeConfig;
+use crate::encoder::file_name_from_path;
 use crate::encoder::progress::EncodeProgress;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
@@ -99,11 +100,7 @@ pub fn start_encode(
     output_path: String,
     cancel: Arc<AtomicBool>,
 ) -> AppResult<()> {
-    let file_name = std::path::Path::new(&input_path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let file_name = file_name_from_path(&input_path);
 
     let Some(ffmpeg_path) = ffmpeg::get_ffmpeg_path() else {
         log::error!(target: "zffmpeg_lib::encoder", "encode ffmpeg not found job {job_id} file {file_name}");

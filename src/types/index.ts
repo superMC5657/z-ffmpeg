@@ -118,6 +118,14 @@ export interface EncodeProgress {
   time: string;
 }
 
+/**
+ * EncodeProgress 类型守卫：区分实时进度对象与后端快照的数字百分比。
+ * 也可直接用于判断 progress 是否为实时进度（不要求全字段校验）。
+ */
+export function isEncodeProgress(p: unknown): p is EncodeProgress {
+  return typeof p === "object" && p !== null;
+}
+
 export interface EncodeResult {
   jobId: string;
   fileName: string;

@@ -13,6 +13,16 @@ pub async fn get_license_status(state: State<'_, AppState>) -> AppResult<License
     Ok(state.license.status())
 }
 
+/// 将 spawn_blocking 的两层失败（JoinError / LicenseFlowError）统一展开为 AppError。
+fn flatten_join_error<E: std::fmt::Display>(
+    task_name: &str,
+    result: Result<Result<LicenseStatus, crate::license::manager::LicenseFlowError>, E>,
+) -> AppResult<LicenseStatus> {
+    result
+        .map_err(|e| AppError::Internal(format!("{task_name}任务异常终止: {e}")))?
+        .map_err(|e| AppError::Internal(e.to_string()))
+}
+
 /// 激活：code + email 绑定当前设备。重复激活幂等（覆盖本地令牌）。
 #[tauri::command]
 pub async fn activate_license(
@@ -21,20 +31,14 @@ pub async fn activate_license(
     email: String,
 ) -> AppResult<LicenseStatus> {
     let manager = state.license.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || manager.activate(&code, &email))
-        .await
-        .map_err(|e| AppError::Internal(format!("激活任务异常终止: {e}")))?
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(result)
+    let result = tauri::async_runtime::spawn_blocking(move || manager.activate(&code, &email)).await;
+    flatten_join_error("激活", result)
 }
 
 /// 注销激活：解除设备绑定、释放一个名额，删除本地令牌并停用专业功能。
 #[tauri::command]
 pub async fn deactivate_license(state: State<'_, AppState>) -> AppResult<LicenseStatus> {
     let manager = state.license.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || manager.deactivate())
-        .await
-        .map_err(|e| AppError::Internal(format!("注销任务异常终止: {e}")))?
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    Ok(result)
+    let result = tauri::async_runtime::spawn_blocking(move || manager.deactivate()).await;
+    flatten_join_error("注销", result)
 }

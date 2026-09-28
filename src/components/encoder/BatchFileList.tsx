@@ -17,6 +17,7 @@ import {
   formatDuration,
   formatFileSizeCompact,
   formatBitrate,
+  formatCompressionRatio,
   cn,
 } from "@/lib/utils";
 
@@ -222,10 +223,13 @@ export default function BatchFileList() {
           <div className="space-y-2.5 max-h-[520px] overflow-y-auto pr-0.5">
             {inputFiles.map((file, index) => {
               const estimatedSize = estimatedSizes[file.path];
-              const ratio =
-                file.fileSize > 0 && estimatedSize != null
-                  ? Math.round(((estimatedSize.expected - file.fileSize) / file.fileSize) * 100)
-                  : null;
+              // 预估体积变化百分比（正 = 比原文件大；与 formatCompressionRatio 的压缩率符号相反）
+              const compression = formatCompressionRatio(
+                file.fileSize,
+                estimatedSize?.expected
+              );
+              const sizeDeltaPct =
+                compression.ratio != null ? Math.round(-compression.ratio) : null;
               const effectiveBitrate =
                 file.bitrate ||
                 (file.duration && file.fileSize > 0
@@ -319,7 +323,7 @@ export default function BatchFileList() {
                               }
                               className={cn(
                                 "ml-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-help",
-                                ratio !== null && ratio < 0
+                                sizeDeltaPct !== null && sizeDeltaPct < 0
                                   ? "bg-success/15 text-success"
                                   : "bg-accent/15 text-accent"
                               )}
@@ -327,9 +331,9 @@ export default function BatchFileList() {
                               {isCrf && estimatedSize.min !== estimatedSize.max
                                 ? `约 ${formatFileSizeCompact(estimatedSize.min)}~${formatFileSizeCompact(estimatedSize.max)}`
                                 : `预计 ${formatFileSizeCompact(estimatedSize.expected)}`}
-                              {ratio !== null && (
+                              {sizeDeltaPct !== null && (
                                 <span className="opacity-80 font-normal">
-                                  ({ratio > 0 ? `+${ratio}%` : `${ratio}%`})
+                                  ({sizeDeltaPct > 0 ? `+${sizeDeltaPct}%` : `${sizeDeltaPct}%`})
                                 </span>
                               )}
                             </span>

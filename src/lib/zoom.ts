@@ -53,7 +53,7 @@ export function setZoomLevel(level: ZoomLevel) {
 }
 
 /** 拦截并彻底禁用所有原生的 Ctrl/Cmd + / - / 0 及滚轮缩放快捷键 */
-export function disableNativeZoomHotkeys() {
+function disableNativeZoomHotkeys() {
   if (typeof window === "undefined") return;
 
   const isZoomKey = (e: KeyboardEvent) => {

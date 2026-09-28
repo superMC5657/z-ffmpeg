@@ -8,9 +8,9 @@ import {
 } from "@/lib/tauri";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { FfmpegStatusInfo } from "@/types";
-import { useToastStore } from "@/store/toastStore";
+import { showErrorToast } from "@/store/toastStore";
 import Card from "@/components/layout/Card";
-import { isTauriRuntime } from "@/lib/utils";
+import { isTauriRuntime, formatError } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 export default function FfmpegSection() {
@@ -23,10 +23,7 @@ export default function FfmpegSection() {
     checkFfmpegStatus()
       .then(setFfmpeg)
       .catch((e) => {
-        useToastStore.getState().showToast(
-          `获取 FFmpeg 状态失败: ${e instanceof Error ? e.message : String(e)}`,
-          "error"
-        );
+        showErrorToast("获取 FFmpeg 状态失败", e);
       });
   }, []);
 
@@ -44,10 +41,7 @@ export default function FfmpegSection() {
       checkFfmpegStatus()
         .then(setFfmpeg)
         .catch((e) => {
-          useToastStore.getState().showToast(
-            `获取 FFmpeg 状态失败: ${e instanceof Error ? e.message : String(e)}`,
-            "error"
-          );
+          showErrorToast("获取 FFmpeg 状态失败", e);
         });
     })
       .then((u) => unlisteners.push(u))
@@ -72,7 +66,7 @@ export default function FfmpegSection() {
       setDownloadProgress(null);
     } catch (e) {
       setDownloading(false);
-      setDownloadError(e instanceof Error ? e.message : String(e));
+      setDownloadError(formatError(e));
     }
   };
 

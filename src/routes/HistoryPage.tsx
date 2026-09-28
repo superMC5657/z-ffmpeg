@@ -19,9 +19,12 @@ import {
   deleteHistory,
   clearHistory,
 } from "@/lib/tauri";
-import { useToastStore } from "@/store/toastStore";
-import { formatFileSizeCompact } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
+import {
+  formatCompressionRatio,
+  formatError,
+  cn,
+} from "@/lib/utils";
 import type { HistoryEntry } from "@/types";
 
 const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; label: string }> = {
@@ -90,11 +93,8 @@ export default function HistoryPage() {
         // 区分"加载失败"与"没有历史"：失败时展示错误并给出重试入口
         setEntries([]);
         setTotal(0);
-        setLoadError(e instanceof Error ? e.message : String(e));
-        useToastStore.getState().showToast(
-          `加载历史记录失败: ${e instanceof Error ? e.message : String(e)}`,
-          "error"
-        );
+        setLoadError(formatError(e));
+        showErrorToast("加载历史记录失败", e);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -143,10 +143,7 @@ export default function HistoryPage() {
       setQuery((q) => ({ ...q, page: 0 }));
       forceReload();
     } catch (e) {
-      useToastStore.getState().showToast(
-        `删除失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("删除失败", e);
     } finally {
       setDeleting(null);
     }
@@ -160,10 +157,7 @@ export default function HistoryPage() {
       setQuery((q) => ({ ...q, page: 0 }));
       forceReload();
     } catch (e) {
-      useToastStore.getState().showToast(
-        `清空失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("清空失败", e);
     } finally {
       setClearing(false);
     }
@@ -302,21 +296,18 @@ export default function HistoryPage() {
                     {entry.status === "Completed" &&
                       entry.outputSize != null &&
                       (() => {
-                        const out = entry.outputSize!;
-                        const ratio =
-                          entry.inputSize != null && entry.inputSize > 0
-                            ? (1 - out / entry.inputSize) * 100
-                            : null;
+                        const compression = formatCompressionRatio(
+                          entry.inputSize,
+                          entry.outputSize
+                        );
                         return (
                           <span
                             className={cn(
                               "shrink-0 font-medium",
-                              ratio != null && ratio < 0 ? "text-warning" : "text-success"
+                              compression.enlarged ? "text-warning" : "text-success"
                             )}
                           >
-                            {ratio != null
-                              ? `${ratio >= 0 ? "↓" : "↑"}${Math.abs(ratio).toFixed(1)}% ${formatFileSizeCompact(out)}`
-                              : formatFileSizeCompact(out)}
+                            {compression.text}
                           </span>
                         );
                       })()}

@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { HwAccelDevice, Preset } from "@/types";
 import { usePresetStore } from "@/store/presetStore";
 import { useSystemStore } from "@/store/systemStore";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { useEncoderStore } from "@/store/encoderStore";
 import { exportPresetToFile } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
@@ -39,10 +39,7 @@ export default function PresetCard({ preset }: PresetCardProps) {
         "success"
       );
     } catch (e) {
-      useToastStore.getState().showToast(
-        `导出失败: ${e instanceof Error ? e.message : String(e)}`,
-        "error"
-      );
+      showErrorToast("导出失败", e);
     }
   };
 

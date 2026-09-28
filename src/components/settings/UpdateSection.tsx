@@ -2,7 +2,7 @@ import { useState } from "react";
 import { RefreshCw, Download, Loader2, CheckCircle2 } from "lucide-react";
 import { useToastStore } from "@/store/toastStore";
 import Card from "@/components/layout/Card";
-import { isTauriRuntime } from "@/lib/utils";
+import { isTauriRuntime, formatError } from "@/lib/utils";
 
 export default function UpdateSection() {
   // ---- 检查更新（仅 Tauri 运行时有效；浏览器无更新器） ----
@@ -64,7 +64,7 @@ export default function UpdateSection() {
     } catch (e) {
       setUpdateInfo((s) => ({
         ...s,
-        error: `检查更新失败: ${e instanceof Error ? e.message : String(e)}`,
+        error: `检查更新失败: ${formatError(e)}`,
         checked: true,
       }));
     } finally {
@@ -105,7 +105,7 @@ export default function UpdateSection() {
       setUpdateInfo((s) => ({
         ...s,
         downloading: false,
-        error: `下载失败: ${e instanceof Error ? e.message : String(e)}`,
+        error: `下载失败: ${formatError(e)}`,
       }));
     }
   };

@@ -2,6 +2,8 @@
 //! 以及流选择 / 音频码率回退等共享启发式（供预估模块复用）。
 
 use crate::commands::encode::FileInfo;
+use crate::encoder::codec::parse_fraction_fps;
+use crate::encoder::file_name_from_path;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
 
@@ -93,16 +95,14 @@ pub(crate) fn fallback_audio_bps(container_bps: f64, video_bps: Option<f64>) -> 
     }
 }
 
-/// 将 ffprobe 的 JSON 结果解析为结构化的文件信息 FileInfo
+/// 将 ffprobe 的 JSON 结果解析为结构化的文件信息 FileInfo。
+/// `streams` 缺失按空数组处理（ffprobe 带 `-show_streams` 时总会输出该键，
+/// 容忍手工构造/裁剪过的 JSON）。
 pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<FileInfo> {
     let format = json.get("format").ok_or_else(|| AppError::Ffmpeg("No format info".into()))?;
-    let streams = json.get("streams").ok_or_else(|| AppError::Ffmpeg("No streams".into()))?;
+    let streams = json.get("streams").unwrap_or(&serde_json::Value::Null);
 
-    let file_name = std::path::Path::new(path)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let file_name = file_name_from_path(path);
 
     let file_size = format
         .get("size")
@@ -146,16 +146,7 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
         frame_rate: video_stream
             .and_then(|s| s.get("r_frame_rate"))
             .and_then(|v| v.as_str())
-            .and_then(|s| {
-                let parts: Vec<&str> = s.split('/').collect();
-                if parts.len() == 2 {
-                    let num = parts[0].parse::<f64>().ok()?;
-                    let den = parts[1].parse::<f64>().ok()?;
-                    Some(num / den)
-                } else {
-                    s.parse::<f64>().ok()
-                }
-            }),
+            .and_then(parse_fraction_fps),
         bitrate: format
             .get("bit_rate")
             .and_then(|v| v.as_str())

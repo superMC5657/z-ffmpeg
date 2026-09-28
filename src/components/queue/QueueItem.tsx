@@ -1,12 +1,12 @@
 import { X, RotateCw, Square, FileVideo, Gauge } from "lucide-react";
 import { useState } from "react";
-import type { EncodeJob } from "@/types";
+import { isEncodeProgress, type EncodeJob } from "@/types";
 import { useQueueStore } from "@/store/queueStore";
-import { useToastStore } from "@/store/toastStore";
+import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { computeVmaf } from "@/lib/tauri";
 import ProgressBar from "@/components/progress/ProgressBar";
 import ProGate from "@/components/license/ProGate";
-import { cn } from "@/lib/utils";
+import { cn, getFileName } from "@/lib/utils";
 
 interface QueueItemProps {
   job: EncodeJob;
@@ -40,10 +40,7 @@ export default function QueueItem({ job }: QueueItemProps) {
       await retryJob(job.id);
       useToastStore.getState().showToast("已重新加入队列", "success");
     } catch (err) {
-      useToastStore.getState().showToast(
-        `重试失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("重试失败", err);
     }
   };
 
@@ -56,10 +53,7 @@ export default function QueueItem({ job }: QueueItemProps) {
         "success"
       );
     } catch (err) {
-      useToastStore.getState().showToast(
-        `VMAF 计算失败: ${err instanceof Error ? err.message : String(err)}`,
-        "error"
-      );
+      showErrorToast("VMAF 计算失败", err);
     } finally {
       setVmafLoading(false);
     }
@@ -72,8 +66,8 @@ export default function QueueItem({ job }: QueueItemProps) {
       : `均匀采样 ${vmafSegmentsSetting} 段 × 5 秒计算 VMAF 得分`;
 
   const fileName =
-    (job.progress && typeof job.progress === "object" ? job.progress.fileName : undefined) ||
-    job.inputPath.split(/[/\\]/).pop();
+    (isEncodeProgress(job.progress) ? job.progress.fileName : undefined) ||
+    getFileName(job.inputPath);
 
   return (
     <div className="group flex items-center gap-3.5 px-3.5 py-3 transition-colors hover:bg-fill/40">

@@ -84,11 +84,7 @@ impl EncodeJob {
     }
 
     pub fn file_name(&self) -> String {
-        std::path::Path::new(&self.input_path)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string()
+        crate::encoder::file_name_from_path(&self.input_path)
     }
 }
 
