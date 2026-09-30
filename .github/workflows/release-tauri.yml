@@ -1,10 +1,6 @@
-# CD: Tauri Windows 打包与发布 (极简纯净版)
+# CD: Tauri Windows 单机打包与双清单发布
 #
-# 架构设计:
-#   1. 门禁先行: 先调用 ci.yml 全量检查，通过后才进入打包发布
-#   2. 彻底解耦: 本文件为 100% 静态通用模版，无任何硬编码 env
-#   3. 严格外置: 严格依赖 .github/release.env 提供 APP_NAME 与 RELEASES_REPO (无隐式兜底)
-#   4. 单机直通: 打包与发布在单台 Windows 机器内一气呵成，省去网盘中转与跨 VM 开销
+# 架构: 单机直通(打包+发布同机完成);配置严格外置于 release.env,门禁先行调用 ci.yml。
 #
 # 需要配置的 repository secrets:
 #   TAURI_SIGNING_PRIVATE_KEY          = 私钥(base64)
@@ -31,7 +27,7 @@ jobs:
     name: Run CI Verification
     uses: ./.github/workflows/ci.yml
 
-  # 步骤 2: CI 通过后，单台 Windows 机器直接【打包 EXE + 立即发布】
+  # 步骤 2: CI 通过后，单台 Windows 机器直接打包 EXE + 立即发布
   release:
     name: Build & Release Windows EXE
     needs: [ci]
@@ -41,7 +37,6 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      # 1. 严格读取配置与 Tag 校验 (无兜底，缺配置直接报错中断)
       - name: Load config & validate tag
         shell: bash
         run: |
@@ -67,7 +62,6 @@ jobs:
           echo "RELEASES_REPO=$RELEASES_REPO" >> "$GITHUB_ENV"
           echo "已加载配置: APP_NAME=$APP_NAME, RELEASES_REPO=$RELEASES_REPO"
 
-      # 2. 安装环境与依赖
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
@@ -78,20 +72,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 3. Rust 工具链与构建缓存
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      # 4. 【核心步骤】打包 Windows EXE 安装包与数字签名
       - name: Build Tauri bundle (signed)
         run: pnpm tauri build --bundles nsis
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      # 5. 原地生成 latest.json 并直接原子发布到公开产物仓库 (无需经由网盘中转)
       - name: Publish to Release Repo
         shell: bash
         env:
@@ -103,8 +94,9 @@ jobs:
             echo "::error::未找到 windows-x86_64 安装包"
             exit 1
           fi
-          BASE=$(basename "$EXE")
-          SAFE="${BASE// /.}"
+          SAFE=$(basename "$EXE" | tr ' ' '.')
+          ASSETS_JSON="[{\"target\":\"windows-x86_64\",\"file\":\"$SAFE\"}]"
+          NOTES="$APP_NAME $TAG 安装包与双区更新清单（latest.json 海外直链 / latest-cn.json 镜像加速）。客户端 updater 按端点顺序自动回落检测。"
           
           mkdir -p artifacts/windows-x86_64
           cp "$EXE" "artifacts/windows-x86_64/$SAFE"
@@ -112,16 +104,27 @@ jobs:
             cp "$EXE.sig" "artifacts/windows-x86_64/$SAFE.sig"
           fi
 
-          # 生成带有 gh-proxy 加速前缀的 latest.json
+          # 双区清单(均带扩展字段,updater 忽略未知字段;仅 URL 前缀不同):海外直链 latest.json / 镜像加速 latest-cn.json
           node scripts/build-latest-json.mjs \
             --name "$APP_NAME" \
             --repo "$RELEASES_REPO" \
             --tag "$TAG" \
-            --assets "[{\"target\":\"windows-x86_64\",\"file\":\"$SAFE\"}]" \
+            --assets "$ASSETS_JSON" \
             --dir artifacts \
+            --proxy-prefix "" \
+            --extended \
             --output artifacts/latest.json
 
-          # 原子增量发布到公开产物仓库 (支持原地更新)
+          node scripts/build-latest-json.mjs \
+            --name "$APP_NAME" \
+            --repo "$RELEASES_REPO" \
+            --tag "$TAG" \
+            --assets "$ASSETS_JSON" \
+            --dir artifacts \
+            --extended \
+            --output artifacts/latest-cn.json
+
+          # 已存在则覆盖更新资产
           cd artifacts
           FILES=()
           while IFS= read -r -d '' f; do FILES+=("$f"); done < <(find . -type f -print0)
@@ -132,13 +135,13 @@ jobs:
             gh release edit "$TAG" \
               --repo "$RELEASES_REPO" \
               --title "$APP_NAME $TAG" \
-              --notes "$APP_NAME $TAG 安装包与更新元数据。更新走 gh-proxy.com 镜像加速，客户端 updater 自动检查。" \
+              --notes "$NOTES" \
               --latest
           else
             echo "创建全新 Release $TAG..."
             gh release create "$TAG" "${FILES[@]}" \
               --repo "$RELEASES_REPO" \
               --title "$APP_NAME $TAG" \
-              --notes "$APP_NAME $TAG 安装包与更新元数据。更新走 gh-proxy.com 镜像加速，客户端 updater 自动检查。" \
+              --notes "$NOTES" \
               --latest
           fi
