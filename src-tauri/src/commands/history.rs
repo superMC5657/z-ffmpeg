@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::error::AppResult;
+use crate::queue::job::JobSnapshot;
 use crate::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +18,27 @@ pub struct HistoryEntry {
     pub created_at: String,
     pub completed_at: Option<String>,
     pub error: Option<String>,
+}
+
+/// `JobSnapshot` → `HistoryEntry`：丢弃历史页不需要的
+/// `progress` / `estimated_output_size` / `started_at`。
+impl From<JobSnapshot> for HistoryEntry {
+    fn from(j: JobSnapshot) -> Self {
+        Self {
+            id: j.id,
+            input_path: j.input_path,
+            output_path: j.output_path,
+            file_name: j.file_name,
+            status: j.status,
+            vmaf_score: j.vmaf_score,
+            vmaf_detail: j.vmaf_detail,
+            output_size: j.output_size,
+            input_size: j.input_size,
+            created_at: j.created_at,
+            completed_at: j.completed_at,
+            error: j.error,
+        }
+    }
 }
 
 /// 分页后的历史结果：entries 为当前页，total 为筛选后的总条数
@@ -54,23 +76,7 @@ pub async fn get_history(
         search.as_deref(),
     );
 
-    let entries: Vec<HistoryEntry> = snapshots
-        .into_iter()
-        .map(|j| HistoryEntry {
-            id: j.id,
-            input_path: j.input_path,
-            output_path: j.output_path,
-            file_name: j.file_name,
-            status: j.status,
-            vmaf_score: j.vmaf_score,
-            vmaf_detail: j.vmaf_detail,
-            output_size: j.output_size,
-            input_size: j.input_size,
-            created_at: j.created_at,
-            completed_at: j.completed_at,
-            error: j.error,
-        })
-        .collect();
+    let entries: Vec<HistoryEntry> = snapshots.into_iter().map(|j| j.into()).collect();
 
     Ok(HistoryPageResult { entries, total })
 }

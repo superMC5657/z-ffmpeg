@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
 use tauri::Emitter;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, LogDisplay};
 use crate::ffmpeg::library::{self, FfmpegStatus};
 
 /// FFmpeg 下载源列表，按优先级依次尝试：
@@ -50,7 +50,7 @@ pub async fn download_ffmpeg(
     let install_clone = install_dir.clone();
     let zip_dl = zip_path.clone();
     let temp_dl = temp_dir.clone();
-    let result = tauri::async_runtime::spawn_blocking(
+    let join_result = tauri::async_runtime::spawn_blocking(
         move || -> AppResult<(PathBuf, PathBuf, FfmpegStatus)> {
             // 逐源完整安装：每个源走"下载 → 解压 → 移动 → 验证"全流程，
             // 任一步失败(含代理返回 200 错误页导致 zip 无效)都换下一个源。
@@ -70,15 +70,16 @@ pub async fn download_ffmpeg(
             Ok((ffmpeg_final, ffprobe_final, status))
         },
     )
-    .await
-    .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
+    .await;
 
     // 无论走哪条路径，均尽最大努力清理 zip 文件与临时解压目录。
-    // 在解包结果之前执行——下方 `result?` 的 Err 绝不能跳过此项清理。
+    // 在解包结果之前执行——`flatten` 的 Err 绝不能跳过此项清理。
     let _ = std::fs::remove_file(&zip_path);
     let _ = std::fs::remove_dir_all(&temp_dir);
 
-    let (ffmpeg_path, ffprobe_path, status) = result?;
+    let (ffmpeg_path, ffprobe_path, status) =
+        crate::error::flatten_blocking_result(join_result)
+            .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
     library::set_installed_paths(ffmpeg_path, Some(ffprobe_path));
     *status_lock.lock() = status.clone();
 
@@ -138,7 +139,7 @@ fn install_from_sources(
             Ok(()) => return Ok(()),
             Err(e) => {
                 // 源切换只记序号+原因首行：不记完整 URL（长查询串噪音）
-                let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+                let top = e.top_line();
                 log::error!("ffmpeg source {}/{} failed reason {top}", idx + 1, sources.len());
                 errors.push(format!("{url}: {e}"));
                 cleanup_source();
@@ -169,7 +170,7 @@ fn install_from_url(
     let (ffmpeg_tmp, ffprobe_tmp) = match extract_binaries(zip_path, temp_dir) {
         Ok(v) => v,
         Err(e) => {
-            let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+            let top = e.top_line();
             log::error!("ffmpeg extract failed reason {top}");
             return Err(e);
         }
@@ -193,7 +194,7 @@ fn install_from_url(
     // 4) 验证最终二进制可运行;失败则报错,由回退循环清理并换下一个源,
     //    绝不向 UI 报告 "installed"。（只记原因首行，不记二进制全路径）
     if let Err(e) = verify_binary(&ffmpeg_final) {
-        let top = e.to_string().lines().next().unwrap_or("unknown").to_string();
+        let top = e.top_line();
         log::error!("ffmpeg verify failed reason {top}");
         return Err(e);
     }

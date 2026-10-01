@@ -1,7 +1,7 @@
-use tauri::{Emitter, State};
+use tauri::State;
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::estimate;
-use crate::encoder::{args, probe};
+use crate::encoder::probe;
 use crate::queue::QueueStatus;
 use crate::error::AppResult;
 
@@ -26,13 +26,7 @@ pub async fn add_to_queue(
 
     // 构建 (输入, 输出) 文件路径对。输出路径会对磁盘已有文件、当前队列中的活动任务
     // 以及批处理中排在前面的项目进行去重，防止发生意外覆盖。
-    let active_outputs = queue.get_active_output_paths();
-    let outputs = args::derive_output_paths_unique_with_claimed(
-        &files,
-        &config,
-        output_dir.as_deref(),
-        &active_outputs,
-    );
+    let outputs = queue.resolve_unique_outputs(&files, &config, output_dir.as_deref());
     let pairs: Vec<(String, String)> = files.iter().cloned().zip(outputs).collect();
 
     // 入队前探测每个输入文件，预估压缩后的输出体积（Pending 状态即可展示）。
@@ -63,7 +57,7 @@ pub async fn add_to_queue(
     let ids = queue.add_jobs_estimated(pairs, estimates, config);
 
     // 发送更新后的队列状态事件
-    emit_queue(&app_handle, queue);
+    queue.emit_updated(&app_handle);
 
     Ok(ids)
 }
@@ -89,8 +83,7 @@ pub async fn remove_from_queue(
 ) -> AppResult<()> {
     if let Some(queue) = state.queue_manager.as_ref() {
         queue.remove_jobs(&job_ids);
-        let status = queue.get_status();
-        let _ = app_handle.emit("queue://updated", &status);
+        queue.emit_updated(&app_handle);
     }
     Ok(())
 }
@@ -104,8 +97,7 @@ pub async fn cancel_job(
 ) -> AppResult<()> {
     if let Some(queue) = state.queue_manager.as_ref() {
         queue.cancel_job(&job_id);
-        let status = queue.get_status();
-        let _ = app_handle.emit("queue://updated", &status);
+        queue.emit_updated(&app_handle);
     }
     Ok(())
 }
@@ -131,8 +123,7 @@ pub async fn pause_queue(
 ) -> AppResult<()> {
     if let Some(queue) = state.queue_manager.as_ref() {
         queue.pause_queue();
-        let status = queue.get_status();
-        let _ = app_handle.emit("queue://updated", &status);
+        queue.emit_updated(&app_handle);
     }
     Ok(())
 }
@@ -148,8 +139,7 @@ pub async fn resume_queue(
         if was {
             queue.process_queue(app_handle.clone());
         }
-        let status = queue.get_status();
-        let _ = app_handle.emit("queue://updated", &status);
+        queue.emit_updated(&app_handle);
     }
     Ok(())
 }
@@ -161,8 +151,7 @@ pub async fn clear_completed(
 ) -> AppResult<()> {
     if let Some(queue) = state.queue_manager.as_ref() {
         queue.clear_completed();
-        let status = queue.get_status();
-        let _ = app_handle.emit("queue://updated", &status);
+        queue.emit_updated(&app_handle);
     }
     Ok(())
 }
@@ -180,7 +169,7 @@ pub async fn retry_job(
     if retried {
         queue.process_queue(app_handle.clone());
     }
-    emit_queue(&app_handle, queue);
+    queue.emit_updated(&app_handle);
     Ok(retried)
 }
 
@@ -203,12 +192,6 @@ pub async fn set_max_concurrent(
     let queue = state.queue_manager.as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
     Ok(queue.set_max_concurrent(value))
-}
-
-/// 队列变更后广播状态快照
-pub(crate) fn emit_queue(app: &tauri::AppHandle, queue: &crate::queue::QueueManager) {
-    let status = queue.get_status();
-    let _ = app.emit("queue://updated", &status);
 }
 
 /// 编码器埋点 key（小写，对齐上报示例负载的 codecs 结构）

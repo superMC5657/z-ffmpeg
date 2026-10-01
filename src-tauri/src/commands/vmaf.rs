@@ -3,7 +3,7 @@ use tauri::State;
 use crate::encoder::vmaf::{
     self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
 };
-use crate::error::AppResult;
+use crate::error::{AppResult, LogDisplay};
 use crate::queue::settings::SETTINGS_KEY_VMAF_SEGMENTS;
 
 const MAX_VMAF_SEGMENTS: usize = 32;
@@ -35,8 +35,7 @@ pub async fn compute_vmaf(
         None => {
             // job_id 为内部 UUID，可进日志；不记输入输出路径
             let err = crate::error::AppError::InvalidConfig(format!("任务不存在: {job_id}"));
-            let msg = err.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            let top = err.top_line();
             log::warn!("vmaf compute failed job {job_id} reason {top}");
             return Err(err);
         }
@@ -56,34 +55,23 @@ pub async fn compute_vmaf(
     let output = output_path.clone();
     // 每次计算使用唯一工作目录：job 重算/并发计算互不干扰
     let work_id = format!("{job_id}_{}", uuid::Uuid::new_v4());
-    let result = match tokio::task::spawn_blocking(move || {
-        vmaf::compute_vmaf_sampled(
-            &input,
-            &output,
-            segments,
-            DEFAULT_SEGMENT_SECONDS,
-            &work_id,
-        )
-    })
-    .await
-    .map_err(|e| crate::error::AppError::Internal(e.to_string()))
-    {
-        Ok(inner) => match inner {
-            Ok(result) => result,
-            Err(e) => {
-                let msg = e.to_string();
-                let top = msg.lines().next().unwrap_or("unknown").to_string();
-                log::warn!("vmaf compute failed job {job_id} reason {top}");
-                return Err(e);
-            }
-        },
-        Err(e) => {
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
-            log::warn!("vmaf compute failed job {job_id} reason {top}");
-            return Err(e);
-        }
-    };
+    let result = crate::error::flatten_blocking_result(
+        tokio::task::spawn_blocking(move || {
+            vmaf::compute_vmaf_sampled(
+                &input,
+                &output,
+                segments,
+                DEFAULT_SEGMENT_SECONDS,
+                &work_id,
+            )
+        })
+        .await,
+    )
+    .map_err(|e| {
+        let top = e.top_line();
+        log::warn!("vmaf compute failed job {job_id} reason {top}");
+        crate::error::AppError::Internal(e)
+    })?;
 
     // 持久化平均分 + 各段明细（含模式标记，供前端区分全量/采样展示）
     let detail = serde_json::json!({
@@ -93,7 +81,7 @@ pub async fn compute_vmaf(
     queue.set_vmaf_score(&job_id, result.average_score, Some(detail.to_string()));
 
     // 刷新队列展示
-    super::queue::emit_queue(&app_handle, queue);
+    queue.emit_updated(&app_handle);
 
     Ok(result)
 }

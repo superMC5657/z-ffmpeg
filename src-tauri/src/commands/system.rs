@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::encoder::hw_accel::{self, HwAccelInfo};
-use crate::error::AppResult;
+use crate::error::{AppResult, LogDisplay};
 use crate::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,7 +54,9 @@ pub async fn get_system_info(
     })
     .await
     .map_err(|e| {
-        crate::error::AppError::Internal(format!("硬件加速检测任务异常终止: {e}"))
+        let top = e.top_line();
+        log::warn!("blocking task join failed reason {top}");
+        crate::error::AppError::Internal(format!("硬件加速检测任务异常终止: {top}"))
     })?;
 
     Ok(SystemInfo {
@@ -125,8 +127,7 @@ pub async fn download_ffmpeg(
                 error: Some(e.to_string()),
             };
             let _ = app.emit("ffmpeg://error", &info);
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            let top = e.top_line();
             log::error!("ffmpeg download failed reason {top}");
             Err(e)
         }

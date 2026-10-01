@@ -6,6 +6,7 @@ mod ffmpeg;
 mod license;
 mod analytics;
 mod error;
+mod util;
 mod z_log;
 
 use std::sync::Arc;

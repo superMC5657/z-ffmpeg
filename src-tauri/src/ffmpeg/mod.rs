@@ -17,3 +17,12 @@ pub fn hidden_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Com
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
 }
+
+/// `hidden_command` 的异步版本（`tokio::process::Command`）。
+/// Windows 同样加 `CREATE_NO_WINDOW`（复用已有常量），同步版本保留。
+pub fn async_hidden_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}

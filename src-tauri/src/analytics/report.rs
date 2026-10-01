@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::{snapshots, COUNTERS};
+use crate::error::LogDisplay;
 
 /// 组装会话聚合负载（JSON 对象，远小于 1MB 上限）
 pub fn build_payload(device_id: &str, license_status: &str, version: &str) -> Value {
@@ -95,7 +96,7 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
     std::thread::spawn(move || {
         // 上报失败只记原因首行（debug，仍静默：不重试不弹窗；不记 body 全文）
         if let Err(e) = send_blocking(&url, &token, &payload) {
-            let top = e.lines().next().unwrap_or("unknown").to_string();
+            let top = e.top_line();
             log::debug!("analytics report failed reason {top}");
         }
         let _ = tx.send(());

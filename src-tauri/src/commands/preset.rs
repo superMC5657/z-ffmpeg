@@ -1,5 +1,9 @@
 use tauri::State;
-use crate::error::{AppError, AppResult};
+use crate::encoder::codec::{
+    AudioCodec, AudioSettings, ContainerFormat, EncodeConfig, HwAccelConfig, HwAccelDevice,
+    RateControl, VideoCodec, VideoSettings,
+};
+use crate::error::{AppError, AppResult, LogDisplay};
 use crate::preset::Preset;
 
 fn builtin_presets() -> Vec<Preset> {
@@ -58,41 +62,63 @@ fn builtin_presets() -> Vec<Preset> {
     ]
 }
 
-/// 预设默认音频配置
-fn audio_json(codec: &str) -> serde_json::Value {
-    serde_json::json!({
-        "codec": codec,
-        "bitrateKbps": 192,
-        "channels": 2,
-        "sampleRate": 48000
-    })
+/// 预设默认音频配置（强类型构造，序列化后与历史快照一致）。
+fn audio_settings(codec: &str) -> AudioSettings {
+    let codec = match codec {
+        "Opus" => AudioCodec::Opus,
+        "Copy" => AudioCodec::Copy,
+        "None" => AudioCodec::None,
+        _ => AudioCodec::Aac,
+    };
+    AudioSettings {
+        codec,
+        bitrate_kbps: 192,
+        channels: 2,
+        sample_rate: 48000,
+    }
 }
 
-/// 统一的 EncodeConfig JSON 构造：软编/硬编共用同一 VideoSettings 组装，
-/// 避免各处裸写重复的字段结构（字段名与 `EncodeConfig` 的 camelCase 对齐）。
+/// 统一的 EncodeConfig 强类型构造：软编/硬编共用同一 VideoSettings 组装，
+/// 序列化经 `EncodeConfig` 的 camelCase 保证与历史快照一致。
 fn preset_config(
     codec: &str,
     preset: &str,
     container: &str,
     audio: &str,
-    rate_control: serde_json::Value,
-    device: Option<&str>,
+    rate_control: RateControl,
+    device: Option<HwAccelDevice>,
 ) -> serde_json::Value {
-    serde_json::json!({
-        "videoCodec": codec,
-        "videoSettings": {
-            "rateControl": rate_control,
-            "encoderPreset": preset,
-            "resolution": null,
-            "frameRate": null,
-            "pixelFormat": null,
-            "profile": null,
-            "additionalParams": []
+    let video_codec = match codec {
+        "H265" => VideoCodec::H265,
+        "AV1" => VideoCodec::AV1,
+        "VP9" => VideoCodec::VP9,
+        _ => VideoCodec::H264,
+    };
+    let container_format = match container {
+        "MKV" => ContainerFormat::MKV,
+        "WebM" => ContainerFormat::WebM,
+        "MOV" => ContainerFormat::MOV,
+        _ => ContainerFormat::MP4,
+    };
+    let config = EncodeConfig {
+        video_codec,
+        video_settings: VideoSettings {
+            rate_control,
+            encoder_preset: preset.to_string(),
+            resolution: None,
+            frame_rate: None,
+            pixel_format: None,
+            profile: None,
+            additional_params: vec![],
         },
-        "audioSettings": audio_json(audio),
-        "containerFormat": container,
-        "hwAccel": device.map(|d| serde_json::json!({ "device": d, "deviceIndex": null }))
-    })
+        audio_settings: audio_settings(audio),
+        container_format,
+        hw_accel: device.map(|d| HwAccelConfig {
+            device: d,
+            device_index: None,
+        }),
+    };
+    serde_json::to_value(&config).expect("builtin preset config must serialize")
 }
 
 /// 预设公共外壳（id/名称/描述/配置）
@@ -115,6 +141,7 @@ fn p(
     codec: &str, preset: &str, rc: &str, value: u32,
     container: &str, audio: &str,
 ) -> Preset {
+    let _ = rc;
     build_preset(
         id,
         name,
@@ -124,7 +151,9 @@ fn p(
             preset,
             container,
             audio,
-            serde_json::json!({ "type": rc, "value": value }),
+            RateControl::Crf {
+                value: value as u8,
+            },
             None,
         ),
     )
@@ -132,6 +161,13 @@ fn p(
 
 /// 硬件加速预设构造辅助函数
 fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
+    let device = match device {
+        "QSV" => HwAccelDevice::QSV,
+        "AMF" => HwAccelDevice::AMF,
+        "VideoToolbox" => HwAccelDevice::VideoToolbox,
+        "VAAPI" => HwAccelDevice::VAAPI,
+        _ => HwAccelDevice::NVENC,
+    };
     build_preset(
         id,
         name,
@@ -141,7 +177,9 @@ fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &st
             preset,
             if codec == "AV1" { "MKV" } else { "MP4" },
             "AAC",
-            serde_json::json!({ "type": "CRF", "value": value }),
+            RateControl::Crf {
+                value: value as u8,
+            },
             Some(device),
         ),
     )
@@ -186,8 +224,7 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
         }
     }
     let err = AppError::Internal(format!("预设不存在: {id}"));
-    let msg = err.to_string();
-    let top = msg.lines().next().unwrap_or("unknown").to_string();
+    let top = err.top_line();
     log::warn!("preset export failed reason {top}");
     Err(err)
 }
@@ -213,8 +250,7 @@ pub async fn export_preset_to_file(
     if let Err(e) = std::fs::write(&path, json) {
         // 日志只记原因，不记目标全路径
         let err = AppError::Io(e);
-        let msg = err.to_string();
-        let top = msg.lines().next().unwrap_or("unknown").to_string();
+        let top = err.top_line();
         log::warn!("preset export failed reason {top}");
         return Err(err);
     }
@@ -234,8 +270,7 @@ pub async fn import_preset(
 
     // 导入失败只记原因首行：不记待导入的 JSON 原文（可能很长）
     let warn_import = |err: &AppError| {
-        let msg = err.to_string();
-        let top = msg.lines().next().unwrap_or("unknown").to_string();
+        let top = err.top_line();
         log::warn!("preset import failed reason {top}");
     };
 
@@ -271,7 +306,8 @@ pub async fn import_preset(
     let _validated: crate::encoder::codec::EncodeConfig = match serde_json::from_value(config.clone()) {
         Ok(v) => v,
         Err(e) => {
-            let err = AppError::InvalidConfig(format!("预设编码配置解析失败: {}", e.to_string().lines().next().unwrap_or("unknown")));
+            let top = e.top_line();
+            let err = AppError::InvalidConfig(format!("预设编码配置解析失败: {top}"));
             warn_import(&err);
             return Err(err);
         }

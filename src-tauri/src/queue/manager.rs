@@ -6,10 +6,32 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 use crate::encoder::engine;
 use crate::encoder::codec::EncodeConfig;
-use crate::error::AppResult;
+use crate::error::{AppResult, LogDisplay};
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus, QueueStatus};
 
 const DEFAULT_MAX_CONCURRENT: usize = 2;
+/// 队列库建表语句（jobs + settings），经 `util::db::open_sqlite_store` 执行。
+const QUEUE_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS jobs (
+                id TEXT PRIMARY KEY,
+                input_path TEXT NOT NULL,
+                output_path TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending',
+                progress REAL,
+                input_size INTEGER,
+                estimated_output_size INTEGER,
+                output_size INTEGER,
+                vmaf_score REAL,
+                vmaf_detail TEXT,
+                created_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );";
 use crate::queue::settings;
 use crate::queue::settings::SETTINGS_KEY_MAX_CONCURRENT;
 
@@ -31,40 +53,14 @@ pub struct QueueManager {
 
 impl QueueManager {
     pub fn new(db_path: &str) -> AppResult<Arc<Self>> {
-        let db = Connection::open(db_path).map_err(|e| {
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
+        let db = crate::util::db::open_sqlite_store(
+            std::path::Path::new(db_path),
+            QUEUE_INIT_SQL,
+            "queue",
+        )
+        .inspect_err(|e| {
+            let top = e.top_line();
             log::error!("queue db open failed reason {top}");
-            crate::error::AppError::Internal(msg)
-        })?;
-
-        db.execute_batch(
-            "CREATE TABLE IF NOT EXISTS jobs (
-                id TEXT PRIMARY KEY,
-                input_path TEXT NOT NULL,
-                output_path TEXT NOT NULL,
-                config_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Pending',
-                progress REAL,
-                input_size INTEGER,
-                estimated_output_size INTEGER,
-                output_size INTEGER,
-                vmaf_score REAL,
-                vmaf_detail TEXT,
-                created_at TEXT NOT NULL,
-                started_at TEXT,
-                completed_at TEXT,
-                error TEXT
-            );
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );"
-        ).map_err(|e| {
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
-            log::error!("queue db init failed reason {top}");
-            crate::error::AppError::Internal(msg)
         })?;
 
         let max_concurrent = settings::load_usize(&db, SETTINGS_KEY_MAX_CONCURRENT)
@@ -102,8 +98,7 @@ impl QueueManager {
         ) {
             Ok(s) => s,
             Err(e) => {
-                let msg = e.to_string();
-                let top = msg.lines().next().unwrap_or("unknown").to_string();
+                let top = e.top_line();
                 log::debug!("queue load jobs skipped reason {top}");
                 return vec![];
             }
@@ -272,7 +267,7 @@ impl QueueManager {
         }
         // 手动重进队列：原因取上次失败的 error 首行（basename 不记全路径）
         let reason = job.error.clone().unwrap_or_default();
-        let top = reason.lines().next().unwrap_or("unknown").to_string();
+        let top = reason.top_line();
         let name = job.file_name();
         let id = job.id.clone();
         job.status = JobStatus::Pending;
@@ -311,7 +306,7 @@ impl QueueManager {
             // 失败即终态 Failed（本项目无自动重试，重试仅用户手动 retry_job）
             if !success {
                 let reason = job.error.clone().unwrap_or_default();
-                let top = reason.lines().next().unwrap_or("unknown").to_string();
+                let top = reason.top_line();
                 let id = job.id.clone();
                 let name = job.file_name();
                 self.save_job(job);
@@ -338,6 +333,31 @@ impl QueueManager {
             paused: *self.paused.read(),
             jobs: snapshots,
         }
+    }
+
+    /// 广播最新队列状态（`queue://updated`），失败只记首行 warn。
+    pub fn emit_updated(&self, app: &tauri::AppHandle) {
+        let status = self.get_status();
+        if let Err(e) = app.emit("queue://updated", &status) {
+            let top = e.top_line();
+            log::warn!("queue emit updated failed reason {top}");
+        }
+    }
+
+    /// 为批量输入推导唯一输出路径（去重范围含磁盘文件、活跃任务与批次内占位）。
+    pub fn resolve_unique_outputs(
+        &self,
+        files: &[String],
+        config: &EncodeConfig,
+        output_dir: Option<&str>,
+    ) -> Vec<String> {
+        let claimed = self.get_active_output_paths();
+        crate::encoder::args::derive_output_paths_unique_with_claimed(
+            files,
+            config,
+            output_dir,
+            &claimed,
+        )
     }
 
     /// 队列级暂停：暂停自动调度（正在编码的任务继续到结束）。
@@ -473,8 +493,7 @@ impl QueueManager {
                     manager.dec_active();
 
                     // 发送更新后的队列状态事件
-                    let status = manager.get_status();
-                    let _ = app.emit("queue://updated", &status);
+                    manager.emit_updated(&app);
 
                     // 自动推进：处理下一个待处理任务
                     manager.process_queue(app.clone());

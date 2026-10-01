@@ -45,12 +45,7 @@ pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> 
     let ffprobe = ffmpeg::get_ffprobe_path()
         .ok_or(AppError::FfmpegNotFound)?;
 
-    let mut cmd = tokio::process::Command::new(ffprobe);
-    // Windows: 保持控制台窗口隐藏，与同步版 `hidden_command` 一致。
-    #[cfg(windows)]
-    {
-        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW（隐藏控制台窗口）
-    }
+    let mut cmd = crate::ffmpeg::async_hidden_command(ffprobe);
     let output = cmd
         .args(ffprobe_args(input_path))
         .output()

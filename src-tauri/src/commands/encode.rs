@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::encoder::{args, estimate, probe};
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, LogDisplay};
 
 // 为调用方便重新导出类型
 pub use crate::encoder::codec::{
@@ -47,8 +47,7 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     let json = match probe::probe_file_async(&file_path).await {
         Ok(json) => json,
         Err(e) => {
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            let top = e.top_line();
             log::warn!("probe failed file {basename} reason {top}");
             return Err(e);
         }
@@ -56,8 +55,7 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     let info = match probe::parse_probe_result(&json, &file_path) {
         Ok(info) => info,
         Err(e) => {
-            let msg = e.to_string();
-            let top = msg.lines().next().unwrap_or("unknown").to_string();
+            let top = e.top_line();
             log::warn!("probe failed file {basename} reason {top}");
             return Err(e);
         }
@@ -84,17 +82,15 @@ pub async fn build_ffmpeg_commands(
     files: Vec<String>,
     output_dir: Option<String>,
 ) -> AppResult<Vec<String>> {
-    let active_outputs = state
-        .queue_manager
-        .as_ref()
-        .map(|q| q.get_active_output_paths())
-        .unwrap_or_default();
-    let outputs = args::derive_output_paths_unique_with_claimed(
-        &files,
-        &config,
-        output_dir.as_deref(),
-        &active_outputs,
-    );
+    let outputs = match state.queue_manager.as_ref() {
+        Some(queue) => queue.resolve_unique_outputs(&files, &config, output_dir.as_deref()),
+        None => args::derive_output_paths_unique_with_claimed(
+            &files,
+            &config,
+            output_dir.as_deref(),
+            &[],
+        ),
+    };
     let cmds: Vec<String> = files
         .iter()
         .zip(outputs.iter())

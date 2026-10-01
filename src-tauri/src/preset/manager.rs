@@ -10,10 +10,8 @@ pub struct PresetManager {
 
 impl PresetManager {
     pub fn new(db_path: &str) -> AppResult<std::sync::Arc<Self>> {
-        let db = Connection::open(db_path)
-            .map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
-
-        db.execute_batch(
+        let db = crate::util::db::open_sqlite_store(
+            std::path::Path::new(db_path),
             "CREATE TABLE IF NOT EXISTS presets (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -21,8 +19,9 @@ impl PresetManager {
                 config_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );"
-        ).map_err(|e| crate::error::AppError::Internal(e.to_string()))?;
+            );",
+            "preset",
+        )?;
 
         Ok(std::sync::Arc::new(Self {
             db: StdMutex::new(db),
