@@ -4,6 +4,7 @@ import { Play, Pause, X, ExternalLink, Loader2 } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
 import { isEncodeProgress } from "@/types";
 import { formatSpeed, getFileName } from "@/lib/utils";
+import LinearProgress from "@/components/layout/LinearProgress";
 
 export default function GlobalEncodingDock() {
   const navigate = useNavigate();
@@ -58,12 +59,11 @@ export default function GlobalEncodingDock() {
       className="relative z-30 flex h-13 w-full shrink-0 items-center justify-between border-t border-hairline bg-surface/90 px-4 backdrop-blur-xl shadow-lg transition-all"
     >
       {/* 顶部极细进度指示线（整体进度） */}
-      <div className="absolute top-0 left-0 right-0 h-[2px] bg-fill overflow-hidden">
-        <div
-          className="h-full bg-accent transition-all duration-300 ease-out"
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
+      <LinearProgress
+        value={percentage}
+        size="sm"
+        className="absolute top-0 left-0 right-0 h-[2px] rounded-none bg-fill"
+      />
 
       {/* 左侧：状态指示与当前任务名称 */}
       <div className="flex min-w-0 items-center gap-3">

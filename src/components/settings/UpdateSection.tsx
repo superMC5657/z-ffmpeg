@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { RefreshCw, Download, Loader2, CheckCircle2 } from "lucide-react";
+import { RefreshCw, Download, CheckCircle2 } from "lucide-react";
 import { useToastStore } from "@/store/toastStore";
 import Card from "@/components/layout/Card";
+import AppleButton from "@/components/layout/AppleButton";
+import LinearProgress from "@/components/layout/LinearProgress";
 import { isTauriRuntime, formatError } from "@/lib/utils";
 
 export default function UpdateSection() {
@@ -113,31 +115,28 @@ export default function UpdateSection() {
   return (
     <Card title="软件更新">
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        <AppleButton
+          variant="secondary"
+          loading={updating}
+          disabled={updateInfo.downloading}
           onClick={handleCheckUpdate}
-          disabled={updating || updateInfo.downloading}
-          className="flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98] disabled:cursor-default disabled:opacity-50"
         >
-          {updating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3.5 w-3.5" />
-          )}
+          {!updating && <RefreshCw className="h-3.5 w-3.5" />}
           检查更新
-        </button>
+        </AppleButton>
 
         {updateInfo.available && !updateInfo.downloading && !updateInfo.installed && (
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-[13px] text-secondary">
               发现新版本 v{updateInfo.version}
             </span>
-            <button
+            <AppleButton
+              variant="primary"
               onClick={handleDownloadUpdate}
-              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
             >
               <Download className="h-3.5 w-3.5" />
               下载并安装
-            </button>
+            </AppleButton>
           </div>
         )}
 
@@ -146,12 +145,7 @@ export default function UpdateSection() {
             <span className="shrink-0 tabular-nums text-[13px] text-secondary">
               下载中 {updateInfo.progress}%
             </span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong">
-              <div
-                className="h-full rounded-full bg-accent transition-all duration-300"
-                style={{ width: `${updateInfo.progress}%` }}
-              />
-            </div>
+            <LinearProgress value={updateInfo.progress} className="flex-1" />
           </div>
         )}
 

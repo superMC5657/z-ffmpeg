@@ -1,4 +1,4 @@
-import { X, RotateCw, Square, FileVideo, Gauge } from "lucide-react";
+import { X, RotateCw, Square, Gauge } from "lucide-react";
 import { useState } from "react";
 import { isEncodeProgress, type EncodeJob } from "@/types";
 import { useQueueStore } from "@/store/queueStore";
@@ -7,26 +7,11 @@ import { computeVmaf } from "@/lib/tauri";
 import ProgressBar from "@/components/progress/ProgressBar";
 import ProGate from "@/components/license/ProGate";
 import { cn, getFileName } from "@/lib/utils";
+import { StatusBadge, StatusIcon } from "@/components/layout/StatusBadge";
 
 interface QueueItemProps {
   job: EncodeJob;
 }
-
-const STATUS_PILL: Record<string, string> = {
-  Pending: "bg-warning/15 text-warning",
-  Encoding: "bg-accent/12 text-accent",
-  Completed: "bg-success/15 text-success",
-  Failed: "bg-destructive/12 text-destructive",
-  Cancelled: "bg-fill text-secondary",
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  Pending: "等待中",
-  Encoding: "编码中",
-  Completed: "已完成",
-  Failed: "失败",
-  Cancelled: "已取消",
-};
 
 export default function QueueItem({ job }: QueueItemProps) {
   const removeJobs = useQueueStore((s) => s.removeJobs);
@@ -71,32 +56,14 @@ export default function QueueItem({ job }: QueueItemProps) {
 
   return (
     <div className="group flex items-center gap-3.5 px-3.5 py-3 transition-colors hover:bg-fill/40">
-      {/* File icon */}
-      <div
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]",
-          job.status === "Completed"
-            ? "bg-success/12 text-success"
-            : job.status === "Failed"
-              ? "bg-destructive/10 text-destructive"
-              : "bg-accent/10 text-accent"
-        )}
-      >
-        <FileVideo className="h-4.5 w-4.5" />
-      </div>
+      {/* Status icon */}
+      <StatusIcon status={job.status} />
 
       {/* Job info */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-[13px] font-medium leading-5">{fileName}</p>
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-4",
-              STATUS_PILL[job.status] ?? "bg-fill text-secondary"
-            )}
-          >
-            {STATUS_LABEL[job.status] ?? job.status}
-          </span>
+          <StatusBadge status={job.status} />
         </div>
         <div className="mt-1 flex items-center gap-2">
           <div className="min-w-0 flex-1">

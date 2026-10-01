@@ -9,6 +9,7 @@ import {
   estimateRemainingSeconds,
 } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import LinearProgress from "@/components/layout/LinearProgress";
 
 interface ProgressBarProps {
   /** 实时进度对象或后端快照中的数字百分比（0-100） */
@@ -24,9 +25,14 @@ interface ProgressBarProps {
   vmafScore?: number | null;
 }
 
-const TRACK = "h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong";
-
-export default function ProgressBar({ progress, status, estimatedSizeBytes = null, outputSizeBytes = null, inputSizeBytes = null, vmafScore = null }: ProgressBarProps) {
+export default function ProgressBar({
+  progress,
+  status,
+  estimatedSizeBytes = null,
+  outputSizeBytes = null,
+  inputSizeBytes = null,
+  vmafScore = null,
+}: ProgressBarProps) {
   const isLive = isEncodeProgress(progress);
   const pct = isLive ? progress.percentage : progress ?? 0;
   // 编码中：按已用时长与进度线性外推剩余时间（进度过小/不可解析时为 null）
@@ -37,13 +43,13 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
   if (status === "Pending" || status === "Queued") {
     return (
       <div className="flex items-center gap-2.5 text-[11px] text-secondary">
-        <div className={TRACK}>
-          <div className="h-full w-0 rounded-full bg-accent" />
-        </div>
+        <LinearProgress value={0} variant="accent" className="flex-1" />
         <span className="shrink-0">
-          {estimatedSizeBytes != null
-            ? <>等待中 · 约 {formatFileSize(estimatedSizeBytes)}</>
-            : "等待中"}
+          {estimatedSizeBytes != null ? (
+            <>等待中 · 约 {formatFileSize(estimatedSizeBytes)}</>
+          ) : (
+            "等待中"
+          )}
         </span>
       </div>
     );
@@ -57,11 +63,16 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
     if (vmafScore != null) parts.push(`VMAF ${vmafScore.toFixed(1)}`);
     // 输出变大时整体用警示色
     return (
-      <div className={cn("flex items-center gap-2.5 text-[11px]", compression.enlarged ? "text-warning" : "text-success")}>
-        <div className={TRACK}>
-          <div className="h-full w-full rounded-full bg-success" />
-        </div>
-        <span className="shrink-0 font-medium tabular-nums">{parts.join(" · ")}</span>
+      <div
+        className={cn(
+          "flex items-center gap-2.5 text-[11px]",
+          compression.enlarged ? "text-warning" : "text-success"
+        )}
+      >
+        <LinearProgress value={100} variant="success" className="flex-1" />
+        <span className="shrink-0 font-medium tabular-nums">
+          {parts.join(" · ")}
+        </span>
       </div>
     );
   }
@@ -69,13 +80,10 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
   if (status === "Failed" || status === "Cancelled") {
     return (
       <div className="flex items-center gap-2.5 text-[11px] text-destructive">
-        <div className={TRACK}>
-          <div
-            className="h-full rounded-full bg-destructive"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <span className="shrink-0">{status === "Cancelled" ? "已取消" : "失败"}</span>
+        <LinearProgress value={pct} variant="destructive" className="flex-1" />
+        <span className="shrink-0">
+          {status === "Cancelled" ? "已取消" : "失败"}
+        </span>
       </div>
     );
   }
@@ -89,17 +97,13 @@ export default function ProgressBar({ progress, status, estimatedSizeBytes = nul
         </span>
         {isLive && (
           <span className="truncate">
-            {formatFps(progress.fps)} · {formatSpeed(progress.speed)} · {formatBitrate(progress.bitrate)}
+            {formatFps(progress.fps)} · {formatSpeed(progress.speed)} ·{" "}
+            {formatBitrate(progress.bitrate)}
             {etaSeconds != null && <> · 剩余 {formatDuration(etaSeconds)}</>}
           </span>
         )}
       </div>
-      <div className={TRACK}>
-        <div
-          className="h-full rounded-full bg-accent transition-[width] duration-300"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+      <LinearProgress value={pct} variant="accent" />
     </div>
   );
 }

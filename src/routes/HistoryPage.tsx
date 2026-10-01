@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  CheckCircle,
   XCircle,
-  Ban,
   History as HistoryIcon,
   Trash2,
   Loader2,
@@ -14,6 +12,11 @@ import {
 } from "lucide-react";
 import PageHeader from "@/components/layout/PageHeader";
 import SegmentedControl from "@/components/layout/SegmentedControl";
+import EmptyState from "@/components/layout/EmptyState";
+import AppleButton from "@/components/layout/AppleButton";
+import { SkeletonList } from "@/components/layout/Skeleton";
+import { StatusBadge, StatusIcon } from "@/components/layout/StatusBadge";
+import { GroupedList, GroupedListItem } from "@/components/layout/GroupedList";
 import {
   getHistory,
   deleteHistory,
@@ -26,12 +29,6 @@ import {
   cn,
 } from "@/lib/utils";
 import type { HistoryEntry } from "@/types";
-
-const statusIcons: Record<string, { icon: typeof CheckCircle; tint: string; label: string }> = {
-  Completed: { icon: CheckCircle, tint: "bg-success/12 text-success", label: "已完成" },
-  Failed: { icon: XCircle, tint: "bg-destructive/10 text-destructive", label: "失败" },
-  Cancelled: { icon: Ban, tint: "bg-fill text-secondary", label: "已取消" },
-};
 
 const STATUS_FILTERS = [
   { value: "All", label: "全部" },
@@ -178,18 +175,15 @@ export default function HistoryPage() {
         description="查看已完成的编码任务记录"
         action={
           entries.length > 0 ? (
-            <button
+            <AppleButton
+              variant="secondary"
+              loading={clearing}
               onClick={handleClearAll}
-              disabled={clearing}
-              className="flex h-9 items-center gap-1.5 rounded-[9px] bg-surface px-4 text-[13px] font-medium text-secondary shadow-card ring-1 ring-hairline transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+              className="hover:bg-destructive/10 hover:text-destructive"
             >
-              {clearing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
+              {!clearing && <Trash2 className="h-3.5 w-3.5" />}
               清空历史
-            </button>
+            </AppleButton>
           ) : undefined
         }
       />
@@ -223,73 +217,40 @@ export default function HistoryPage() {
         </div>
 
       {loading ? (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-[10px] bg-fill/70" />
-          ))}
-        </div>
+        <SkeletonList />
       ) : loadError ? (
-        <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-destructive/40 py-16">
-          <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-destructive/10">
-            <XCircle className="h-5 w-5 text-destructive" />
-          </div>
-          <p className="mt-3 text-[13px] font-medium">加载历史记录失败</p>
-          <p className="mt-0.5 max-w-md break-all text-center text-[12px] text-secondary">
-            {loadError}
-          </p>
-          <button
-            onClick={forceReload}
-            className="mt-4 flex h-9 items-center gap-1.5 rounded-[9px] bg-fill px-4 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong active:scale-[0.98]"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            重试
-          </button>
-        </div>
+        <EmptyState
+          variant="error"
+          icon={XCircle}
+          title="加载历史记录失败"
+          description={loadError}
+          action={
+            <AppleButton variant="secondary" onClick={forceReload}>
+              <RotateCcw className="h-3.5 w-3.5" />
+              重试
+            </AppleButton>
+          }
+        />
       ) : entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-[14px] border border-dashed border-hairline py-16">
-          <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-fill">
-            <HistoryIcon className="h-5 w-5 text-tertiary" />
-          </div>
-          <p className="mt-3 text-[13px] font-medium">暂无历史记录</p>
-          <p className="mt-0.5 text-[12px] text-secondary">
-            完成的编码任务将显示在这里
-          </p>
-        </div>
+        <EmptyState
+          icon={HistoryIcon}
+          title="暂无历史记录"
+          description="完成的编码任务将显示在这里"
+        />
       ) : (
         <>
-        <div className="overflow-hidden rounded-[14px] border border-hairline bg-surface shadow-card">
-          {entries.map((entry, i) => {
-            const config = statusIcons[entry.status] || statusIcons.Failed;
-            const Icon = config.icon;
-            return (
-              <div
-                key={entry.id}
-                className={cn(
-                  "group flex items-center gap-3.5 px-3.5 py-3 transition-colors hover:bg-fill/40",
-                  i > 0 && "border-t border-hairline"
-                )}
-              >
-                <div
-                  className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px]",
-                    config.tint
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
+        <GroupedList>
+          {entries.map((entry) => (
+            <GroupedListItem
+              key={entry.id}
+              icon={<StatusIcon status={entry.status} />}
+              content={
+                <>
                   <div className="flex items-center gap-2">
                     <span className="truncate text-[13px] font-medium leading-5">
                       {entry.fileName}
                     </span>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium leading-4",
-                        config.tint
-                      )}
-                    >
-                      {config.label}
-                    </span>
+                    <StatusBadge status={entry.status} />
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[11px] text-secondary tabular-nums">
                     <span className="shrink-0">{formatDate(entry.createdAt)}</span>
@@ -327,7 +288,9 @@ export default function HistoryPage() {
                       {entry.error}
                     </p>
                   )}
-                </div>
+                </>
+              }
+              actions={
                 <button
                   onClick={() => handleDelete(entry.id)}
                   disabled={deleting === entry.id}
@@ -340,10 +303,10 @@ export default function HistoryPage() {
                     <Trash2 className="h-3.5 w-3.5" />
                   )}
                 </button>
-              </div>
-            );
-          })}
-        </div>
+              }
+            />
+          ))}
+        </GroupedList>
 
         {/* 分页 */}
         {totalPages > 1 && (
@@ -352,22 +315,26 @@ export default function HistoryPage() {
               共 {total} 条 · 第 {query.page + 1}/{totalPages} 页
             </span>
             <div className="flex items-center gap-1">
-              <button
+              <AppleButton
+                variant="secondary"
+                size="sm"
                 aria-label="上一页"
-                onClick={() => handlePageChange(query.page - 1)}
                 disabled={query.page === 0}
-                className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
+                onClick={() => handlePageChange(query.page - 1)}
+                className="w-7 px-0"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
-              </button>
-              <button
+              </AppleButton>
+              <AppleButton
+                variant="secondary"
+                size="sm"
                 aria-label="下一页"
-                onClick={() => handlePageChange(query.page + 1)}
                 disabled={query.page >= totalPages - 1}
-                className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-fill transition-colors hover:bg-fill-strong disabled:opacity-40"
+                onClick={() => handlePageChange(query.page + 1)}
+                className="w-7 px-0"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </AppleButton>
             </div>
           </div>
         )}

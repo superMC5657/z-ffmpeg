@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Video,
@@ -8,17 +8,9 @@ import {
   History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  checkFfmpegStatus,
-  onFfmpegDownloadProgress,
-  onFfmpegReady,
-  onFfmpegError,
-} from "@/lib/tauri";
 import { useSystemStore } from "@/store/systemStore";
 import { useQueueStore } from "@/store/queueStore";
 import { isTauriRuntime } from "@/lib/utils";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import type { FfmpegStatusInfo } from "@/types";
 
 const navItems = [
   { to: "/", label: "转码工作台", icon: Video },
@@ -38,45 +30,17 @@ const FFMPEG_STATES: Record<string, { dot: string; text: string }> = {
 };
 
 function FfmpegStatusFooter() {
-  const [info, setInfo] = useState<FfmpegStatusInfo | null>(null);
+  const ffmpegStatus = useSystemStore((s) => s.ffmpegStatus);
+  const downloading = useSystemStore((s) => s.downloading);
+  const initFfmpeg = useSystemStore((s) => s.initFfmpeg);
 
   useEffect(() => {
-    checkFfmpegStatus()
-      .then(setInfo)
-      .catch(() => setInfo(null));
+    initFfmpeg();
+  }, [initFfmpeg]);
 
-    if (!isTauriRuntime()) return;
-    const unlisteners: UnlistenFn[] = [];
-    onFfmpegDownloadProgress(() =>
-      setInfo({
-        status: "downloading",
-        version: null,
-        path: null,
-        downloadProgress: null,
-        error: null,
-      })
-    )
-      .then((u) => unlisteners.push(u))
-      .catch(() => {});
-    onFfmpegReady((ready) => {
-      setInfo(ready);
-      useSystemStore.getState().fetchHwAccels(true);
-    })
-      .then((u) => unlisteners.push(u))
-      .catch(() => {});
-    onFfmpegError(() => {
-      checkFfmpegStatus()
-        .then(setInfo)
-        .catch(() => setInfo(null));
-    })
-      .then((u) => unlisteners.push(u))
-      .catch(() => {});
-    return () => {
-      unlisteners.forEach((u) => u());
-    };
-  }, []);
-
-  const key = info?.status ?? (isTauriRuntime() ? "checking" : "browser");
+  const key = downloading
+    ? "downloading"
+    : (ffmpegStatus?.status ?? (isTauriRuntime() ? "checking" : "browser"));
   const state = FFMPEG_STATES[key] ?? FFMPEG_STATES.error;
 
   return (

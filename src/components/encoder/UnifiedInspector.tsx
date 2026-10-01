@@ -24,6 +24,7 @@ import PresetSelector from "./PresetSelector";
 import SavePresetDialog from "./SavePresetDialog";
 import FfmpegCommandDialog from "./FfmpegCommandDialog";
 import SegmentedControl from "@/components/layout/SegmentedControl";
+import AppleButton from "@/components/layout/AppleButton";
 import AppleSelect from "@/components/layout/AppleSelect";
 import AppleInput from "@/components/layout/AppleInput";
 import { zlog } from "@/lib/z-log";
@@ -639,13 +640,14 @@ export default function UnifiedInspector() {
             <span>输出目标位置</span>
           </label>
           {outputDir && (
-            <button
+            <AppleButton
+              variant="ghost"
+              size="sm"
               onClick={() => setOutputDir("")}
-              className="flex items-center gap-1 text-[12px] text-secondary hover:text-foreground transition-colors"
             >
               <RotateCcw className="h-3 w-3" />
               <span>恢复源目录</span>
-            </button>
+            </AppleButton>
           )}
         </div>
 
@@ -661,28 +663,26 @@ export default function UnifiedInspector() {
               {outputDir || "默认保存到源文件所在目录"}
             </span>
           </div>
-          <button
-            type="button"
+          <AppleButton
+            variant="secondary"
+            size="md"
             onClick={handleSelectOutputDir}
-            className="flex h-10 items-center gap-1.5 rounded-xl bg-fill px-3.5 text-[13px] font-medium text-foreground transition-colors hover:bg-fill-strong shrink-0"
+            className="shrink-0"
           >
             <FolderOpen className="h-4 w-4 text-secondary" />
             <span>浏览</span>
-          </button>
+          </AppleButton>
         </div>
       </div>
 
       {/* 6. 行动区 (CTA Actions) */}
       <div className="border-t border-hairline/80 pt-4 space-y-2.5">
-        <button
-          onClick={handleAddToQueueAndStart}
+        <AppleButton
+          variant="primary"
+          size="lg"
           disabled={!hasFiles}
-          className={cn(
-            "flex h-11.5 w-full items-center justify-center gap-2.5 rounded-xl text-[15px] font-bold transition-all shadow-md active:scale-[0.98]",
-            hasFiles
-              ? "bg-accent text-on-accent hover:bg-accent-hover hover:shadow-accent/25 hover:shadow-lg cursor-pointer"
-              : "cursor-not-allowed bg-fill text-tertiary opacity-70"
-          )}
+          onClick={handleAddToQueueAndStart}
+          className="w-full shadow-md hover:shadow-accent/25 hover:shadow-lg"
         >
           <Play className="h-4.5 w-4.5 fill-current" />
           <span>
@@ -690,16 +690,18 @@ export default function UnifiedInspector() {
               ? `添加到转码队列 (${inputFiles.length} 个文件)`
               : "请先添加待处理文件"}
           </span>
-        </button>
+        </AppleButton>
 
-        <button
+        <AppleButton
+          variant="ghost"
+          size="md"
+          loading={building}
           onClick={handleBuildCommand}
-          disabled={building}
-          className="flex h-8.5 w-full items-center justify-center gap-2 rounded-lg text-[13px] text-secondary hover:text-foreground hover:bg-fill transition-colors"
+          className="w-full text-secondary"
         >
-          <Terminal className="h-4 w-4" />
+          {!building && <Terminal className="h-4 w-4" />}
           <span>{building ? "正在生成…" : "查看 FFmpeg CLI 命令行"}</span>
-        </button>
+        </AppleButton>
       </div>
 
       {saveDialogOpen && (

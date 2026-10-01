@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { Layers, Pause, Play, Trash2, Zap } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore, showErrorToast } from "@/store/toastStore";
+import AppleButton from "@/components/layout/AppleButton";
 import AppleSelect from "@/components/layout/AppleSelect";
 
 export default function QueueToolbar() {
@@ -12,7 +14,13 @@ export default function QueueToolbar() {
   const jobs = useQueueStore((s) => s.jobs);
   const maxConcurrent = useQueueStore((s) => s.maxConcurrent);
   const maxConcurrentLoaded = useQueueStore((s) => s.maxConcurrentLoaded);
+  const fetchMaxConcurrent = useQueueStore((s) => s.fetchMaxConcurrent);
   const updateMaxConcurrent = useQueueStore((s) => s.updateMaxConcurrent);
+  const [savingConcurrent, setSavingConcurrent] = useState(false);
+
+  useEffect(() => {
+    fetchMaxConcurrent();
+  }, [fetchMaxConcurrent]);
 
   // 队列并发数上限 16
   const concurrencyCap = 16;
@@ -46,54 +54,50 @@ export default function QueueToolbar() {
   };
 
   const handleConcurrentChange = async (value: number) => {
+    setSavingConcurrent(true);
     try {
       const saved = await updateMaxConcurrent(value);
       useToastStore.getState().showToast(
-        `并发数已更新为 ${saved}`,
+        `队列并发数已更新为 ${saved}`,
         "success"
       );
     } catch (err) {
-      showErrorToast("更新失败", err);
+      showErrorToast("保存失败", err);
+    } finally {
+      setSavingConcurrent(false);
     }
   };
 
   return (
     <div className="flex flex-wrap items-center gap-2.5 rounded-[14px] border border-hairline bg-surface p-3 shadow-card">
-      <button
-        onClick={handleStart}
+      <AppleButton
+        variant="primary"
         disabled={!hasPending || paused}
         title={paused ? "队列已暂停，先恢复调度" : undefined}
-        className={`flex h-9 items-center gap-1.5 rounded-[9px] px-4 text-[13px] font-medium transition-all active:scale-[0.98] ${
-          hasPending && !paused
-            ? "bg-accent text-on-accent shadow-sm hover:bg-accent-hover"
-            : "cursor-default bg-fill text-tertiary"
-        }`}
+        onClick={handleStart}
       >
         <Zap className="h-3.5 w-3.5" />
         开始执行
-      </button>
+      </AppleButton>
 
-      <button
-        onClick={handleTogglePause}
+      <AppleButton
+        variant={paused ? "primary" : "secondary"}
         disabled={!hasPending && !paused}
-        className={`flex h-9 items-center gap-1.5 rounded-[9px] px-3.5 text-[13px] font-medium transition-colors disabled:opacity-40 ${
-          paused
-            ? "bg-accent text-on-accent shadow-sm hover:bg-accent-hover"
-            : "text-secondary hover:bg-fill-strong hover:text-foreground"
-        }`}
+        onClick={handleTogglePause}
       >
         {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
         {paused ? "恢复调度" : "暂停调度"}
-      </button>
+      </AppleButton>
 
-      <button
-        onClick={clearCompleted}
+      <AppleButton
+        variant="secondary"
         disabled={!hasCompleted}
-        className="flex h-9 items-center gap-1.5 rounded-[9px] px-3.5 text-[13px] font-medium text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-secondary"
+        onClick={clearCompleted}
+        className="hover:bg-destructive/10 hover:text-destructive"
       >
         <Trash2 className="h-3.5 w-3.5" />
         清除已完成
-      </button>
+      </AppleButton>
 
       {/* Concurrency control — shared with Settings page */}
       <div className="ml-auto flex items-center gap-2">
@@ -102,8 +106,8 @@ export default function QueueToolbar() {
         <AppleSelect
           className="w-16"
           value={Math.min(maxConcurrent, concurrencyCap)}
-          disabled={!maxConcurrentLoaded}
-          onChange={(e) => handleConcurrentChange(parseInt(e.target.value))}
+          disabled={!maxConcurrentLoaded || savingConcurrent}
+          onChange={(e) => handleConcurrentChange(parseInt(e.target.value, 10))}
         >
           {Array.from({ length: concurrencyCap }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>

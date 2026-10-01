@@ -3,6 +3,7 @@ import { Crown } from "lucide-react";
 import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { useLicenseStore } from "@/store/licenseStore";
 import Card from "@/components/layout/Card";
+import AppleButton from "@/components/layout/AppleButton";
 import { cn } from "@/lib/utils";
 
 export default function LicenseSection() {
@@ -29,13 +30,13 @@ export default function LicenseSection() {
       title="授权"
       action={
         isPro ? undefined : (
-          <button
+          <AppleButton
+            variant="primary"
             onClick={() => setActivationOpen(true)}
-            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
           >
             <Crown className="h-3.5 w-3.5" />
             激活 Pro
-          </button>
+          </AppleButton>
         )
       }
     >
@@ -81,19 +82,21 @@ export default function LicenseSection() {
                 <span className="text-[12px] text-secondary">
                   注销将释放一个设备名额，需重新激活才能继续使用。确认注销？
                 </span>
-                <button
+                <AppleButton
+                  variant="danger"
+                  size="sm"
+                  loading={licenseWorking}
                   onClick={handleDeactivate}
-                  disabled={licenseWorking}
-                  className="h-8 rounded-[9px] bg-destructive px-3 text-[12px] font-medium text-white transition-colors hover:bg-destructive/90 disabled:opacity-50"
                 >
                   {licenseWorking ? "注销中..." : "确认注销"}
-                </button>
-                <button
+                </AppleButton>
+                <AppleButton
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setConfirmingDeactivate(false)}
-                  className="h-8 rounded-[9px] bg-fill px-3 text-[12px] font-medium transition-colors hover:bg-fill-strong"
                 >
                   取消
-                </button>
+                </AppleButton>
               </div>
             ) : (
               <button

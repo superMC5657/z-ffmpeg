@@ -1,73 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Download, Loader2 } from "lucide-react";
-import {
-  checkFfmpegStatus,
-  downloadFfmpeg,
-  onFfmpegDownloadProgress,
-  onFfmpegReady,
-} from "@/lib/tauri";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import type { FfmpegStatusInfo } from "@/types";
-import { showErrorToast } from "@/store/toastStore";
+import { useSystemStore } from "@/store/systemStore";
 import Card from "@/components/layout/Card";
-import { isTauriRuntime, formatError } from "@/lib/utils";
+import AppleButton from "@/components/layout/AppleButton";
+import LinearProgress from "@/components/layout/LinearProgress";
 import { cn } from "@/lib/utils";
 
 export default function FfmpegSection() {
-  const [ffmpeg, setFfmpeg] = useState<FfmpegStatusInfo | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const ffmpeg = useSystemStore((s) => s.ffmpegStatus);
+  const downloading = useSystemStore((s) => s.downloading);
+  const downloadProgress = useSystemStore((s) => s.downloadProgress);
+  const downloadError = useSystemStore((s) => s.downloadError);
+  const downloadFfmpeg = useSystemStore((s) => s.downloadFfmpeg);
+  const initFfmpeg = useSystemStore((s) => s.initFfmpeg);
 
   useEffect(() => {
-    checkFfmpegStatus()
-      .then(setFfmpeg)
-      .catch((e) => {
-        showErrorToast("获取 FFmpeg 状态失败", e);
-      });
-  }, []);
+    initFfmpeg();
+  }, [initFfmpeg]);
 
-  // 监听 FFmpeg 下载进度与完成事件
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    const unlisteners: UnlistenFn[] = [];
-    onFfmpegDownloadProgress((p) => setDownloadProgress(p))
-      .then((u) => unlisteners.push(u))
-      .catch(() => {});
-    onFfmpegReady(() => {
-      setDownloading(false);
-      setDownloadProgress(null);
-      setDownloadError(null);
-      checkFfmpegStatus()
-        .then(setFfmpeg)
-        .catch((e) => {
-          showErrorToast("获取 FFmpeg 状态失败", e);
-        });
-    })
-      .then((u) => unlisteners.push(u))
-      .catch(() => {});
-    return () => {
-      unlisteners.forEach((u) => u());
-    };
-  }, []);
-
-  const handleDownloadFfmpeg = async () => {
-    if (!isTauriRuntime()) {
-      setDownloadError("浏览器环境不支持下载 FFmpeg");
-      return;
-    }
-    setDownloading(true);
-    setDownloadError(null);
-    setDownloadProgress(0);
-    try {
-      const info = await downloadFfmpeg();
-      setFfmpeg(info);
-      setDownloading(false);
-      setDownloadProgress(null);
-    } catch (e) {
-      setDownloading(false);
-      setDownloadError(formatError(e));
-    }
+  const handleDownloadFfmpeg = () => {
+    void downloadFfmpeg();
   };
 
   return (
@@ -76,13 +28,13 @@ export default function FfmpegSection() {
       action={
         ffmpeg?.status === "not-installed" &&
         !downloading && (
-          <button
+          <AppleButton
+            variant="primary"
             onClick={handleDownloadFfmpeg}
-            className="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-4 text-[13px] font-medium text-on-accent shadow-sm transition-all hover:bg-accent-hover active:scale-[0.98]"
           >
             <Download className="h-3.5 w-3.5" />
             下载 FFmpeg
-          </button>
+          </AppleButton>
         )
       }
     >
@@ -115,12 +67,10 @@ export default function FfmpegSection() {
           )}
           {downloading && (
             <div className="flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill-strong">
-                <div
-                  className="h-full rounded-full bg-accent transition-all duration-200"
-                  style={{ width: `${downloadProgress ?? 0}%` }}
-                />
-              </div>
+              <LinearProgress
+                value={downloadProgress ?? 0}
+                className="flex-1"
+              />
               <span className="w-10 text-right tabular-nums text-secondary">
                 {Math.round(downloadProgress ?? 0)}%
               </span>

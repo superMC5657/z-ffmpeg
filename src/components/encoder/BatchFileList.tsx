@@ -12,6 +12,8 @@ import {
 import { useEncoderStore } from "@/store/encoderStore";
 import { useToastStore } from "@/store/toastStore";
 import { open } from "@tauri-apps/plugin-dialog";
+import StatusBadge from "@/components/layout/StatusBadge";
+import AppleButton from "@/components/layout/AppleButton";
 import {
   formatFileSize,
   formatDuration,
@@ -166,22 +168,25 @@ export default function BatchFileList() {
 
         <div className="flex items-center gap-2">
           {inputFiles.length > 0 && (
-            <button
+            <AppleButton
+              variant="ghost"
+              size="sm"
               onClick={clearFiles}
-              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-secondary transition-colors hover:bg-destructive/10 hover:text-destructive"
+              className="hover:bg-destructive/10 hover:text-destructive"
               title="清空全部待处理文件"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-3.5 w-3.5" />
               <span>清空全部</span>
-            </button>
+            </AppleButton>
           )}
-          <button
+          <AppleButton
+            variant="primary"
+            size="sm"
             onClick={handlePickFiles}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[13px] font-semibold text-on-accent shadow-xs transition-transform active:scale-95 hover:bg-accent-hover"
           >
-            <Plus className="h-4 w-4" strokeWidth={2.4} />
+            <Plus className="h-3.5 w-3.5" />
             <span>添加视频</span>
-          </button>
+          </AppleButton>
         </div>
       </div>
 
@@ -315,18 +320,15 @@ export default function BatchFileList() {
 
                           {/* 预估输出体积胶囊 */}
                           {estimatedSize != null && (
-                            <span
+                            <StatusBadge
+                              size="md"
+                              tone={sizeDeltaPct !== null && sizeDeltaPct < 0 ? "success" : "accent"}
                               title={
                                 isCrf && estimatedSize.min !== estimatedSize.max
                                   ? `CRF/CQP 恒定画质预估区间：${formatFileSize(estimatedSize.min)} ~ ${formatFileSize(estimatedSize.max)}\n预期中位数：约 ${formatFileSize(estimatedSize.expected)}\n说明：实际体积取决于画面动态与纹理复杂度，高动态场景可能偏大`
                                   : `根据当前编码器与质量参数计算出的预期体积：${formatFileSize(estimatedSize.expected)}`
                               }
-                              className={cn(
-                                "ml-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-help",
-                                sizeDeltaPct !== null && sizeDeltaPct < 0
-                                  ? "bg-success/15 text-success"
-                                  : "bg-accent/15 text-accent"
-                              )}
+                              className="ml-1.5 cursor-help font-bold tabular-nums"
                             >
                               {isCrf && estimatedSize.min !== estimatedSize.max
                                 ? `约 ${formatFileSizeCompact(estimatedSize.min)}~${formatFileSizeCompact(estimatedSize.max)}`
@@ -336,7 +338,7 @@ export default function BatchFileList() {
                                   ({sizeDeltaPct > 0 ? `+${sizeDeltaPct}%` : `${sizeDeltaPct}%`})
                                 </span>
                               )}
-                            </span>
+                            </StatusBadge>
                           )}
 
                           {file.probeError && (
