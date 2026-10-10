@@ -27,51 +27,14 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
-    /// 映射到 FFmpeg 编码器名称
+    /// 映射到 FFmpeg 编码器名称（策略知识唯一拥有者：`crate::encoder::policy`）。
+    /// 此处仅做薄委托，保持调用点与 wire 格式不变。
     pub fn encoder_name(&self, hw: Option<&HwAccelConfig>) -> &'static str {
-        match hw {
-            Some(HwAccelConfig { device: HwAccelDevice::NVENC, .. }) => match self {
-                VideoCodec::H264 => "h264_nvenc",
-                VideoCodec::H265 => "hevc_nvenc",
-                VideoCodec::AV1 => "av1_nvenc",
-                _ => self.software_encoder(),
-            },
-            Some(HwAccelConfig { device: HwAccelDevice::QSV, .. }) => match self {
-                VideoCodec::H264 => "h264_qsv",
-                VideoCodec::H265 => "hevc_qsv",
-                VideoCodec::AV1 => "av1_qsv",
-                _ => self.software_encoder(),
-            },
-            Some(HwAccelConfig { device: HwAccelDevice::AMF, .. }) => match self {
-                VideoCodec::H264 => "h264_amf",
-                VideoCodec::H265 => "hevc_amf",
-                VideoCodec::AV1 => "av1_amf",
-                _ => self.software_encoder(),
-            },
-            Some(HwAccelConfig { device: HwAccelDevice::VideoToolbox, .. }) => match self {
-                VideoCodec::H264 => "h264_videotoolbox",
-                VideoCodec::H265 => "hevc_videotoolbox",
-                VideoCodec::AV1 => "av1_videotoolbox",
-                _ => self.software_encoder(),
-            },
-            Some(HwAccelConfig { device: HwAccelDevice::VAAPI, .. }) => match self {
-                VideoCodec::H264 => "h264_vaapi",
-                VideoCodec::H265 => "hevc_vaapi",
-                VideoCodec::AV1 => "av1_vaapi",
-                _ => self.software_encoder(),
-            },
-            None => self.software_encoder(),
-        }
+        crate::encoder::policy::encoder_name(self, hw)
     }
 
     pub fn software_encoder(&self) -> &'static str {
-        match self {
-            VideoCodec::H264 => "libx264",
-            VideoCodec::H265 => "libx265",
-            VideoCodec::AV1 => "libsvtav1",
-            VideoCodec::VP9 => "libvpx-vp9",
-            VideoCodec::Copy => "copy",
-        }
+        crate::encoder::policy::software_encoder(self)
     }
 }
 

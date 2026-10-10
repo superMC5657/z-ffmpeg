@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::commands::encode::FileInfo;
-use crate::encoder::codec::{AudioCodec, EncodeConfig, RateControl, VideoCodec};
-use crate::encoder::probe::parse_probe_result;
+use crate::encoder::probe::{FileInfo, parse_probe_result};
+use crate::encoder::codec::{AudioCodec, EncodeConfig, VideoCodec};
+use crate::encoder::policy::{self, SourceMediaInfo};
 
 /// 包含预估期望值（预期中位数）、乐观值（平缓场景下限）与悲观值（剧烈动态/高噪点场景上限）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,39 +34,10 @@ pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64
 ///   4. Auto Maxrate Guard 与用户自定义 -maxrate 硬截断；
 ///   5. 生成平缓场景（下限）与高动态/噪点场景（上限）的合理区间。
 pub fn estimate_output_size(config: &EncodeConfig, probe: &Value) -> Option<EstimatedSize> {
-    // 统一走 probe 解析：时长/码率/尺寸/帧率的读取与 FileInfo 命令完全一致
+    // 唯一路径：probe JSON 先构造 FileInfo（封面跳过 / 音频回退 / zero-duration
+    // guard 全部收敛在 parse_probe_result 内），再走统一 FileInfo 预估核心。
     let info = parse_probe_result(probe, "").ok()?;
-
-    let duration = info.duration?;
-    if duration <= 0.0 {
-        return None;
-    }
-
-    // 输入平均码率（kbps）：优先 ffprobe 的 format.bit_rate，缺失时由文件大小 / 时长推算
-    let input_kbps = info
-        .bitrate
-        .map(|bps| bps as f64 / 1000.0)
-        .or_else(|| {
-            if info.file_size == 0 {
-                return None;
-            }
-            Some(info.file_size as f64 * 8.0 / 1000.0 / duration)
-        })?;
-    if input_kbps <= 0.0 {
-        return None;
-    }
-
-    let scale = output_scale_factor(config, info.width, info.height, info.frame_rate);
-    let media = SourceMediaInfo {
-        source_codec: info.video_codec.as_deref(),
-        source_audio_kbps: info.audio_bitrate.map(|bps| bps as f64 / 1000.0),
-        in_width: info.width,
-        in_height: info.height,
-        in_fps: info.frame_rate,
-        scale,
-    };
-
-    estimate_bytes(config, duration, input_kbps, &media)
+    estimate_output_size_from_info(config, &info)
 }
 
 /// 基于前端已探测的 `FileInfo` 预估输出体积（字节单值）。
@@ -77,12 +48,16 @@ pub fn estimate_output_bytes_from_info(config: &EncodeConfig, info: &FileInfo) -
 }
 
 /// 基于前端已探测的 `FileInfo` 预估输出体积区间。
+/// 统一预估核心唯一拥有者：zero-duration guard、输入码率回退（bitrate →
+/// size/duration）、输出缩放、音频码率处理只留这一份。JSON 入口先构造
+/// FileInfo 再委托到此。
 pub fn estimate_output_size_from_info(config: &EncodeConfig, info: &FileInfo) -> Option<EstimatedSize> {
     let duration = info.duration?;
     if duration <= 0.0 {
         return None;
     }
 
+    // 输入平均码率（kbps）：优先 ffprobe 的 format.bit_rate，缺失时由文件大小 / 时长推算
     let input_kbps = info
         .bitrate
         .map(|bps| bps as f64 / 1000.0)
@@ -140,17 +115,8 @@ fn output_scale_factor(
     factor
 }
 
-/// 源媒体流信息打包，避免函数参数过多触发 clippy 告警
-struct SourceMediaInfo<'a> {
-    source_codec: Option<&'a str>,
-    source_audio_kbps: Option<f64>,
-    in_width: Option<u32>,
-    in_height: Option<u32>,
-    in_fps: Option<f64>,
-    scale: f64,
-}
-
 /// 公共预估核心：目标码率（或 CRF/CQP 外推与锚点融合）× 时长 → 字节区间。
+/// 体积模型（codec×device 因子、guard 截断）唯一拥有者为 `policy`，此处仅消费。
 fn estimate_bytes(
     config: &EncodeConfig,
     duration: f64,
@@ -163,7 +129,7 @@ fn estimate_bytes(
         return Some(EstimatedSize { expected: b, min: b, max: b });
     }
 
-    let (exp_v, min_v, max_v) = estimate_video_kbps(config, input_kbps, media);
+    let (exp_v, min_v, max_v) = policy::estimate_video_kbps(config, input_kbps, media);
 
     let audio_kbps = match config.audio_settings.codec {
         AudioCodec::None => 0.0,
@@ -180,198 +146,6 @@ fn estimate_bytes(
         min: min.min(expected),
         max: max.max(expected),
     })
-}
-
-/// 各编码器与硬件环境下的画质参考基准点（对应视觉平衡参考值）：
-/// - H.264 CPU 基准为 18.0；
-/// - H.265 CPU 基准为 20.0，硬件为 22.0；
-/// - AV1 CPU 基准为 24.0，硬件为 26.0；
-/// - VP9 CPU 基准为 24.0。
-fn crf_baseline(codec: &VideoCodec, hw: Option<&crate::encoder::codec::HwAccelConfig>) -> f64 {
-    match codec {
-        VideoCodec::H264 => 18.0,
-        VideoCodec::H265 => {
-            if hw.is_some() { 22.0 } else { 20.0 }
-        }
-        VideoCodec::AV1 => {
-            if hw.is_some() { 26.0 } else { 24.0 }
-        }
-        VideoCodec::VP9 => 24.0,
-        VideoCodec::Copy => 18.0,
-    }
-}
-
-/// 源文件视频编码器基准压缩因子（相对 H.264 视同 1.0 的相对能效）。
-fn source_codec_factor(codec_name: Option<&str>) -> f64 {
-    let name = match codec_name {
-        Some(s) => s.trim().to_lowercase(),
-        None => return 1.0,
-    };
-    match name.as_str() {
-        "hevc" | "h265" | "hev1" | "hvc1" => 0.65,
-        "av1" | "av01" => 0.50,
-        "vp9" => 0.60,
-        "vp8" => 1.10,
-        "mpeg4" | "msmpeg4" | "xvid" => 1.30,
-        "mpeg2video" => 1.80,
-        "prores" | "dnxhd" | "dnxhr" | "mjpeg" | "rawvideo" => 3.5,
-        _ => 1.0, // 默认 H264 或标准格式
-    }
-}
-
-/// 目标编码器相对 H.264 的压缩因子（同质量下体积更小）
-fn codec_factor(codec: &VideoCodec) -> f64 {
-    match codec {
-        VideoCodec::H264 => 1.0,
-        VideoCodec::H265 => 0.65,
-        VideoCodec::AV1 => 0.5,
-        VideoCodec::VP9 => 0.6,
-        VideoCodec::Copy => 1.0,
-    }
-}
-
-/// 硬件编码器动态膨胀系数：
-/// 显卡芯片追求吞吐与低时延，帧间预测深度不及 CPU 细致，在同等质量下容易输出更高码率；
-/// 区分硬件设备类型并对高帧率（>=50fps）适当补足动态系数。
-fn hardware_accel_factor(
-    hw_accel: Option<&crate::encoder::codec::HwAccelConfig>,
-    fps: Option<f64>,
-) -> f64 {
-    use crate::encoder::codec::HwAccelDevice;
-    let Some(hw) = hw_accel else {
-        return 1.0;
-    };
-    let base = match hw.device {
-        HwAccelDevice::NVENC => 1.30,
-        HwAccelDevice::QSV => 1.20,
-        HwAccelDevice::AMF => 1.35,
-        HwAccelDevice::VAAPI | HwAccelDevice::VideoToolbox => 1.25,
-    };
-    if let Some(f) = fps {
-        if f >= 50.0 {
-            return base + 0.15;
-        } else if f <= 25.0 {
-            return (base - 0.05).max(1.0);
-        }
-    }
-    base
-}
-
-/// 基于分辨率与帧率的物理像素通量基线锚点（Bits Per Pixel, BPP 模型）。
-/// 标准 1080p 30fps 在 H.264 CRF 23 下典型码率约 3200 kbps (bpp ≈ 0.0514)。
-fn physical_anchor_crf_kbps(
-    config: &EncodeConfig,
-    in_width: Option<u32>,
-    in_height: Option<u32>,
-    in_fps: Option<f64>,
-    hw_factor: f64,
-    crf_val: f64,
-) -> f64 {
-    let width = config.video_settings.resolution.as_ref()
-        .filter(|r| r.width > 0 && r.height > 0)
-        .map(|r| r.width)
-        .or(in_width)
-        .unwrap_or(1920);
-    let height = config.video_settings.resolution.as_ref()
-        .filter(|r| r.width > 0 && r.height > 0)
-        .map(|r| r.height)
-        .or(in_height)
-        .unwrap_or(1080);
-    let fps = config.video_settings.frame_rate
-        .filter(|f| *f > 0.0)
-        .or(in_fps)
-        .unwrap_or(30.0);
-
-    let pps = (width as f64) * (height as f64) * fps;
-    let base_h264_kbps = pps * 0.05144 / 1000.0;
-
-    let baseline = crf_baseline(&config.video_codec, config.hw_accel.as_ref());
-    let quality_ratio = 2f64.powf((baseline - crf_val) / 6.0) * 0.8;
-    (base_h264_kbps * codec_factor(&config.video_codec) * hw_factor * quality_ratio).max(1.0)
-}
-
-/// 获取当前转码任务的有效 -maxrate 限制（Auto Maxrate Guard 或用户自定义 -maxrate），用于封顶截断。
-fn effective_maxrate_kbps(config: &EncodeConfig, input_kbps: f64) -> Option<f64> {
-    // 1. 用户显式指定的 -maxrate
-    let params = &config.video_settings.additional_params;
-    if let Some(pos) = params.iter().position(|a| a == "-maxrate") {
-        if let Some(val_str) = params.get(pos + 1) {
-            let s = val_str.trim().to_lowercase();
-            let parsed = if let Some(m) = s.strip_suffix('m') {
-                m.parse::<f64>().ok().map(|n| n * 1000.0)
-            } else if let Some(k) = s.strip_suffix('k') {
-                k.parse::<f64>().ok()
-            } else {
-                s.parse::<f64>().ok().map(|n| n / 1000.0)
-            };
-            if let Some(v) = parsed {
-                return Some(v);
-            }
-        }
-    }
-
-    // 2. Auto Maxrate Guard：硬件加速恒定质量转码时自动封顶在 1.25x 输入码率（底线 500k）
-    if config.hw_accel.is_some()
-        && !matches!(config.video_settings.rate_control, RateControl::Abr { .. })
-        && input_kbps > 0.0
-    {
-        let guard = (input_kbps * 1.25).round().max(500.0);
-        return Some(guard);
-    }
-
-    None
-}
-
-/// 预估视频码率（期望值、平缓下限、动态上限）
-fn estimate_video_kbps(
-    config: &EncodeConfig,
-    input_kbps: f64,
-    media: &SourceMediaInfo<'_>,
-) -> (f64, f64, f64) {
-    let crf_val = match &config.video_settings.rate_control {
-        RateControl::Abr { bitrate_kbps, .. } => {
-            let b = *bitrate_kbps as f64;
-            return (b, b, b);
-        }
-        RateControl::Crf { value } => *value as f64,
-        RateControl::Cqp { value } => *value as f64,
-    };
-
-    let hw_factor = hardware_accel_factor(config.hw_accel.as_ref(), media.in_fps);
-    let src_factor = source_codec_factor(media.source_codec);
-    let target_factor = codec_factor(&config.video_codec);
-    // 相对源编码格式的换算比（例如 H.264->AV1 为 0.5/1.0 = 0.5；AV1->AV1 为 0.5/0.5 = 1.0）
-    let relative_factor = (target_factor / src_factor).clamp(0.2, 3.0);
-
-    let baseline = crf_baseline(&config.video_codec, config.hw_accel.as_ref());
-    let quality_ratio = 2f64.powf((baseline - crf_val) / 6.0) * 0.8;
-    let relative_kbps = (input_kbps * relative_factor * hw_factor * quality_ratio * media.scale).max(1.0);
-
-    // 物理像素通量锚点码率
-    let anchor_kbps = physical_anchor_crf_kbps(
-        config,
-        media.in_width,
-        media.in_height,
-        media.in_fps,
-        hw_factor,
-        crf_val,
-    );
-
-            // 65% 相对源片推算 + 35% 物理像素通量锚点，兼顾源片特征与物理客观基准
-            let mut expected = 0.65 * relative_kbps + 0.35 * anchor_kbps;
-
-            // 动态范围：平缓/静态场景 0.75x ~ 高动态/噪点场景 1.40x
-            let mut min = (expected * 0.75).max(1.0);
-            let mut max = (expected * 1.40).max(expected);
-
-            // Maxrate 上限截断（Auto Maxrate Guard 或用户指定）
-            if let Some(maxrate) = effective_maxrate_kbps(config, input_kbps) {
-                expected = expected.min(maxrate);
-                max = max.min(maxrate).max(expected);
-                min = min.min(expected);
-            }
-
-    (expected, min, max)
 }
 
 /// kbps × 秒 → 字节
@@ -521,79 +295,83 @@ mod tests {
         );
     }
 
-    /// 音频流缺 bit_rate 时，probe 与 FileInfo 两条路径按同一「容器 − 视频」回退，结果一致
+    /// 单一 FileInfo 契约：malformed probe（无时长/无码率）→ 预估返回 None（仅断言一份结果）
     #[test]
-    fn audio_fallback_consistent_between_paths() {
+    fn fileinfo_contract_malformed_probe_returns_none() {
+        let cfg = base_config();
+        let probe = json!({"format": {}});
+        let info = parse_probe_result(&probe, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.duration, None);
+        assert_eq!(estimate_output_size_from_info(&cfg, &info), None);
+    }
+
+    /// 单一 FileInfo 契约：cover-only（仅内嵌封面视频流）→ 回退取首个视频流尺寸后正常预估
+    #[test]
+    fn fileinfo_contract_cover_only_falls_back_to_first_stream() {
+        let cfg = base_config();
+        let probe = json!({
+            "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
+            "streams": [
+                { "codec_type": "video", "codec_name": "mjpeg", "width": 400, "height": 300,
+                  "disposition": { "attached_pic": 1 } },
+                { "codec_type": "audio", "codec_name": "aac", "bit_rate": "192000" },
+            ],
+        });
+        let info = parse_probe_result(&probe, r"C:\in\a.mkv").unwrap();
+        // 全部为封面时回退取第一个视频流（probe 唯一启发式，estimate 不重复实现）
+        assert_eq!((info.width, info.height), (Some(400), Some(300)));
+        assert!(estimate_output_size_from_info(&cfg, &info).is_some());
+    }
+
+    /// 单一 FileInfo 契约：video-only（无音频流）→ audio_bitrate 为 None，音频 Copy 按 0 估算
+    #[test]
+    fn fileinfo_contract_video_only_has_no_audio() {
         let mut cfg = base_config();
         cfg.video_settings.rate_control = RateControl::Abr {
             bitrate_kbps: 2000,
             max_bitrate_kbps: None,
         };
         cfg.audio_settings.codec = AudioCodec::Copy;
-        // 容器 104857600B / 100s ≈ 8388608 bps，视频 8000000 bps → 音频回退 ≈ 388608 bps
         let probe = json!({
-            "format": { "duration": "100.0", "size": "104857600" },
+            "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
             "streams": [
-                { "codec_type": "video", "bit_rate": "8000000", "width": 1920, "height": 1080 },
-                { "codec_type": "audio" },
+                { "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080 },
             ],
         });
-        let info = FileInfo {
-            path: "C:\\in\\a.mp4".into(),
-            file_name: "a.mp4".into(),
-            file_size: 104_857_600,
-            duration: Some(100.0),
-            video_codec: Some("h264".into()),
-            audio_codec: Some("aac".into()),
-            width: Some(1920),
-            height: Some(1080),
-            frame_rate: Some(30.0),
-            bitrate: None,
-            audio_bitrate: Some(388_608), // 与 engine.rs fallback_audio_bps 一致
-            pixel_format: Some("yuv420p".into()),
-        };
+        let info = parse_probe_result(&probe, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.audio_bitrate, None);
+        assert_eq!(info.audio_codec, None);
+        // 视频 2000kbps + 音频 0 × 100s → 单一结果
+        let expected = (2000.0 * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
-            estimate_output_bytes(&cfg, &probe),
-            estimate_output_bytes_from_info(&cfg, &info)
+            estimate_output_size_from_info(&cfg, &info).map(|e| e.expected),
+            Some(expected)
         );
     }
 
-    /// FileInfo 输入与 probe JSON 输入应共用同一推算核心，结果一致
+    /// 单一 FileInfo 契约：音频流缺 bit_rate → 容器总码率 − 视频码率回退后流入预估
     #[test]
-    fn from_info_matches_probe_version() {
-        let mut cfg = base_config(); // 默认 H264 CRF 23 配置
-        // 设置输出分辨率/帧率，验证缩放逻辑在两个入口完全一致
-        cfg.video_settings.resolution = Some(Resolution { width: 1280, height: 720 });
-        cfg.video_settings.frame_rate = Some(24.0);
+    fn fileinfo_contract_audio_fallback_flows_into_estimate() {
+        let mut cfg = base_config();
+        cfg.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 2000,
+            max_bitrate_kbps: None,
+        };
+        cfg.audio_settings.codec = AudioCodec::Copy;
+        // 容器 104857600B / 100s ≈ 8388608 bps，视频 8000000 bps → 音频 ≈ 388608 bps
         let probe = json!({
-            "format": {
-                "duration": "100.0",
-                "bit_rate": "8000000",
-                "size": "100000000",
-            },
+            "format": { "duration": "100.0", "size": "104857600" },
             "streams": [
-                { "codec_type": "video", "bit_rate": "4000000",
-                  "width": 1920, "height": 1080, "r_frame_rate": "30/1" },
-                { "codec_type": "audio", "bit_rate": "192000" },
+                { "codec_type": "video", "codec_name": "h264", "bit_rate": "8000000", "width": 1920, "height": 1080 },
+                { "codec_type": "audio", "codec_name": "aac" },
             ],
         });
-        let info = FileInfo {
-            path: "C:\\in\\a.mp4".into(),
-            file_name: "a.mp4".into(),
-            file_size: 100_000_000,
-            duration: Some(100.0),
-            video_codec: Some("h264".into()),
-            audio_codec: Some("aac".into()),
-            width: Some(1920),
-            height: Some(1080),
-            frame_rate: Some(30.0),
-            bitrate: Some(8_000_000),
-            audio_bitrate: Some(192_000),
-            pixel_format: Some("yuv420p".into()),
-        };
+        let info = parse_probe_result(&probe, r"C:\in\a.mp4").unwrap();
+        assert_eq!(info.audio_bitrate, Some(388_608));
+        let expected = ((2000.0 + 388.608) * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
-            estimate_output_bytes_from_info(&cfg, &info),
-            estimate_output_bytes(&cfg, &probe)
+            estimate_output_size_from_info(&cfg, &info).map(|e| e.expected),
+            Some(expected)
         );
     }
 

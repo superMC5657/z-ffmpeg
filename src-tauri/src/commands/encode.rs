@@ -1,30 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::encoder::{args, estimate, probe};
 use crate::error::{AppError, AppResult, LogDisplay};
 
 // 为调用方便重新导出类型
-pub use crate::encoder::codec::{
-    EncodeConfig,
-};
-
-/// 由 probe_file 返回的文件元信息结构体
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileInfo {
-    pub path: String,
-    pub file_name: String,
-    pub file_size: u64,
-    pub duration: Option<f64>,
-    pub video_codec: Option<String>,
-    pub audio_codec: Option<String>,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
-    pub frame_rate: Option<f64>,
-    pub bitrate: Option<u64>,
-    /// 源音频流码率（bps）；音频 Copy 时预估输出体积用，缺失时由容器总码率近似
-    pub audio_bitrate: Option<u64>,
-    pub pixel_format: Option<String>,
-}
+pub use crate::encoder::codec::EncodeConfig;
+// FileInfo 唯一拥有者为 encoder::probe；此处重导出以保持命令签名与前端契约不变
+pub use crate::encoder::probe::FileInfo;
 
 // ============================================================
 // 命令处理器

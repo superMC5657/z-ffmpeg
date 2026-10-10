@@ -1,5 +1,7 @@
 //! FFmpeg 参数与输出路径构建：从 `EncodeConfig` 推导 ffmpeg CLI 参数、
-//! 编码器 preset 映射，以及输入 → 输出路径的推导与批量去重。
+//! 以及输入 → 输出路径的推导与批量去重。
+//! 编码策略矩阵（preset / rate-control / guard）唯一拥有者为
+//! `crate::encoder::policy`，此处仅消费不重述。
 
 use std::collections::HashSet;
 
@@ -28,43 +30,18 @@ pub fn build_ffmpeg_args_with_bitrate(
     args.push("-i".into());
     args.push(input_path.into());
 
-    // 视频编码器
-    let encoder = config.video_codec.encoder_name(config.hw_accel.as_ref());
+    // 视频编码器（映射唯一拥有者：policy）
+    let encoder = crate::encoder::policy::encoder_name(&config.video_codec, config.hw_accel.as_ref());
     if config.video_codec != VideoCodec::Copy {
         args.push("-c:v".into());
         args.push(encoder.into());
 
-        // 编码器预设 preset（具体取值取决于具体编码器——参见 encoder_preset_args）
-        args.extend(encoder_preset_args(config));
-
-        // 码率控制（根据编码器特性映射）
-        args.extend(rate_control_args(config, encoder));
-
-        // 自动最大码率保护（Auto Maxrate Guard）:
-        // 当使用硬件加速（如 NVENC/AMF/QSV/VAAPI）恒定画质（CRF/CQP）转码时，
-        // 面对高帧率(如 60fps)、复杂噪点或高动态源视频，硬件芯片在恒定质量量化下
-        // 容易分配极大码率，导致转码后文件体积反超原片数倍。
-        // 若输入码率已知且用户未在 additionalParams 中手动指定 -maxrate，
-        // 自动将最大峰值码率安全限制在 1.25x 输入码率（辅以 2x bufsize），彻底杜绝负压缩。
-        if config.hw_accel.is_some()
-            && !matches!(config.video_settings.rate_control, crate::encoder::codec::RateControl::Abr { .. })
-        {
-            let has_custom_maxrate = config
-                .video_settings
-                .additional_params
-                .iter()
-                .any(|a| a == "-maxrate");
-            if !has_custom_maxrate {
-                if let Some(in_kbps) = input_bitrate_kbps.filter(|&k| k > 0) {
-                    let guard_maxrate = ((in_kbps as f64) * 1.25).round().max(500.0) as u32;
-                    let guard_bufsize = guard_maxrate.saturating_mul(2);
-                    args.push("-maxrate".into());
-                    args.push(format!("{}k", guard_maxrate));
-                    args.push("-bufsize".into());
-                    args.push(format!("{}k", guard_bufsize));
-                }
-            }
-        }
+        // 视频编码策略一次学会：preset + rate-control + guard（顺序由 policy 快照锁死）
+        args.extend(crate::encoder::policy::video_encoding_args(
+            config,
+            encoder,
+            input_bitrate_kbps,
+        ));
 
         // Profile 配置
         if let Some(ref profile) = config.video_settings.profile {
@@ -108,191 +85,6 @@ pub fn build_ffmpeg_args_with_bitrate(
     args.push(output_path.into());
 
     args
-}
-
-/// 将 x264 风格的命名预设（preset）映射为实际编码器所接受的参数。
-///
-/// 软件编码器：
-/// - libx264 / libx265：直接接受名称（`-preset medium`）。
-/// - libsvtav1 (AV1)：仅接受 `-preset <0-13>`（0 最慢/画质最好，13 最快）。
-/// - libvpx-vp9 (VP9)：无 `-preset` 选项——使用 `-cpu-used <0-8>`
-///   （0 最慢/画质最好，8 最快）。
-///
-/// 硬件编码器各有自己的预设词汇表：
-/// - NVENC：`-preset p1`（最快）..`p7`（最高画质）；传统预设名称依然兼容。
-/// - QSV：直接接受 `veryfast..veryslow` 名称。
-/// - AMF：`-quality speed|balanced|quality`（`-preset` 为其别名）。
-/// - VAAPI：无 `-preset`——使用 `-compression_level`（1 最慢/最高画质 .. 7 最快）。
-/// - VideoToolbox：现代 FFmpeg (5.0+) 已完全移除 `-preset`，因此省略该参数。
-fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
-    use crate::encoder::codec::HwAccelDevice;
-
-    let name = &config.video_settings.encoder_preset;
-
-    match config.hw_accel.as_ref().map(|h| &h.device) {
-        Some(HwAccelDevice::NVENC) => {
-            // NVENC: p1 最快，p7 最高画质。
-            let p = match name.as_str() {
-                "ultrafast" | "superfast" => "p1",
-                "veryfast" | "faster" => "p2",
-                "fast" => "p3",
-                "medium" => "p4",
-                "slow" => "p5",
-                "slower" => "p6",
-                "veryslow" => "p7",
-                other => other, // p1..p7 或传统预设值直接透传
-            };
-            vec!["-preset".into(), p.into()]
-        }
-        Some(HwAccelDevice::QSV) => {
-            // QSV 直接接受 veryfast..veryslow 预设名称。
-            vec!["-preset".into(), name.clone()]
-        }
-        Some(HwAccelDevice::AMF) => {
-            // AMF 使用 -quality（或别名 -preset）：speed / balanced / quality。
-            let q = match name.as_str() {
-                "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" => "speed",
-                "medium" => "balanced",
-                "slow" | "slower" | "veryslow" => "quality",
-                other => other, // speed / balanced / quality / high_quality 直接透传
-            };
-            vec!["-quality".into(), q.into()]
-        }
-        Some(HwAccelDevice::VAAPI) => {
-            // VAAPI: 使用 -compression_level，1 为最慢/最高画质，7 为最快。
-            let lvl = match name.as_str() {
-                "ultrafast" => "7",
-                "superfast" | "veryfast" => "6",
-                "faster" | "fast" => "5",
-                "medium" => "4",
-                "slow" => "3",
-                "slower" => "2",
-                "veryslow" => "1",
-                other => other, // 数字级别直接透传
-            };
-            vec!["-compression_level".into(), lvl.into()]
-        }
-        Some(HwAccelDevice::VideoToolbox) => {
-            // VideoToolbox 在 FFmpeg 5.0 中移除了 -preset；完全省略该参数。
-            vec![]
-        }
-        None => {
-            let av1_map = |n: &str| -> i32 {
-                match n {
-                    "ultrafast" => 13,
-                    "superfast" => 11,
-                    "veryfast" => 9,
-                    "faster" => 8,
-                    "fast" => 7,
-                    "medium" => 6,
-                    "slow" => 4,
-                    "slower" => 3,
-                    "veryslow" => 1,
-                    _ => 8, // SVT-AV1 默认预设
-                }
-            };
-            let vp9_map = |n: &str| -> i32 {
-                match n {
-                    "ultrafast" => 8,
-                    "superfast" => 7,
-                    "veryfast" => 6,
-                    "faster" => 5,
-                    "fast" => 4,
-                    "medium" => 3,
-                    "slow" => 2,
-                    "slower" => 1,
-                    "veryslow" => 0,
-                    _ => 1, // libvpx-vp9 默认 cpu-used
-                }
-            };
-
-            match config.video_codec {
-                VideoCodec::AV1 => vec!["-preset".into(), av1_map(name).to_string()],
-                VideoCodec::VP9 => vec!["-cpu-used".into(), vp9_map(name).to_string()],
-                _ => vec!["-preset".into(), name.clone()],
-            }
-        }
-    }
-}
-
-/// 根据目标编码器映射码率控制配置。
-///
-/// 硬件及特定软件编码器的码率控制 CLI 选项各不相同：
-/// - NVENC：不支持 -crf；恒定质量使用 `-rc:v vbr -cq <val>`，CQP 使用 `-rc:v constqp -qp <val>`。
-/// - QSV：恒定质量使用 `-global_quality <val>`，CQP 使用 `-q:v <val>`。
-/// - AMF：CQP 使用 `-rc cqp -qp_i <val> -qp_p <val>`。
-/// - VAAPI：`-qp <val>`。
-/// - VideoToolbox：`-q:v <val>`。
-/// - libvpx-vp9：恒定质量需要 `-crf <val> -b:v 0`。
-/// - libsvtav1：不支持 -qp；使用 `-crf <val>`。
-/// - libx264 / libx265：标准的 `-crf <val>` 或 `-qp <val>`。
-fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
-    use crate::encoder::codec::RateControl;
-
-    match &config.video_settings.rate_control {
-        RateControl::Crf { value } => {
-            if encoder.contains("nvenc") {
-                // NVENC VBR 恒定质量模式（所见即所得：UI 设定值直接传入 -cq）：
-                // 1. 必须附加 `-b:v 0`，解除默认 target bitrate 约束，由 -cq 决定质量；
-                // 2. 启用 `-spatial-aq 1`（空间自适应量化）与 `-rc-lookahead 32`（前瞻分析）以显著提升压缩效率。
-                vec![
-                    "-rc:v".into(), "vbr".into(),
-                    "-cq".into(), value.to_string(),
-                    "-b:v".into(), "0".into(),
-                    "-spatial-aq".into(), "1".into(),
-                    "-rc-lookahead".into(), "32".into(),
-                ]
-            } else if encoder.contains("qsv") {
-                vec!["-global_quality".into(), value.to_string()]
-            } else if encoder.contains("amf") {
-                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
-            } else if encoder.contains("vaapi") {
-                vec!["-qp".into(), value.to_string()]
-            } else if encoder.contains("videotoolbox") {
-                vec!["-q:v".into(), value.to_string()]
-            } else if encoder == "libvpx-vp9" {
-                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
-            } else {
-                vec!["-crf".into(), value.to_string()]
-            }
-        }
-        RateControl::Cqp { value } => {
-            if encoder.contains("nvenc") {
-                vec![
-                    "-rc:v".into(), "constqp".into(),
-                    "-qp".into(), value.to_string(),
-                    "-spatial-aq".into(), "1".into(),
-                ]
-            } else if encoder.contains("qsv") {
-                vec!["-q:v".into(), value.to_string()]
-            } else if encoder.contains("amf") {
-                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
-            } else if encoder.contains("vaapi") {
-                vec!["-qp".into(), value.to_string()]
-            } else if encoder.contains("videotoolbox") {
-                vec!["-q:v".into(), value.to_string()]
-            } else if encoder == "libsvtav1" {
-                vec!["-crf".into(), value.to_string()]
-            } else if encoder == "libvpx-vp9" {
-                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
-            } else {
-                vec!["-qp".into(), value.to_string()]
-            }
-        }
-        RateControl::Abr {
-            bitrate_kbps,
-            max_bitrate_kbps,
-        } => {
-            let mut args = vec!["-b:v".into(), format!("{}k", bitrate_kbps)];
-            if let Some(max) = max_bitrate_kbps {
-                args.push("-maxrate".into());
-                args.push(format!("{}k", max));
-                args.push("-bufsize".into());
-                args.push(format!("{}k", max * 2));
-            }
-            args
-        }
-    }
 }
 
 /// 根据输入路径 + 配置构建输出路径（供队列和命令预览共用）
