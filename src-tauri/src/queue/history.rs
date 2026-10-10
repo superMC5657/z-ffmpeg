@@ -1,63 +1,31 @@
-//! 已完成任务的持久化：`jobs` 表中 Completed / Failed / Cancelled 行的
-//! 读写。這些 DB 行比内存队列活得更久（重启、clear_completed 后仍在），是
-//! History 页的数据源；内存调度（入队/推进/取消/并发）仍在 `manager`。
-//!
-//! DB 写原语（`save_job` / `delete_job_db`）也归这里，`manager` 的
-//! add/cancel/retry/complete 经 `pub(crate)` 调用它们。
+//! 历史页的薄实现：jobs 表中 Completed / Failed / Cancelled 行的读取入口。
+//! DB 行比内存队列活得更久（重启、clear_completed 后仍在），是 History 页的数据源。
+//! 全部 SQL 与留存规则归 store::JobStore；此处仅做内存优先、DB 回退经 store 的编排，
+//! 不直触 rusqlite、不手写状态分支.
 
-use super::job::{EncodeJob, JobSnapshot, JobStatus};
+use super::job::JobSnapshot;
 use super::manager::QueueManager;
+use super::store::JobStore;
 
 impl QueueManager {
-    pub(crate) fn save_job(&self, job: &EncodeJob) {
-        let db = self.db.lock().unwrap();
-        let _ = db.execute(
-            "INSERT OR REPLACE INTO jobs (id, input_path, output_path, config_json, status, progress, input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail, created_at, started_at, completed_at, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            rusqlite::params![
-                job.id, job.input_path, job.output_path,
-                serde_json::to_string(&job.config).unwrap_or_default(),
-                job.status.as_str(), job.progress,
-                job.input_size,
-                job.estimated_output_size,
-                job.output_size,
-                job.vmaf_score, job.vmaf_detail,
-                job.created_at, job.started_at, job.completed_at, job.error,
-            ],
-        );
-    }
-
-    pub(crate) fn delete_job_db(&self, id: &str) {
-        let _ = self.db.lock().unwrap().execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![id]);
-    }
-
     /// 从数据库中删除指定的历史条目（已完成 / 失败 / 已取消），
     /// 并从内存队列中同步移除（若存在）。
     pub fn delete_history(&self, ids: &[String]) {
+        self.store.delete_history_rows(ids);
         let mut jobs = self.jobs.write();
-        for id in ids { self.delete_job_db(id); }
         jobs.retain(|j| !ids.contains(&j.id));
     }
 
     /// 从数据库和内存队列中删除所有历史记录条目（已完成 / 失败 / 已取消）。
-    /// 即使在重启后内存队列为空时也能正常生效（与 `clear_completed` 不同）。
+    /// 即使在重启后内存队列为空时也能正常生效（与 clear_completed 不同）。
     pub fn clear_history(&self) {
-        {
-            let db = self.db.lock().unwrap();
-            let _ = db.execute(
-                "DELETE FROM jobs WHERE status IN ('Completed', 'Failed', 'Cancelled')",
-                [],
-            );
-        }
+        self.store.clear_history_rows();
         let mut jobs = self.jobs.write();
-        jobs.retain(|j| !matches!(
-            j.status,
-            JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
-        ));
+        jobs.retain(|j| !JobStore::is_finished(&j.status));
     }
 
     /// 取任务的输入/输出路径（VMAF 计算需要原始与压缩后的成对文件）。
-    /// 先查内存队列；已完成且被移出内存的任务（clear_completed / 重启后）回退查 DB，
+    /// 先查内存队列；已完成且被移出内存的任务（clear_completed / 重启后）回退查 store，
     /// 保证历史任务仍可计算 VMAF。
     pub fn get_job_paths(&self, job_id: &str) -> Option<(String, String)> {
         if let Some(job) = self
@@ -68,44 +36,34 @@ impl QueueManager {
         {
             return Some((job.input_path.clone(), job.output_path.clone()));
         }
-        // 回退：DB 里查（历史任务）
-        let db = self.db.lock().unwrap();
-        db.query_row(
-            "SELECT input_path, output_path FROM jobs WHERE id = ?1",
-            rusqlite::params![job_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .ok()
+        // 回退：store 里查（历史任务）
+        self.store.job_paths_row(job_id)
     }
 
     /// 写入 VMAF 计算结果（平均分 + 各段明细 JSON）。
-    /// 内存队列中的任务直接更新并持久化；已移出内存的任务（历史）直接 UPDATE DB，
+    /// 内存队列中的任务直接更新并经 store 持久化；已移出内存的任务（历史）直接 UPDATE store，
     /// 避免计算结果被静默丢弃。
     pub fn set_vmaf_score(&self, job_id: &str, score: f64, detail_json: Option<String>) {
         let mut jobs = self.jobs.write();
         if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id) {
             job.vmaf_score = Some(score);
             job.vmaf_detail = detail_json;
-            self.save_job(job);
+            self.store.save_job(job);
             return;
         }
         drop(jobs);
-        let db = self.db.lock().unwrap();
-        let _ = db.execute(
-            "UPDATE jobs SET vmaf_score = ?1, vmaf_detail = ?2 WHERE id = ?3",
-            rusqlite::params![score, detail_json, job_id],
-        );
+        self.store.update_vmaf_row(job_id, score, detail_json);
     }
 
     /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
     /// 与内存队列（启动时仅恢复活动任务）不同，数据库会持久保留已结束任务，
     /// 使历史记录在应用重启后依然有效。
     pub fn history(&self) -> Vec<JobSnapshot> {
-        self.history_filtered(None, 0, None, None).0
+        self.store.history()
     }
 
-    /// 带筛选/搜索/分页的历史查询。`status` 过滤单个状态；`search` 对
-    /// input_path 做 LIKE 匹配（%/_ 转义）；`limit == None` 表示不分页。
+    /// 带筛选/搜索/分页的历史查询。status 过滤单个状态；search 对
+    /// input_path 做 LIKE 匹配（%/_ 转义）；limit == None 表示不分页。
     /// 返回 (当前页条目, 匹配总数)，总数供前端计算页数。
     pub fn history_filtered(
         &self,
@@ -114,80 +72,7 @@ impl QueueManager {
         status: Option<&str>,
         search: Option<&str>,
     ) -> (Vec<JobSnapshot>, usize) {
-        let db = self.db.lock().unwrap();
-
-        // 动态拼 WHERE，参数按 ?N 顺序追加
-        let mut where_clauses = vec!["status IN ('Completed', 'Failed', 'Cancelled')".to_string()];
-        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        if let Some(st) = status {
-            params.push(Box::new(st.to_string()));
-            where_clauses.push(format!("status = ?{}", params.len()));
-        }
-        if let Some(q) = search.filter(|s| !s.trim().is_empty()) {
-            // LIKE 通配符转义，用户输入按字面量匹配
-            let like = format!("%{}%", q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-            params.push(Box::new(like));
-            where_clauses.push(format!("input_path LIKE ?{} ESCAPE '\\'", params.len()));
-        }
-
-        let where_sql = where_clauses.join(" AND ");
-
-        // 匹配总数（分页前）
-        let total: usize = match db.prepare(&format!("SELECT COUNT(*) FROM jobs WHERE {where_sql}")) {
-            Ok(mut stmt) => stmt
-                .query_row(
-                    rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap_or(0)
-                .max(0) as usize,
-            Err(_) => 0,
-        };
-
-        let mut sql = format!(
-            "SELECT id, input_path, output_path, status, progress,
-                    input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail,
-                    created_at, started_at, completed_at, error
-             FROM jobs WHERE {where_sql}
-             ORDER BY completed_at DESC, created_at DESC"
-        );
-        if let Some(limit_val) = limit {
-            sql.push_str(" LIMIT ? OFFSET ?");
-            params.push(Box::new(limit_val as i64));
-            params.push(Box::new(offset as i64));
-        }
-
-        let mut stmt = match db.prepare(&sql) {
-            Ok(s) => s,
-            Err(_) => return (vec![], total),
-        };
-
-        let entries = stmt
-            .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
-                let input_path: String = row.get(1)?;
-                Ok(JobSnapshot {
-                    id: row.get(0)?,
-                    input_path: input_path.clone(),
-                    output_path: row.get(2)?,
-                    file_name: crate::encoder::file_name_from_path(&input_path),
-                    status: row.get(3)?,
-                    progress: row.get(4)?,
-                    input_size: row.get(5)?,
-                    estimated_output_size: row.get(6)?,
-                    output_size: row.get(7)?,
-                    vmaf_score: row.get(8)?,
-                    vmaf_detail: row.get(9)?,
-                    created_at: row.get(10)?,
-                    started_at: row.get(11)?,
-                    completed_at: row.get(12)?,
-                    error: row.get(13)?,
-                })
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
-            .unwrap_or_default();
-
-        (entries, total)
+        self.store.history_filtered(limit, offset, status, search)
     }
 }
 

@@ -1,8 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use parking_lot::RwLock;
-use rusqlite::Connection;
 use tauri::{AppHandle, Emitter};
 use crate::encoder::engine;
 use crate::encoder::codec::EncodeConfig;
@@ -10,37 +9,16 @@ use crate::error::{AppResult, LogDisplay};
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus, QueueStatus};
 
 const DEFAULT_MAX_CONCURRENT: usize = 2;
-/// 队列库建表语句（jobs + settings），经 `util::db::open_sqlite_store` 执行。
-const QUEUE_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS jobs (
-                id TEXT PRIMARY KEY,
-                input_path TEXT NOT NULL,
-                output_path TEXT NOT NULL,
-                config_json TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Pending',
-                progress REAL,
-                input_size INTEGER,
-                estimated_output_size INTEGER,
-                output_size INTEGER,
-                vmaf_score REAL,
-                vmaf_detail TEXT,
-                created_at TEXT NOT NULL,
-                started_at TEXT,
-                completed_at TEXT,
-                error TEXT
-            );
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );";
-use crate::queue::settings;
+use crate::queue::store::JobStore;
 use crate::queue::settings::SETTINGS_KEY_MAX_CONCURRENT;
 
 pub struct QueueManager {
-    /// 内存队列与 DB 句柄由 `history` 模块的持久化方法共用（同 crate 可见）。
+    /// 内存调度状态（同 crate 可见，供 history 薄实现协作）。
     pub(crate) jobs: RwLock<VecDeque<EncodeJob>>,
     active_count: RwLock<usize>,
     max_concurrent: RwLock<usize>,
-    pub(crate) db: StdMutex<Connection>,  // 使用 std Mutex，因为 Connection 实现了 Send 但未实现 Sync
+    /// 持久化 seam：全部 SQLite 访问归 store，manager 不再直接持有 Connection。
+    pub(crate) store: JobStore,
     /// 针对每个任务的取消标记。由 `cancel_job` 设置并由编码 worker 读取，
     /// 确保在 ffmpeg 子进程尚未注册的窗口期间（即 `dequeue_next` 与 PROCESSES.insert 之间）取消的任务仍能生效取消。
     cancel_flags: RwLock<HashMap<String, Arc<AtomicBool>>>,
@@ -53,24 +31,17 @@ pub struct QueueManager {
 
 impl QueueManager {
     pub fn new(db_path: &str) -> AppResult<Arc<Self>> {
-        let db = crate::util::db::open_sqlite_store(
-            std::path::Path::new(db_path),
-            QUEUE_INIT_SQL,
-            "queue",
-        )
-        .inspect_err(|e| {
-            let top = e.top_line();
-            log::error!("queue db open failed reason {top}");
-        })?;
+        let store = JobStore::open(db_path)?;
 
-        let max_concurrent = settings::load_usize(&db, SETTINGS_KEY_MAX_CONCURRENT)
+        let max_concurrent = store
+            .load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT)
             .unwrap_or(DEFAULT_MAX_CONCURRENT);
 
         Ok(Arc::new(Self {
-            jobs: RwLock::new(VecDeque::from(Self::load_jobs(&db))),
+            jobs: RwLock::new(VecDeque::from(store.load_active_jobs())),
             active_count: RwLock::new(0),
             max_concurrent: RwLock::new(max_concurrent),
-            db: StdMutex::new(db),
+            store,
             cancel_flags: RwLock::new(HashMap::new()),
             processing: tokio::sync::Mutex::new(()),
             paused: RwLock::new(false),
@@ -79,64 +50,12 @@ impl QueueManager {
 
     /// 读取一个 usize 设置项（settings 表），缺失时返回默认值。
     pub fn get_setting_usize(&self, key: &str, default: usize) -> usize {
-        let db = self.db.lock().unwrap();
-        settings::load_usize(&db, key).unwrap_or(default)
+        self.store.load_setting_usize(key).unwrap_or(default)
     }
 
     /// 写入一个 usize 设置项（settings 表）。
     pub fn set_setting_usize(&self, key: &str, value: usize) {
-        let db = self.db.lock().unwrap();
-        settings::save_usize(&db, key, value);
-    }
-
-    fn load_jobs(db: &Connection) -> Vec<EncodeJob> {
-        let mut stmt = match db.prepare(
-            "SELECT id, input_path, output_path, config_json, status, progress,
-                    input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail, created_at, started_at, completed_at, error
-             FROM jobs WHERE status IN ('Pending', 'Encoding')
-             ORDER BY created_at ASC"
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                let top = e.top_line();
-                log::debug!("queue load jobs skipped reason {top}");
-                return vec![];
-            }
-        };
-
-        stmt.query_map([], |row| {
-            let status_str: String = row.get(4)?;
-            Ok(EncodeJob {
-                id: row.get(0)?,
-                input_path: row.get(1)?,
-                output_path: row.get(2)?,
-                config: serde_json::from_str(&row.get::<_, String>(3)?).ok(),
-                status: JobStatus::from_str(&status_str),
-                progress: row.get(5)?,
-                input_size: row.get(6)?,
-                estimated_output_size: row.get(7)?,
-                output_size: row.get(8)?,
-                vmaf_score: row.get(9)?,
-                vmaf_detail: row.get(10)?,
-                created_at: row.get(11)?,
-                started_at: row.get(12)?,
-                completed_at: row.get(13)?,
-                error: row.get(14)?,
-            })
-        })
-        .ok()
-        .map(|rows| {
-            rows.filter_map(|r| r.ok())
-                .map(|mut j| {
-                    if j.status == JobStatus::Encoding {
-                        // 重启后被中断的任务重新排队
-                        j.status = JobStatus::Pending;
-                    }
-                    j
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+        self.store.save_setting_usize(key, value);
     }
 
     // --- 公共 API ---
@@ -163,7 +82,7 @@ impl QueueManager {
             // 入队时记录原始文件大小（stat，快）；文件已删/不可读时保持 None
             job.input_size = std::fs::metadata(&job.input_path).ok().map(|m| m.len());
             job.estimated_output_size = estimate;
-            self.save_job(&job);
+            self.store.save_job(&job);
             ids.push(job.id.clone());
             // 入队只记一行：id + basename + 队列长度（禁 {:?} 全 dump，config 明细不落盘）
             log::info!("queue enqueued job {} file {} len={}", job.id, job.file_name(), jobs.len() + 1);
@@ -174,40 +93,26 @@ impl QueueManager {
 
     /// 从内存队列中移除任务。
     ///
-    /// Pending/Encoding 状态的条目会同时从数据库中删除（否则重启后会复活）；
-    /// 已结束（Completed / Failed / Cancelled）的条目会被保留——其数据库记录属于历史页面管理，
-    /// 仅由历史记录功能操作（参见 `delete_history` / `clear_history`）。
+    /// DB 侧留存规则唯一拥有者为 `JobStore::remove_from_queue`
+    ///（Pending/Encoding 行删、Finished 行留、未知 ID 不删库）；
+    /// 此处只做内存 retain，不再手写状态分支。
     pub fn remove_jobs(&self, ids: &[String]) {
         let mut jobs = self.jobs.write();
         log::info!("queue remove jobs count={} ids={:?}", ids.len(), ids);
         for id in ids {
-            let is_finished = jobs
-                .iter()
-                .find(|j| &j.id == id)
-                .map(|j| matches!(
-                    j.status,
-                    JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
-                ))
-                // 未知 ID（例如仅在历史记录中残留）：视为已结束任务处理，
-                // 绝不删除不属于队列页面拥有的数据库记录。
-                .unwrap_or(true);
-            if !is_finished {
-                self.delete_job_db(id);
-            }
+            let status = jobs.iter().find(|j| &j.id == id).map(|j| &j.status);
+            self.store.remove_from_queue(id, status);
         }
         jobs.retain(|j| !ids.contains(&j.id));
     }
 
     /// 仅从内存队列中移除已结束的任务（Completed / Failed / Cancelled）。
-    /// 数据库记录会被特意保留——历史页面读取同一张表，
+    /// 数据库记录会被特意保留——历史页面读取 store，
     /// 并通过 `delete_history` / `clear_history` 进行管理，因此队列的“清除已完成”绝不能抹除它们。
     pub fn clear_completed(&self) {
         let mut jobs = self.jobs.write();
         let before = jobs.len();
-        jobs.retain(|j| !matches!(
-            j.status,
-            JobStatus::Completed | JobStatus::Failed | JobStatus::Cancelled
-        ));
+        jobs.retain(|j| !JobStore::is_finished(&j.status));
         let cleared = before - jobs.len();
         log::info!("queue clear completed count={cleared}");
     }
@@ -246,7 +151,7 @@ impl QueueManager {
                 let id = job.id.clone();
                 job.status = JobStatus::Cancelled;
                 job.completed_at = Some(chrono::Utc::now().to_rfc3339());
-                self.save_job(job);
+                self.store.save_job(job);
                 if was_pending {
                     log::warn!("queue cancelled job {id}");
                 }
@@ -275,7 +180,7 @@ impl QueueManager {
         job.completed_at = None;
         job.progress = None;
         job.output_size = None;
-        self.save_job(job);
+        self.store.save_job(job);
         log::warn!("queue retry job {id} file {name} reason {top}");
         crate::analytics::bump(&crate::analytics::COUNTERS.retries, 1);
         true
@@ -309,10 +214,10 @@ impl QueueManager {
                 let top = reason.top_line();
                 let id = job.id.clone();
                 let name = job.file_name();
-                self.save_job(job);
+                self.store.save_job(job);
                 log::error!("queue failed job {id} file {name} reason {top}");
             } else {
-                self.save_job(job);
+                self.store.save_job(job);
             }
         }
     }
@@ -380,8 +285,8 @@ impl QueueManager {
     }
 
     // 历史/持久化方法（get_job_paths / set_vmaf_score / history /
-    // history_filtered / delete_history / clear_history / save_job /
-    // delete_job_db）见 `history.rs`：DB 行比内存队列活得更久，单独成模块。
+    // history_filtered / delete_history / clear_history）见 `history.rs`：
+    // 均为 store 接口之上的薄实现（内存优先、DB 回退经 store）。
 
     fn dequeue_next(&self) -> Option<EncodeJob> {
         let mut jobs = self.jobs.write();
@@ -390,7 +295,7 @@ impl QueueManager {
         job.status = JobStatus::Encoding;
         job.started_at = Some(chrono::Utc::now().to_rfc3339());
         let job = job.clone();
-        self.save_job(&job);
+        self.store.save_job(&job);
         Some(job)
     }
 
