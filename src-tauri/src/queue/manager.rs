@@ -1,10 +1,11 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use parking_lot::RwLock;
 use tauri::{AppHandle, Emitter};
 use crate::encoder::engine;
 use crate::encoder::codec::EncodeConfig;
+use crate::encoder::supervisor;
 use crate::error::{AppResult, LogDisplay};
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus, QueueStatus};
 
@@ -19,9 +20,10 @@ pub struct QueueManager {
     max_concurrent: RwLock<usize>,
     /// 持久化 seam：全部 SQLite 访问归 store，manager 不再直接持有 Connection。
     pub(crate) store: JobStore,
-    /// 针对每个任务的取消标记。由 `cancel_job` 设置并由编码 worker 读取，
-    /// 确保在 ffmpeg 子进程尚未注册的窗口期间（即 `dequeue_next` 与 PROCESSES.insert 之间）取消的任务仍能生效取消。
-    cancel_flags: RwLock<HashMap<String, Arc<AtomicBool>>>,
+    /// 调度期取消标记由 supervisor 注册表拥有（dispatch 时注册，完成后经
+    /// `supervisor::finish_if_same` 按 `Arc::ptr_eq` 移除）；本地不再保留
+    /// 第二份 flag 映射。`cancel_job` 经 supervisor 置位，编码 worker 经
+    /// 传参 flag 读取，覆盖子进程尚未挂接的窗口。
     /// 串行化 `process_queue` 循环，防止并发调用（用户点击按钮与自动推进竞态）产生超出 max_concurrent 的任务。
     processing: tokio::sync::Mutex<()>,
     /// 队列级暂停开关：true 时 can_start 恒为 false，不再自动启动新任务；
@@ -42,7 +44,6 @@ impl QueueManager {
             active_count: RwLock::new(0),
             max_concurrent: RwLock::new(max_concurrent),
             store,
-            cancel_flags: RwLock::new(HashMap::new()),
             processing: tokio::sync::Mutex::new(()),
             paused: RwLock::new(false),
         }))
@@ -134,13 +135,9 @@ impl QueueManager {
     }
 
     pub fn cancel_job(&self, job_id: &str) {
-        // 1. 先触发任务的取消标记——这覆盖了 ffmpeg 子进程尚未注册的时间窗口
-        //    （仍在 blocking worker 队列中，或处于出队与启动之间）。
-        //    `start_encode` 会在启动进程前检查此标记。
-        if let Some(flag) = self.cancel_flags.read().get(job_id) {
-            flag.store(true, Ordering::Relaxed);
-        }
-        // 2. 如果底层的 ffmpeg 进程已经在运行，则终止该进程
+        // 取消语义归 supervisor 注册表：一处置位 flag（含子进程尚未挂接的
+        // 窗口）+ kill 已挂接进程（经 engine 薄委托，语义与搬运前“先设 flag
+        // 再 kill”一致）。恰好一次终态由编码侧状态机保证。
         crate::encoder::engine::cancel_process(job_id);
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
@@ -356,9 +353,9 @@ impl QueueManager {
                 );
 
                 // 共享取消标记：即使在 ffmpeg 子进程创建之前，cancel_job 也可以设置该标记；
-                // start_encode 会在派生进程前进行检查。
+                // start_encode 会在派生进程前进行检查。标记归 supervisor 注册表拥有。
                 let cancel_flag = Arc::new(AtomicBool::new(false));
-                qm.cancel_flags.write().insert(job_id.clone(), cancel_flag.clone());
+                supervisor::dispatch_register(job_id.clone(), cancel_flag.clone());
                 // 消除 dequeue_next 与标记注册之间的时间窗口：
                 // 如果 cancel_job 在该间隙运行而未找到标记，但已将任务标记为 Cancelled，
                 // 则在此予以识别，阻止编码启动。
@@ -386,15 +383,9 @@ impl QueueManager {
                     };
                     // complete_job 绝不覆盖已被用户取消的任务
                     manager.complete_job(&job_id, success, error);
-                    // 仅移除我们自己的取消标记——被重试的任务可能已在相同 ID 下插入了新标记。
-                    {
-                        let mut flags = manager.cancel_flags.write();
-                        if let Some(flag) = flags.get(&job_id) {
-                            if Arc::ptr_eq(flag, &cancel_flag) {
-                                flags.remove(&job_id);
-                            }
-                        }
-                    }
+                    // 仅移除本次调度的注册——被重试的任务可能已在相同 ID 下注册了新标记，
+                    // ptr_eq 语义收进 supervisor 一处。
+                    supervisor::finish_if_same(&job_id, &cancel_flag);
                     manager.dec_active();
 
                     // 发送更新后的队列状态事件

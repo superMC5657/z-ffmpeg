@@ -2,32 +2,21 @@
 //! 参数构建见 `args`，探测见 `probe`，进度结构见 `progress`。
 
 use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter};
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::file_name_from_path;
-use crate::encoder::progress::EncodeProgress;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg;
 
 // 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
-// 本模块只保留进程生命周期管理（start/cancel）与进度循环。
+// 进程监管（注册表/取消状态机/进度块拼装）归 `supervisor`，本模块只做事件→emit 薄映射。
 use super::args::{build_ffmpeg_args_with_bitrate, format_command_line};
 use super::probe::probe_file;
-use super::progress::{compute_percentage, parse_bitrate_kbps};
-
-/// 正在运行的 ffmpeg 进程，已注册以便可以强制终止。
-struct ActiveProcess {
-    cancel: Arc<AtomicBool>,
-    child: std::process::Child,
-}
-
-/// 全局注册表：job_id -> 运行中的 ffmpeg 进程
-static PROCESSES: OnceLock<Mutex<HashMap<String, ActiveProcess>>> = OnceLock::new();
+use super::supervisor::{self, BlockPoller, CancelPoint, Supervision, TerminalOutcome};
 
 /// 编码失败时附加到错误信息中的 stderr 尾部行数（ffmpeg 把真正的报错原因
 /// 写在 stderr 末尾，完整输出太长，尾部几十行足够定位问题）。
@@ -49,45 +38,38 @@ pub struct EncodeResult {
 
 impl EncodeResult {
     /// 取消路径的统一载荷：三处取消分支（spawn 前 / spawn 中 / 运行中）共用。
+    /// 字段语义唯一拥有者为 `supervisor::TerminalOutcome`，此处薄映射保持 wire 形状不变。
     fn cancelled(job_id: String, file_name: String, duration_seconds: f64) -> Self {
+        TerminalOutcome::cancelled(job_id, file_name, duration_seconds).into()
+    }
+}
+
+impl From<TerminalOutcome> for EncodeResult {
+    fn from(t: TerminalOutcome) -> Self {
         Self {
-            job_id,
-            file_name,
-            success: false,
-            output_path: None,
-            output_size_bytes: None,
-            duration_seconds,
-            cancelled: true,
-            error: Some("用户已取消".into()),
+            job_id: t.job_id,
+            file_name: t.file_name,
+            success: t.success,
+            output_path: t.output_path,
+            output_size_bytes: t.output_size_bytes,
+            duration_seconds: t.duration_seconds,
+            cancelled: t.cancelled,
+            error: t.error,
         }
     }
 }
 
 /// 请求取消正在运行的编码任务：设置取消标记并立即终止
 /// ffmpeg 进程（即使 ffmpeg 没有输出时也能立即生效）。
+/// 薄委托：语义归 supervisor 注册表。
 pub fn cancel_process(job_id: &str) -> bool {
-    if let Some(map) = PROCESSES.get() {
-        if let Ok(mut map) = map.lock() {
-            if let Some(proc) = map.get_mut(job_id) {
-                proc.cancel.store(true, Ordering::Relaxed);
-                let _ = proc.child.kill();
-                return true;
-            }
-        }
-    }
-    false
+    supervisor::request_cancel(job_id)
 }
 
 /// 终止所有正在运行的编码子进程（在应用退出时调用）。
+/// 薄委托：语义归 supervisor 注册表。
 pub fn kill_all_processes() {
-    if let Some(map) = PROCESSES.get() {
-        if let Ok(mut map) = map.lock() {
-            for (_job_id, mut proc) in map.drain() {
-                proc.cancel.store(true, Ordering::Relaxed);
-                let _ = proc.child.kill();
-            }
-        }
-    }
+    supervisor::kill_all()
 }
 
 /// 启动编码并通过 Tauri 事件上报进度。
@@ -108,15 +90,16 @@ pub fn start_encode(
     };
 
     // 在探测前启动计时器，使两条取消路径（创建前和
-    // 注册后）都能准确报告耗时。
+    // 注册后）都能准确报告耗时。监管状态机保证三处分支恰好认领一次终态。
     let start_time = std::time::Instant::now();
+    let mut supervision = Supervision::new(cancel.clone());
 
     // 取消请求可能在进程启动前到达——例如任务在等待阻塞工作线程时被取消
-    // （ffmpeg 子进程仅在 spawn 后才注册到 PROCESSES 中，此时 cancel_process
-    // 尚无法找到它）。在此响应标记，使编码根本无需启动。
-    if cancel.load(Ordering::Relaxed) {
-        let elapsed = start_time.elapsed().as_secs_f64();
-        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage pre-spawn elapsed {elapsed:.1}s");
+    // （ffmpeg 子进程仅在 spawn 后才注册，`request_cancel`
+    // 尚无法 kill 它）。在此响应标记，使编码根本无需启动。
+    if supervision.claim_cancellation(CancelPoint::PreSpawn).is_some() {
+        let elapsed = supervision.elapsed_secs();
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed:.1}s", CancelPoint::PreSpawn.as_str());
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, elapsed),
@@ -178,15 +161,8 @@ pub fn start_encode(
     let stdout = child.stdout.take().expect("failed to get stdout");
     let stderr = child.stderr.take().expect("failed to get stderr");
 
-    // 注册进程以便可以通过 job_id 强制终止。
-    PROCESSES
-        .get_or_init(Default::default)
-        .lock()
-        .unwrap()
-        .insert(job_id.clone(), ActiveProcess {
-            cancel: cancel.clone(),
-            child,
-        });
+    // 注册进程以便可以通过 job_id 强制终止（注册表归 supervisor）。
+    supervisor::attach_child(&job_id, supervision.cancel_flag(), child);
     log::info!(
         target: "zffmpeg_lib::encoder",
         "encode started job {job_id} file {file_name} in_size={input_size}B dur={:.1}s cmd: {cmd_preview}",
@@ -196,23 +172,14 @@ pub fn start_encode(
     // 子进程注册后重新检查取消状态：用户可能在 probe/spawn 期间取消了任务，
     // 此时子进程尚未注册，因此 `cancel_process` 无法终止任何进程。
     // 若此时已取消则立即终止——否则编码会在后台持续运行直到完成，
-    // 而 UI 上任务状态却显示为“已取消”。
-    if cancel.load(Ordering::Relaxed) {
-        // 先从注册表中移除进程，并在 wait() 前释放锁——
-        // 阻塞的 kill 操作绝不能阻塞其他 cancel_process 调用。
-        let mut proc_to_kill = None;
-        if let Some(map) = PROCESSES.get() {
-            if let Ok(mut map) = map.lock() {
-                proc_to_kill = map.remove(&job_id);
-            }
-        }
-        if let Some(mut proc) = proc_to_kill {
-            let _ = proc.child.kill();
-            let _ = proc.child.wait();
-        }
+    // 而 UI 上任务状态却显示为“已取消”。终态认领归状态机（恰好一次）。
+    if supervision.claim_cancellation(CancelPoint::PostSpawn).is_some() {
+        // kill + wait 收进 supervisor（锁内只取走 handle，阻塞的 kill/wait
+        // 在锁外——绝不能阻塞其他 cancel 请求，与搬运前一致）。
+        supervisor::kill_and_reap(&job_id);
         let _ = std::fs::remove_file(&output_path);
-        let elapsed = start_time.elapsed().as_secs_f64();
-        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage post-spawn elapsed {elapsed:.1}s");
+        let elapsed = supervision.elapsed_secs();
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed:.1}s", CancelPoint::PostSpawn.as_str());
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, elapsed),
@@ -235,87 +202,44 @@ pub fn start_encode(
 
     // 解析来自 stdout 的 `-progress` 报告。每段报告是一组
     // 以 `progress=continue|end` 结尾的 `key=value` 行。
-    let mut kv: HashMap<String, String> = HashMap::new();
+    // 块轮询与事件拼装归 supervisor（纯逻辑可单测）；此处只做 emit 薄映射。
+    let mut poller = BlockPoller::new(BufReader::new(stdout));
     let mut last_milestone: u32 = 0;
-    for line in BufReader::new(stdout).lines() {
-        if cancel.load(Ordering::Relaxed) {
-            break;
-        }
-
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        let key = key.trim().to_string();
-        let value = value.trim().to_string();
-
-        if key == "progress" {
-            // 一段报告块结束：发送进度事件并重置
-            let percentage = compute_percentage(&kv, total_duration);
-            let elapsed = start_time.elapsed();
-            let total_size_kb = kv
-                .get("total_size")
-                .and_then(|s| s.parse::<u64>().ok())
-                .map(|b| b / 1024)
-                .unwrap_or(0);
-            let progress = EncodeProgress {
-                job_id: job_id.clone(),
-                file_name: file_name.clone(),
-                frame: kv.get("frame").and_then(|s| s.parse().ok()).unwrap_or(0),
-                fps: kv.get("fps").and_then(|s| s.parse().ok()).unwrap_or(0.0),
-                bitrate: kv.get("bitrate").map(|s| parse_bitrate_kbps(s)).unwrap_or(0.0),
-                total_size_kb,
-                // 线性外推预估最终体积；进度为 0（编码刚开始）时没有可靠估算
-                estimated_size_kb: (total_size_kb > 0 && percentage > 0.0)
-                    .then(|| (total_size_kb as f64 * 100.0 / percentage) as u64),
-                elapsed: format!("{:02}:{:02}:{:02}",
-                    elapsed.as_secs() / 3600,
-                    (elapsed.as_secs() % 3600) / 60,
-                    elapsed.as_secs() % 60,
-                ),
-                percentage,
-                speed: kv
-                    .get("speed")
-                    .and_then(|s| s.trim_end_matches('x').parse().ok())
-                    .unwrap_or(0.0),
-                stage: "encoding".into(),
-                time: kv.get("out_time").cloned().unwrap_or_default(),
-            };
-            let _ = app_handle.emit("encode://progress", &progress);
-
-            let pct_u32 = percentage.floor() as u32;
-            if pct_u32 >= last_milestone + 25 && pct_u32 < 100 {
-                last_milestone = (pct_u32 / 25) * 25;
-                log::info!(
-                    target: "zffmpeg_lib::encoder",
-                    "encode progress job {job_id} file {file_name} pct={last_milestone}% fps={:.1} speed={:.2}x",
-                    progress.fps,
-                    progress.speed
+    loop {
+        match poller.poll_block(&supervision) {
+            supervisor::PollOutcome::Cancelled | supervisor::PollOutcome::Eof => break,
+            supervisor::PollOutcome::Block { is_end } => {
+                // 一段报告块结束：发送进度事件并重置
+                let elapsed = start_time.elapsed();
+                let progress = supervisor::assemble_progress_event(
+                    &job_id,
+                    &file_name,
+                    poller.kv(),
+                    total_duration,
+                    elapsed.as_secs(),
                 );
-            }
+                let _ = app_handle.emit("encode://progress", &progress);
 
-            if value == "end" {
-                break;
+                if let Some(milestone) = supervisor::next_milestone(last_milestone, progress.percentage) {
+                    last_milestone = milestone;
+                    log::info!(
+                        target: "zffmpeg_lib::encoder",
+                        "encode progress job {job_id} file {file_name} pct={last_milestone}% fps={:.1} speed={:.2}x",
+                        progress.fps,
+                        progress.speed
+                    );
+                }
+
+                if is_end {
+                    break;
+                }
+                poller.clear_block();
             }
-            kv.clear();
-        } else {
-            kv.insert(key, value);
         }
     }
 
     // 回收子进程（从注册表中移除，防止 cancel_process 重复终止）
-    let status = match PROCESSES.get() {
-        Some(map) => map
-            .lock()
-            .unwrap()
-            .remove(&job_id)
-            .and_then(|mut proc| proc.child.wait().ok()),
-        None => None,
-    };
+    let status = supervisor::reap_child(&job_id);
     let stderr_tail: Vec<String> = stderr_thread
         .join()
         .unwrap_or_default()
@@ -324,10 +248,10 @@ pub fn start_encode(
 
     let elapsed = start_time.elapsed();
 
-    if cancel.load(Ordering::Relaxed) {
+    if supervision.claim_cancellation(CancelPoint::Running).is_some() {
         let _ = std::fs::remove_file(&output_path);
         let elapsed_s = elapsed.as_secs_f64();
-        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage running elapsed {elapsed_s:.1}s");
+        log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed_s:.1}s", CancelPoint::Running.as_str());
         let _ = app_handle.emit(
             "encode://complete",
             EncodeResult::cancelled(job_id, file_name, elapsed_s),
@@ -358,16 +282,13 @@ pub fn start_encode(
             );
             let _ = app_handle.emit(
                 "encode://complete",
-                EncodeResult {
+                EncodeResult::from(TerminalOutcome::completed(
                     job_id,
                     file_name,
-                    success: true,
-                    output_path: Some(output_path),
-                    output_size_bytes: Some(output_size),
-                    duration_seconds: elapsed.as_secs_f64(),
-                    cancelled: false,
-                    error: None,
-                },
+                    output_path,
+                    output_size,
+                    elapsed.as_secs_f64(),
+                )),
             );
             Ok(())
         }
@@ -398,16 +319,12 @@ pub fn start_encode(
 
             let _ = app_handle.emit(
                 "encode://complete",
-                EncodeResult {
+                EncodeResult::from(TerminalOutcome::failed(
                     job_id,
                     file_name,
-                    success: false,
-                    output_path: None,
-                    output_size_bytes: None,
-                    duration_seconds: elapsed.as_secs_f64(),
-                    cancelled: false,
-                    error: Some(error.clone()),
-                },
+                    elapsed.as_secs_f64(),
+                    error.clone(),
+                )),
             );
 
             Err(AppError::EncodingFailed(error))
