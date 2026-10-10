@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use tauri::Emitter;
 
 use crate::error::{AppError, AppResult, LogDisplay};
+use crate::ffmpeg::facade;
 use crate::ffmpeg::library::{self, FfmpegStatus};
 
 /// FFmpeg 下载源列表，按优先级依次尝试：
@@ -37,7 +38,7 @@ pub async fn download_ffmpeg(
     // 串行化下载操作，防止两次并发调用破坏同一个 zip 文件。
     let _lock = DOWNLOAD_LOCK.lock().await;
 
-    let install_dir = library::local_install_dir(&crate::get_data_dir(app));
+    let install_dir = facade::local_install_dir(&crate::get_data_dir(app));
     std::fs::create_dir_all(&install_dir)?;
 
     let zip_path = install_dir.join("ffmpeg-download.zip");
@@ -80,7 +81,7 @@ pub async fn download_ffmpeg(
     let (ffmpeg_path, ffprobe_path, status) =
         crate::error::flatten_blocking_result(join_result)
             .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
-    library::set_installed_paths(ffmpeg_path, Some(ffprobe_path));
+    facade::set_installed_paths(ffmpeg_path, Some(ffprobe_path));
     *status_lock.lock() = status.clone();
 
     Ok(status)
@@ -206,7 +207,7 @@ fn install_from_url(
 /// 当二进制无法运行时（例如代理返回的错误页面伪装文件或被系统拦截的可执行文件），
 /// 此处直接判定整个安装失败。
 fn verify_binary(ffmpeg_path: &Path) -> AppResult<()> {
-    let output = crate::ffmpeg::hidden_command(ffmpeg_path)
+    let output = crate::ffmpeg::facade::hidden_command(ffmpeg_path)
         .arg("-version")
         .output()
         .map_err(|e| AppError::Ffmpeg(format!("无法启动 ffmpeg 进程: {e}")))?;

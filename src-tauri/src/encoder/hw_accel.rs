@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::ffmpeg;
+use crate::ffmpeg::facade;
 
 /// 硬件加速器类型及其编码器前缀和候选编解码器
 const HW_ENCODERS: &[(&str, &str, &[&str])] = &[
@@ -206,10 +206,9 @@ pub fn detect_all_with_gpus(
     platform: &str,
     gpus: &[DiscoveredGpu],
 ) -> Vec<HwAccelInfo> {
-    let available_encoders = match ffmpeg::get_ffmpeg_path() {
-        Some(path) => query_encoders(&path),
-        None => vec![],
-    };
+    // 能力查询经门面（全局缓存 + 单一 -encoders 解析）；注入形态走
+    // `detect_all_inner` 传 fake 编码器列表。
+    let available_encoders = facade::available_encoders();
     detect_all_inner(cpu_brand, platform, gpus, &available_encoders)
 }
 
@@ -310,31 +309,6 @@ fn platform_supports_device_fallback(device: &str, cpu_brand: &str, platform: &s
         "AMF" => (platform == "windows" || platform == "linux") && is_amd,
         _ => true,
     }
-}
-
-/// 查询 ffmpeg -encoders 并解析编码器列表
-fn query_encoders(ffmpeg_path: &std::path::PathBuf) -> Vec<String> {
-    let output = match ffmpeg::hidden_command(ffmpeg_path)
-        .args(["-encoders"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(_) => return vec![],
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .filter(|l| l.starts_with(" V"))  // 仅保留视频编码器
-        .filter_map(|l| {
-            let parts: Vec<&str> = l.split_whitespace().collect();
-            if parts.len() >= 3 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 /// 设备类型回退时的通用易读 GPU 名称

@@ -13,7 +13,7 @@ use crate::encoder::codec::ensure_even_dimension;
 use crate::encoder::file_name_from_path;
 use crate::encoder::probe;
 use crate::error::{AppError, AppResult};
-use crate::ffmpeg;
+use crate::ffmpeg::facade;
 
 /// 默认采样段数与每段时长（秒）
 pub const DEFAULT_SEGMENTS: usize = 4;
@@ -55,19 +55,12 @@ pub fn plan_segments(duration: f64, count: usize, max_len: f64) -> Vec<VmafSegme
         .collect()
 }
 
-/// 检测当前 ffmpeg 是否编译了 libvmaf 滤镜（`ffmpeg -filters`）。
+/// 检测当前 ffmpeg 是否编译了 libvmaf 滤镜（`ffmpeg -filters`，经门面查询）。
 pub fn ffmpeg_supports_vmaf() -> bool {
-    let Ok(ffmpeg_path) = ffmpeg::get_ffmpeg_path().ok_or(AppError::FfmpegNotFound) else {
+    let Some(ffmpeg_path) = facade::get_ffmpeg_path() else {
         return false;
     };
-    let Ok(output) = ffmpeg::hidden_command(ffmpeg_path)
-        .args(["-hide_banner", "-filters"])
-        .output()
-    else {
-        return false;
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.lines().any(|l| l.contains("libvmaf"))
+    facade::supports_libvmaf(&ffmpeg_path)
 }
 
 /// 视频信息（VMAF 计算所需的最小集）
@@ -165,8 +158,7 @@ fn run_segment(
 ) -> AppResult<f64> {
     let args = build_segment_args(reference, distorted, seg, info, log_file_name, n_threads);
 
-    let output = ffmpeg::hidden_command(ffmpeg_path)
-        .current_dir(work_dir)
+    let output = facade::hidden_command_in(ffmpeg_path, work_dir)
         .args(&args)
         .stderr(std::process::Stdio::piped())
         .output()
@@ -231,7 +223,7 @@ pub fn compute_vmaf_sampled(
             "当前 ffmpeg 未编译 libvmaf 滤镜，无法计算 VMAF 得分".into(),
         ));
     }
-    let ffmpeg_path = ffmpeg::get_ffmpeg_path()
+    let ffmpeg_path = facade::get_ffmpeg_path()
         .ok_or(AppError::FfmpegNotFound)?;
 
     // 探测参考视频规格（失真视频可能已缩放/改帧率，一律对齐到参考）

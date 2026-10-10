@@ -1,9 +1,7 @@
 use std::path::{Path, PathBuf};
-use parking_lot::Mutex;
-use crate::error::AppResult;
 
-static FFMPEG_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
-static FFPROBE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
+use crate::error::AppResult;
+use crate::ffmpeg::facade;
 
 /// 表示当前系统上的 FFmpeg 状态
 #[derive(Debug, Clone, serde::Serialize)]
@@ -14,35 +12,6 @@ pub struct FfmpegStatus {
     pub ffmpeg_path: Option<String>,
     pub ffprobe_path: Option<String>,
     pub codecs: Vec<String>,
-}
-
-/// 当前平台对应的可执行文件名
-fn exe_name(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{}.exe", name)
-    } else {
-        name.to_string()
-    }
-}
-
-/// 在系统环境变量 PATH 中查找指定可执行文件
-fn find_in_path(name: &str) -> Option<PathBuf> {
-    let exe_name = exe_name(name);
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths).find_map(|dir| {
-            let full_path = dir.join(&exe_name);
-            if full_path.is_file() {
-                Some(full_path)
-            } else {
-                None
-            }
-        })
-    })
-}
-
-/// 本应用安装 FFmpeg 的目标目录：{app_data_dir}/ffmpeg。
-pub fn local_install_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("ffmpeg")
 }
 
 /// 初始化 FFmpeg 检测。在应用启动时调用一次。
@@ -62,7 +31,7 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
     if status.available {
         let version = status.version.as_deref().unwrap_or("unknown");
         let kind = match status.ffmpeg_path.as_deref() {
-            Some(p) if Path::new(p).starts_with(local_install_dir(data_dir)) => "bundled",
+            Some(p) if Path::new(p).starts_with(facade::local_install_dir(data_dir)) => "bundled",
             _ => "external",
         };
         log::info!("ffmpeg detected {kind} version {version}");
@@ -78,43 +47,34 @@ pub fn init_ffmpeg(data_dir: &Path) -> FfmpegStatus {
         log::info!("ffmpeg missing");
     }
 
-    *FFMPEG_PATH.lock() = ffmpeg;
-    *FFPROBE_PATH.lock() = ffprobe;
+    facade::set_resolved_paths(ffmpeg, ffprobe);
 
     status
 }
 
-/// 检测系统中安装的 FFmpeg
+/// 检测系统中安装的 FFmpeg（二进制解析经门面，优先级链不变）。
 fn detect_ffmpeg(data_dir: &Path) -> AppResult<FfmpegStatus> {
-    // 尝试从系统环境变量 PATH 中查找
-    if let Some(ffmpeg_path) = find_in_path("ffmpeg") {
-        let ffprobe_path = find_in_path("ffprobe")
-            .or_else(|| find_local_install(&local_install_dir(data_dir)).map(|(_, p)| p));
-        return get_status_from_paths(ffmpeg_path, ffprobe_path);
-    }
-
-    // 尝试从本地安装目录（由应用自动下载）中查找。
-    if let Some((ffmpeg_path, ffprobe_path)) = find_local_install(&local_install_dir(data_dir)) {
-        return get_status_from_paths(ffmpeg_path, Some(ffprobe_path));
-    }
-
-    // 未找到
-    Ok(FfmpegStatus {
-        available: false,
-        version: None,
-        ffmpeg_path: None,
-        ffprobe_path: None,
-        codecs: vec![],
-    })
+    let (ffmpeg_path, ffprobe_path) = facade::resolve_paths(data_dir);
+    status_for_resolved(ffmpeg_path, ffprobe_path)
 }
 
-/// 检查本地安装目录下的 FFmpeg 可执行二进制文件。
-/// 必须同时包含 ffmpeg 和 ffprobe 两个二进制文件，
-/// 避免将仅解压一半的文件（如解压中断）误判为可用安装。
-pub(crate) fn find_local_install(install_dir: &std::path::Path) -> Option<(PathBuf, PathBuf)> {
-    let ffmpeg_path = install_dir.join(exe_name("ffmpeg"));
-    let ffprobe_path = install_dir.join(exe_name("ffprobe"));
-    (ffmpeg_path.is_file() && ffprobe_path.is_file()).then_some((ffmpeg_path, ffprobe_path))
+/// 已解析路径 → 状态的纯映射（可单测，无环境依赖）：
+/// 有 ffmpeg 则聚合版本/编码器（缺二进制吞错见 `get_status_from_paths`），
+/// 否则不可用。
+fn status_for_resolved(
+    ffmpeg_path: Option<PathBuf>,
+    ffprobe_path: Option<PathBuf>,
+) -> AppResult<FfmpegStatus> {
+    match ffmpeg_path {
+        Some(ffmpeg_path) => get_status_from_paths(ffmpeg_path, ffprobe_path),
+        None => Ok(FfmpegStatus {
+            available: false,
+            version: None,
+            ffmpeg_path: None,
+            ffprobe_path: None,
+            codecs: vec![],
+        }),
+    }
 }
 
 /// 从已知的 FFmpeg 路径获取详细状态
@@ -122,8 +82,8 @@ pub fn get_status_from_paths(
     ffmpeg_path: PathBuf,
     ffprobe_path: Option<PathBuf>,
 ) -> AppResult<FfmpegStatus> {
-    let version = get_ffmpeg_version(&ffmpeg_path).ok();
-    let codecs = get_available_encoders(&ffmpeg_path).unwrap_or_default();
+    let version = facade::query_version(&ffmpeg_path);
+    let codecs = facade::query_encoders(&ffmpeg_path);
 
     Ok(FfmpegStatus {
         available: true,
@@ -134,78 +94,10 @@ pub fn get_status_from_paths(
     })
 }
 
-/// 更新全局缓存的二进制文件路径（在自动下载完成后调用）。
-pub fn set_installed_paths(ffmpeg: PathBuf, ffprobe: Option<PathBuf>) {
-    *FFMPEG_PATH.lock() = Some(ffmpeg);
-    *FFPROBE_PATH.lock() = ffprobe;
-}
-
-/// 执行 ffmpeg -version 并解析输出
-fn get_ffmpeg_version(ffmpeg_path: &PathBuf) -> AppResult<String> {
-    let output = crate::ffmpeg::hidden_command(ffmpeg_path)
-        .arg("-version")
-        .output()
-        .map_err(|e| crate::error::AppError::Ffmpeg(format!("Failed to run ffmpeg: {}", e)))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let version = stdout.lines().next().unwrap_or("unknown").trim().to_string();
-    Ok(version)
-}
-
-/// 获取所有可用的编码器列表
-fn get_available_encoders(ffmpeg_path: &PathBuf) -> AppResult<Vec<String>> {
-    let output = crate::ffmpeg::hidden_command(ffmpeg_path)
-        .args(["-encoders"])
-        .output()
-        .map_err(|e| crate::error::AppError::Ffmpeg(format!("Failed to list encoders: {}", e)))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let codecs: Vec<String> = stdout
-        .lines()
-        .filter(|l| l.starts_with(" V") || l.starts_with(" A"))
-        .filter_map(|l| {
-            let parts: Vec<&str> = l.split_whitespace().collect();
-            if parts.len() >= 3 {
-                Some(parts[1].to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    Ok(codecs)
-}
-
-/// 检查 FFmpeg 是否已就绪
-///
-/// 仅测试使用（`mod tests` 里断言全局缓存就绪状态）；生产代码走
-/// `get_status_from_paths`，故 `#[cfg(test)]` 限定编译范围，消除 dead_code 警告。
-#[cfg(test)]
-pub fn is_ffmpeg_ready() -> bool {
-    FFMPEG_PATH
-        .lock()
-        .as_ref()
-        .map(|p| p.exists())
-        .unwrap_or(false)
-}
-
-/// 获取当前缓存的 ffmpeg 路径
-pub fn get_ffmpeg_path() -> Option<PathBuf> {
-    FFMPEG_PATH.lock().clone()
-}
-
-/// 获取当前缓存的 ffprobe 路径
-pub fn get_ffprobe_path() -> Option<PathBuf> {
-    FFPROBE_PATH.lock().clone()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// 串行化所有会修改进程级环境(PATH)或全局静态缓存的测试,
-    /// 避免并行测试互相干扰。
-    static ENV_LOCK: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+    use crate::ffmpeg::facade::Binaries;
 
     fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -220,29 +112,29 @@ mod tests {
     #[test]
     fn exe_name_appends_exe_on_windows() {
         if cfg!(windows) {
-            assert_eq!(exe_name("ffmpeg"), "ffmpeg.exe");
-            assert_eq!(exe_name("ffprobe"), "ffprobe.exe");
+            assert_eq!(facade::exe_name("ffmpeg"), "ffmpeg.exe");
+            assert_eq!(facade::exe_name("ffprobe"), "ffprobe.exe");
         } else {
-            assert_eq!(exe_name("ffmpeg"), "ffmpeg");
+            assert_eq!(facade::exe_name("ffmpeg"), "ffmpeg");
         }
     }
 
     #[test]
     fn find_local_install_requires_both_binaries() {
         let dir = temp_dir("local-install");
-        let ffmpeg = dir.join("ffmpeg.exe");
-        let ffprobe = dir.join("ffprobe.exe");
+        let ffmpeg = dir.join(facade::exe_name("ffmpeg"));
+        let ffprobe = dir.join(facade::exe_name("ffprobe"));
 
         // 空目录 → 未安装
-        assert!(find_local_install(&dir).is_none());
+        assert!(facade::find_local_install(&dir).is_none());
 
         // 只有 ffmpeg,缺 ffprobe → 视为残缺安装,不判定可用
         std::fs::write(&ffmpeg, b"x").unwrap();
-        assert!(find_local_install(&dir).is_none());
+        assert!(facade::find_local_install(&dir).is_none());
 
         // 两者都在 → 安装
         std::fs::write(&ffprobe, b"x").unwrap();
-        let found = find_local_install(&dir).unwrap();
+        let found = facade::find_local_install(&dir).unwrap();
         assert_eq!(found.0, ffmpeg);
         assert_eq!(found.1, ffprobe);
 
@@ -252,7 +144,7 @@ mod tests {
     #[test]
     fn get_status_from_paths_swallows_missing_binary() {
         let dir = temp_dir("status-missing");
-        // 路径不存在:version/codecs 查询被 .ok()/unwrap_or_default() 吞掉,
+        // 路径不存在:version/codecs 查询被吞掉,
         // 行为是 available=true 但 version=None、codecs=[] —— 固化该契约,
         // 下载流程已用 verify_binary 前置拦截,此函数只做状态聚合。
         let status = get_status_from_paths(dir.join("nope.exe"), None).unwrap();
@@ -268,79 +160,65 @@ mod tests {
 
     #[test]
     fn installed_paths_cache_roundtrip_and_readiness() {
-        let _guard = ENV_LOCK.lock();
-        // 重置全局缓存,保证测试与执行顺序无关
-        *FFMPEG_PATH.lock() = None;
-        *FFPROBE_PATH.lock() = None;
-
+        // 经门面本地 handle 走：不碰全局量、不串行，可并行
         let dir = temp_dir("cache-roundtrip");
         let ffmpeg = dir.join("ffmpeg.exe");
         let ffprobe = dir.join("ffprobe.exe");
         std::fs::write(&ffmpeg, b"x").unwrap();
         std::fs::write(&ffprobe, b"x").unwrap();
 
-        // 重置后为空
-        assert!(get_ffmpeg_path().is_none());
-        assert!(!is_ffmpeg_ready());
+        let mut h = Binaries::default();
+        assert!(h.get_ffmpeg().is_none());
+        assert!(!h.is_ready());
 
-        set_installed_paths(ffmpeg.clone(), Some(ffprobe.clone()));
-        assert_eq!(get_ffmpeg_path(), Some(ffmpeg.clone()));
-        assert_eq!(get_ffprobe_path(), Some(ffprobe.clone()));
-        assert!(is_ffmpeg_ready());
+        h.set_installed(ffmpeg.clone(), Some(ffprobe.clone()));
+        assert_eq!(h.get_ffmpeg(), Some(ffmpeg.clone()));
+        assert_eq!(h.get_ffprobe(), Some(ffprobe.clone()));
+        assert!(h.is_ready());
 
         // 指向不存在的文件 → 不 ready
-        set_installed_paths(dir.join("ghost.exe"), Some(ffprobe.clone()));
-        assert!(!is_ffmpeg_ready());
+        h.set_installed(dir.join("ghost.exe"), Some(ffprobe.clone()));
+        assert!(!h.is_ready());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn find_in_path_finds_and_misses() {
-        let _guard = ENV_LOCK.lock();
+        // 显式 PATH 取值注入：不读写进程级环境，可并行
         let dir = temp_dir("find-in-path");
-        std::fs::write(dir.join("ffmpeg.exe"), b"x").unwrap();
+        std::fs::write(dir.join(facade::exe_name("ffmpeg")), b"x").unwrap();
 
-        let old_path = std::env::var_os("PATH");
-        std::env::set_var("PATH", &dir);
+        let path_var = std::ffi::OsString::from(dir.as_os_str());
+        let found = facade::find_in_path_in(&path_var, "ffmpeg");
+        assert_eq!(found, Some(dir.join(facade::exe_name("ffmpeg"))));
+        assert!(facade::find_in_path_in(&path_var, "ffprobe").is_none());
 
-        let found = find_in_path("ffmpeg");
-        assert_eq!(found, Some(dir.join("ffmpeg.exe")));
-        assert!(find_in_path("ffprobe").is_none());
-
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn detect_ffmpeg_picks_up_path_install() {
-        let _guard = ENV_LOCK.lock();
+        // 注入 fake 检索：PATH 双命中 → 取 PATH，无子进程、无环境篡改
         let dir = temp_dir("detect-path");
-        // 空 exe 文件:detect 会尝试跑子进程(Windows 下失败被吞),
-        // 但仍应报告 available=true(路径存在),version=None
-        std::fs::write(dir.join("ffmpeg.exe"), b"").unwrap();
-        std::fs::write(dir.join("ffprobe.exe"), b"").unwrap();
+        let ffmpeg = dir.join("ffmpeg.exe");
+        let ffprobe = dir.join("ffprobe.exe");
 
-        let old_path = std::env::var_os("PATH");
-        std::env::set_var("PATH", &dir);
-
-        // 空 data_dir → 本地安装分支必然不命中,只走 PATH 分支
-        let status = detect_ffmpeg(&temp_dir("detect-empty-data")).unwrap();
-        assert!(status.available);
-        assert_eq!(
-            status.ffmpeg_path.as_deref(),
-            Some(dir.join("ffmpeg.exe").to_string_lossy().as_ref())
+        let (ff, fp) = facade::resolve_paths_with(
+            &temp_dir("detect-empty-data"),
+            &|n| match n {
+                "ffmpeg" => Some(ffmpeg.clone()),
+                "ffprobe" => Some(ffprobe.clone()),
+                _ => None,
+            },
+            &|_| None,
         );
-        // 空文件无法执行 → version 查询失败被吞,保持 None
-        assert!(status.version.is_none());
+        assert_eq!(ff, Some(ffmpeg.clone()));
+        assert_eq!(fp, Some(ffprobe.clone()));
 
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
+        // 空文件无法执行 → 版本查询吞为 None（与搬运前 detect 吞错一致）
+        assert!(facade::query_version(&ffmpeg).is_none());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -348,60 +226,55 @@ mod tests {
     fn local_install_dir_under_data_dir() {
         // 结构必须是 {data_dir}/ffmpeg
         let data_dir = temp_dir("install-dir");
-        let dir = local_install_dir(&data_dir);
+        let dir = facade::local_install_dir(&data_dir);
         assert_eq!(dir, data_dir.join("ffmpeg"));
         let _ = std::fs::remove_dir_all(&data_dir);
     }
 
     #[test]
     fn detect_ffmpeg_returns_not_found_when_nothing_available() {
-        let _guard = ENV_LOCK.lock();
-        // PATH 指向空目录 + 本地安装目录(真实 data_dir)大概率不存在,
-        // 但为防本地恰好装过,这里不强制本地分支——只断言 PATH 分支
-        // 在空 PATH 下不误报。
+        // 注入全 miss：解析得 (None, None) → 状态不可用，无环境篡改
         let dir = temp_dir("detect-empty");
-        let old_path = std::env::var_os("PATH");
-        std::env::set_var("PATH", &dir);
+        let (ff, fp) = facade::resolve_paths_with(&dir, &|_| None, &|_| None);
+        assert!(ff.is_none());
+        assert!(fp.is_none());
+        let status = status_for_resolved(ff, fp).unwrap();
+        assert!(!status.available);
 
-        // PATH 无 ffmpeg 时,find_in_path 返回 None
-        assert!(find_in_path("ffmpeg").is_none());
-
-        match old_path {
-            Some(p) => std::env::set_var("PATH", p),
-            None => std::env::remove_var("PATH"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn get_ffmpeg_version_parses_first_line() {
-        // get_ffmpeg_version 不存在的路径 → Err(与 get_status_from_paths 的
-        // 吞错不同,它直接暴露失败)
+    fn query_version_returns_none_on_missing_path() {
+        // 注入形态：缺失二进制 → None（原 get_ffmpeg_version 的 Err 吞为 None，
+        // 状态聚合契约见 get_status_from_paths_swallows_missing_binary）
         let dir = temp_dir("version-missing");
-        let err = get_ffmpeg_version(&dir.join("nope.exe")).unwrap_err();
-        assert!(err.to_string().contains("Failed to run ffmpeg"), "got: {err}");
+        assert!(facade::query_version(&dir.join("nope.exe")).is_none());
+        assert_eq!(
+            facade::parse_version_output("ffmpeg version 7.1\nbuilt with gcc\n"),
+            "ffmpeg version 7.1"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn get_available_encoders_returns_err_on_missing_path() {
+    fn query_encoders_returns_empty_on_missing_path() {
+        // 注入形态：缺失二进制 → 空列表（原 Err 吞为空）
         let dir = temp_dir("encoders-missing");
-        let result = get_available_encoders(&dir.join("nope.exe"));
-        assert!(result.is_err());
+        assert!(facade::query_encoders(&dir.join("nope.exe")).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn ffprobe_path_roundtrip() {
-        let _guard = ENV_LOCK.lock();
-        *FFMPEG_PATH.lock() = None;
-        *FFPROBE_PATH.lock() = None;
+        // 经门面本地 handle 走：不碰全局量，可并行
         let dir = temp_dir("ffprobe-roundtrip");
         let ffprobe = dir.join("ffprobe.exe");
         std::fs::write(&ffprobe, b"x").unwrap();
 
-        set_installed_paths(dir.join("ffmpeg.exe"), Some(ffprobe.clone()));
-        assert_eq!(get_ffprobe_path(), Some(ffprobe));
+        let mut h = Binaries::default();
+        h.set_installed(dir.join("ffmpeg.exe"), Some(ffprobe.clone()));
+        assert_eq!(h.get_ffprobe(), Some(ffprobe));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter};
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::file_name_from_path;
 use crate::error::{AppError, AppResult};
-use crate::ffmpeg;
+use crate::ffmpeg::facade;
 
 // 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
 // 进程监管（注册表/取消状态机/进度块拼装）归 `supervisor`，本模块只做事件→emit 薄映射。
@@ -84,7 +84,7 @@ pub fn start_encode(
 ) -> AppResult<()> {
     let file_name = file_name_from_path(&input_path);
 
-    let Some(ffmpeg_path) = ffmpeg::get_ffmpeg_path() else {
+    let Some(ffmpeg_path) = facade::get_ffmpeg_path() else {
         log::error!(target: "zffmpeg_lib::encoder", "encode ffmpeg not found job {job_id} file {file_name}");
         return Err(AppError::FfmpegNotFound);
     };
@@ -148,7 +148,7 @@ pub fn start_encode(
     // `-progress pipe:1` 将机器可读的 key=value 报告写入 stdout——
     // 当 ffmpeg 使用管道 stdio 启动时，这是可靠的进度来源
     // （其在 stderr 上的易读统计信息仅在终端下输出）。
-    let mut child = ffmpeg::hidden_command(ffmpeg_path)
+    let mut child = facade::hidden_command(ffmpeg_path)
         .args(args)
         .arg("-progress")
         .arg("pipe:1")

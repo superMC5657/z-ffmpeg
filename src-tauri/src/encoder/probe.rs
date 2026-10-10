@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::encoder::codec::parse_fraction_fps;
 use crate::encoder::file_name_from_path;
 use crate::error::{AppError, AppResult};
-use crate::ffmpeg;
+use crate::ffmpeg::facade;
 
 /// 由 probe_file 返回的文件元信息结构体
 /// serde 形状（camelCase）与前端 `src/types/index.ts` 对齐，禁止改动。
@@ -53,10 +53,10 @@ fn parse_ffprobe_stdout(stdout: &[u8]) -> AppResult<serde_json::Value> {
 
 /// 运行 ffprobe 获取文件信息（阻塞执行——需在 spawn_blocking 上下文中调用）。
 pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
-    let ffprobe = ffmpeg::get_ffprobe_path()
+    let ffprobe = facade::get_ffprobe_path()
         .ok_or(AppError::FfmpegNotFound)?;
 
-    let output = ffmpeg::hidden_command(ffprobe)
+    let output = facade::hidden_command(ffprobe)
         .args(ffprobe_args(input_path))
         .output()
         .map_err(|e| AppError::Ffmpeg(format!("ffprobe failed: {}", e)))?;
@@ -66,10 +66,10 @@ pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
 
 /// 异步运行 ffprobe 获取文件信息——不会阻塞异步运行时线程。
 pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> {
-    let ffprobe = ffmpeg::get_ffprobe_path()
+    let ffprobe = facade::get_ffprobe_path()
         .ok_or(AppError::FfmpegNotFound)?;
 
-    let mut cmd = crate::ffmpeg::async_hidden_command(ffprobe);
+    let mut cmd = facade::async_hidden_command(ffprobe);
     let output = cmd
         .args(ffprobe_args(input_path))
         .output()
