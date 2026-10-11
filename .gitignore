@@ -34,3 +34,7 @@ reasonix.toml
 .reasonix
 .zcode/
 .omo
+
+# deepwork local state
+.slim/deepwork/
+
