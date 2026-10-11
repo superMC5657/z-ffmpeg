@@ -462,7 +462,7 @@ mod tests {
         }
         assert_eq!(store.history().len(), 3);
 
-        store.delete_history_rows(&[b.id.clone()]);
+        store.delete_history_rows(std::slice::from_ref(&b.id));
         let hist = store.history();
         assert_eq!(hist.len(), 2);
         assert!(hist.iter().all(|h| h.id != b.id));
