@@ -42,6 +42,8 @@ export default function PresetSelector() {
         const codec = config.videoCodec;
         if (codec && found.supportedCodecs) {
           const codecL = codec.toLowerCase();
+          // Copy 为流复制，不依赖硬件编码器，不过滤
+          if (codecL === "copy") return true;
           return found.supportedCodecs.some((c) => {
             const cl = c.codec.toLowerCase();
             if (codecL === "h264") return cl === "h264";

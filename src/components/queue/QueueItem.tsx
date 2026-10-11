@@ -1,6 +1,7 @@
 import { X, RotateCw, Square, Gauge } from "lucide-react";
 import { useState } from "react";
-import { isEncodeProgress, type EncodeJob } from "@/types";
+import { type EncodeJob } from "@/types";
+import { isEncodeProgressStrict } from "@/lib/progress";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore, showErrorToast } from "@/store/toastStore";
 import { computeVmaf } from "@/lib/tauri";
@@ -51,7 +52,7 @@ export default function QueueItem({ job }: QueueItemProps) {
       : `均匀采样 ${vmafSegmentsSetting} 段 × 5 秒计算 VMAF 得分`;
 
   const fileName =
-    (isEncodeProgress(job.progress) ? job.progress.fileName : undefined) ||
+    (isEncodeProgressStrict(job.progress) ? job.progress.fileName : undefined) ||
     getFileName(job.inputPath);
 
   return (

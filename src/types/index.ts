@@ -2,7 +2,8 @@
 // 编解码器相关类型
 // ============================================================
 
-export type VideoCodec = "H264" | "H265" | "AV1" | "VP9";
+/** 与后端 VideoCodec 对齐（含 Copy 流复制：args.rs 直接走 `-c:v copy`） */
+export type VideoCodec = "H264" | "H265" | "AV1" | "VP9" | "Copy";
 
 export type AudioCodec = "AAC" | "Opus" | "Copy" | "None";
 
@@ -119,11 +120,19 @@ export interface EncodeProgress {
 }
 
 /**
- * EncodeProgress 类型守卫：区分实时进度对象与后端快照的数字百分比。
- * 也可直接用于判断 progress 是否为实时进度（不要求全字段校验）。
+ * EncodeProgress 类型守卫（严格）：必须是对象且携带数值型关键字段
+ * （percentage / percent / progress 之一），任意 object 不再通过。
+ * 新代码请使用 `@/lib/progress` 的 isEncodeProgressStrict / normalizeProgress，
+ * 此处保留同名导出以兼容旧调用方。
  */
 export function isEncodeProgress(p: unknown): p is EncodeProgress {
-  return typeof p === "object" && p !== null;
+  if (typeof p !== "object" || p === null) return false;
+  const o = p as Record<string, unknown>;
+  return (
+    typeof o.percentage === "number" ||
+    typeof o.percent === "number" ||
+    typeof o.progress === "number"
+  );
 }
 
 export interface EncodeResult {
@@ -153,7 +162,11 @@ export interface EncodeJob {
   id: string;
   inputPath: string;
   outputPath: string;
-  codecConfig: CodecConfig;
+  /**
+   * 编码配置：前端本地构造入队时携带；后端 JobSnapshot 不带该字段
+   * （Rust 侧 `#[serde(skip)]`），故为可选，消费方不得假设其存在。
+   */
+  codecConfig?: CodecConfig;
   status: JobStatus;
   /** 原始文件体积（字节），入队时读取；用于完成时计算压缩率 */
   inputSize: number | null;

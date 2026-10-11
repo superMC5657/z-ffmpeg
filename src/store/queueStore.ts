@@ -1,11 +1,6 @@
 import { create } from "zustand";
-import {
-  isEncodeProgress,
-  type EncodeJob,
-  type EncodeProgress,
-  type JobStatus,
-  type CodecConfig,
-} from "@/types";
+import type { EncodeJob, EncodeProgress, JobStatus, CodecConfig } from "@/types";
+import { isEncodeProgressStrict } from "@/lib/progress";
 import {
   addToQueue,
   removeFromQueue,
@@ -192,6 +187,8 @@ export const useQueueStore = create<QueueState>((set, get) => ({
               ...j,
               status,
               error: error || null,
+              // 本地先合成完成时间，保证 UI 即时翻转；下一次 queue://updated
+              // 到达时以后端快照的 completed_at 为准（见 setJobs 合并逻辑）。
               completedAt:
                 status === "Completed" || status === "Failed"
                   ? new Date().toISOString()
@@ -204,16 +201,27 @@ export const useQueueStore = create<QueueState>((set, get) => ({
 
   setJobs: (jobs) =>
     set((s) => ({
-      // 后端队列快照的 progress 是百分比数字；编码中若已有实时进度对象，
-      // 保留它以免刷新导致进度条归零
       jobs: jobs.map((j) => {
-        if (j.status === "Encoding") {
-          const live = s.jobs.find((e) => e.id === j.id);
-          if (isEncodeProgress(live?.progress)) {
-            return { ...j, progress: live.progress };
-          }
+        let next = j;
+        const live = s.jobs.find((e) => e.id === j.id);
+        // completedAt 以后端快照优先：后端已写入时直接采用，避免本地合成时间
+        // 与后端时间差造成的闪烁；后端尚未写入（null）时保留本地已合成的值，避免回退为空。
+        if (
+          next.completedAt == null &&
+          live?.completedAt != null &&
+          (next.status === "Completed" ||
+            next.status === "Failed" ||
+            next.status === "Cancelled")
+        ) {
+          next = { ...next, completedAt: live.completedAt };
         }
-        return j;
+        // 后端队列快照的 progress 是百分比数字；编码中若已有实时进度对象，
+        // 保留它以免刷新导致进度条归零
+        const liveProgress = live?.progress;
+        if (next.status === "Encoding" && isEncodeProgressStrict(liveProgress)) {
+          return { ...next, progress: liveProgress };
+        }
+        return next;
       }),
     })),
 }));

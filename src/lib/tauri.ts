@@ -243,11 +243,8 @@ export function onEncodeComplete(
   return onEvent<EncodeResult>("encode://complete", handler);
 }
 
-export function onEncodeError(
-  handler: (error: { jobId: string; error: string }) => void
-): Promise<UnlistenFn> {
-  return onEvent<{ jobId: string; error: string }>("encode://error", handler);
-}
+// 注：后端从不 emit `encode://error`（失败经 `encode://complete` 的 success=false /
+// cancelled 上报），此处不提供该事件的死 listener，避免悬空订阅。
 
 export function onQueueUpdated(
   handler: (status: QueueStatus) => void

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Play, Pause, X, ExternalLink, Loader2 } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
-import { isEncodeProgress } from "@/types";
+import { normalizeProgress } from "@/lib/progress";
 import { formatSpeed, getFileName } from "@/lib/utils";
 import LinearProgress from "@/components/layout/LinearProgress";
 
@@ -36,16 +36,13 @@ export default function GlobalEncodingDock() {
     return null;
   }
 
-  const rawProgress = currentJob?.progress;
-  const progressObj = isEncodeProgress(rawProgress) ? rawProgress : null;
+  // 经统一契约归一读取：实时对象与快照数字收敛为同一形状
+  const normalized = normalizeProgress(currentJob?.progress ?? null);
 
-  const percentage = Math.round(
-    progressObj?.percentage ??
-      (typeof rawProgress === "number" ? rawProgress : 0)
-  );
-  const fps = progressObj?.fps ?? 0;
-  const speed = progressObj?.speed ?? 0;
-  const time = progressObj?.time ?? progressObj?.elapsed ?? "";
+  const percentage = Math.round(normalized.percent);
+  const fps = normalized.fps ?? 0;
+  const speed = normalized.speed ?? 0;
+  const time = normalized.timeRemaining ?? "";
 
   const fileName = currentJob
     ? getFileName(currentJob.inputPath)

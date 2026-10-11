@@ -3,9 +3,9 @@ import { useQueueStore } from "@/store/queueStore";
 import {
   onEncodeProgress,
   onEncodeComplete,
-  onEncodeError,
   onQueueUpdated,
 } from "@/lib/tauri";
+import { normalizeProgress } from "@/lib/progress";
 import { isTauriRuntime } from "@/lib/utils";
 
 /**
@@ -21,6 +21,10 @@ export function useEncodeEvents() {
     if (!isTauriRuntime()) return;
 
     const unlistenProgress = onEncodeProgress((progress) => {
+      // 经统一契约归一后写入：缺关键百分比字段的非法载荷直接丢弃，
+      // 避免脏数据污染进度条；complete 映射行为保持不变。
+      const normalized = normalizeProgress(progress);
+      if (!normalized.isLive) return;
       updateProgress(progress);
     });
 
@@ -36,9 +40,8 @@ export function useEncodeEvents() {
       );
     });
 
-    const unlistenError = onEncodeError(({ jobId, error }) => {
-      updateJobStatus(jobId, "Failed", error);
-    });
+    // 注：后端从不 emit `encode://error`，失败经 `encode://complete` 上报，
+    // 此处不订阅该事件（死 listener）。
 
     const unlistenQueue = onQueueUpdated((status) => {
       useQueueStore.setState({ paused: status.paused });
@@ -48,7 +51,6 @@ export function useEncodeEvents() {
     return () => {
       unlistenProgress.then((fn) => fn());
       unlistenComplete.then((fn) => fn());
-      unlistenError.then((fn) => fn());
       unlistenQueue.then((fn) => fn());
     };
   }, [updateProgress, updateJobStatus]);

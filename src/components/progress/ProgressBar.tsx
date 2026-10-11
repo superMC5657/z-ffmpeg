@@ -1,4 +1,5 @@
-import { isEncodeProgress, type EncodeProgress } from "@/types";
+import type { EncodeProgress } from "@/types";
+import { normalizeProgress } from "@/lib/progress";
 import {
   formatFps,
   formatSpeed,
@@ -33,11 +34,13 @@ export default function ProgressBar({
   inputSizeBytes = null,
   vmafScore = null,
 }: ProgressBarProps) {
-  const isLive = isEncodeProgress(progress);
-  const pct = isLive ? progress.percentage : progress ?? 0;
+  // 经统一契约归一读取：实时对象与快照数字收敛为同一形状
+  const normalized = normalizeProgress(progress);
+  const isLive = normalized.isLive;
+  const pct = normalized.percent;
   // 编码中：按已用时长与进度线性外推剩余时间（进度过小/不可解析时为 null）
   const etaSeconds = isLive
-    ? estimateRemainingSeconds(progress.elapsed, progress.percentage)
+    ? estimateRemainingSeconds(normalized.elapsed ?? "", pct)
     : null;
 
   if (status === "Pending" || status === "Queued") {
@@ -97,8 +100,8 @@ export default function ProgressBar({
         </span>
         {isLive && (
           <span className="truncate">
-            {formatFps(progress.fps)} · {formatSpeed(progress.speed)} ·{" "}
-            {formatBitrate(progress.bitrate)}
+            {formatFps(normalized.fps ?? 0)} · {formatSpeed(normalized.speed ?? 0)} ·{" "}
+            {formatBitrate(normalized.bitrate ?? 0)}
             {etaSeconds != null && <> · 剩余 {formatDuration(etaSeconds)}</>}
           </span>
         )}

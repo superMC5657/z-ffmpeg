@@ -114,6 +114,8 @@ export function getRecommendedQuality(
   videoCodec: VideoCodec,
   hwDevice?: string | null
 ): number {
+  // Copy 为流复制，不消耗质量参数：占位返回 H264 默认值，保持切换时的迁移量稳定
+  if (videoCodec === "Copy") return 23;
   if (videoCodec === "AV1") {
     return hwDevice ? 32 : 30;
   }
@@ -131,6 +133,7 @@ export function getQualityRange(videoCodec: VideoCodec): { min: number; max: num
   if (videoCodec === "AV1" || videoCodec === "VP9") {
     return { min: 0, max: 63 };
   }
+  // H264 / H265 / Copy 均走该范围（Copy 不消耗质量参数，仅占位）
   return { min: 0, max: 51 }; // H264、H265 量化范围
 }
 
@@ -353,6 +356,7 @@ export const useEncoderStore = create<EncoderState>()(
       hwAccel?: HwAccelConfig | null;
     } = {};
 
+    // videoCodec 含 Copy（后端 VideoCodec::Copy，后端直走 `-c:v copy`）：直接透传，不报错
     if (config.videoCodec) patch.videoCodec = config.videoCodec;
     if (vs) {
       if (vs.rateControl) patch.rateControl = vs.rateControl;

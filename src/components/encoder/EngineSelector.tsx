@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Cpu, Zap, Film, Sparkles, Clapperboard, Globe } from "lucide-react";
+import { Cpu, Zap, Film, Sparkles, Clapperboard, Globe, Copy } from "lucide-react";
 import type { VideoCodec, ContainerFormat, HwAccelDevice } from "@/types";
 import { useEncoderStore } from "@/store/encoderStore";
 import { useSystemStore } from "@/store/systemStore";
@@ -16,6 +16,8 @@ const CODEC_ITEMS: {
   { value: "H265", label: "H.265 / HEVC", sub: "高压缩 · 小体积", icon: Clapperboard },
   { value: "AV1", label: "AV1", sub: "下一代开源前沿", icon: Sparkles },
   { value: "VP9", label: "VP9", sub: "Web 优化免专利", icon: Globe },
+  // Copy 为视频流直接复制（不重新编码）：速度最快、零画质损失，仅做容器转换
+  { value: "Copy", label: "Copy", sub: "视频流直接复制 · 最快", icon: Copy },
 ];
 
 const CONTAINERS: { value: ContainerFormat; label: string }[] = [
@@ -146,7 +148,9 @@ export default function EngineSelector() {
             const currentHw = hwAccel
               ? hwList.find((h) => h.device === hwAccel.device)
               : null;
+            // Copy 为流复制，不经过编码器，任何硬件环境都可用
             const isHwSupported =
+              value === "Copy" ||
               !currentHw ||
               currentHw.supportedCodecs.some((c) => {
                 const codecL = c.codec.toLowerCase();
