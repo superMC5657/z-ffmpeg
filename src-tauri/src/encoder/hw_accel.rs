@@ -194,22 +194,21 @@ pub fn detect_system_gpus() -> Vec<DiscoveredGpu> {
 }
 
 /// 通过查询 ffmpeg 并结合物理检测到的 GPU 及平台能力，
-/// 检测所有可用的硬件加速器。
-pub fn detect_all(cpu_brand: &str, platform: &str) -> Vec<HwAccelInfo> {
-    let gpus = detect_system_gpus();
-    detect_all_with_gpus(cpu_brand, platform, &gpus)
-}
-
-/// 内部检测逻辑，允许注入模拟 GPU 和编码器以进行单元测试
-pub fn detect_all_with_gpus(
+/// 检测所有可用的硬件加速器。`injected_encoders` 为测试注入口：
+/// `Some` 时直接用该编码器列表（不派生子进程），`None` 时经门面
+/// 查询全局缓存（单一 -encoders 解析）。
+pub fn detect_all(
     cpu_brand: &str,
     platform: &str,
-    gpus: &[DiscoveredGpu],
+    injected_encoders: Option<&[String]>,
 ) -> Vec<HwAccelInfo> {
-    // 能力查询经门面（全局缓存 + 单一 -encoders 解析）；注入形态走
-    // `detect_all_inner` 传 fake 编码器列表。
-    let available_encoders = facade::available_encoders();
-    detect_all_inner(cpu_brand, platform, gpus, &available_encoders)
+    let gpus = detect_system_gpus();
+    if let Some(encoders) = injected_encoders {
+        detect_all_inner(cpu_brand, platform, &gpus, encoders)
+    } else {
+        let available_encoders = facade::available_encoders();
+        detect_all_inner(cpu_brand, platform, &gpus, &available_encoders)
+    }
 }
 
 pub fn detect_all_inner(

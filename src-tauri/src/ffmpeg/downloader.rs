@@ -64,10 +64,15 @@ pub async fn download_ffmpeg(
 
             let ffmpeg_final = install_clone.join("ffmpeg.exe");
             let ffprobe_final = install_clone.join("ffprobe.exe");
-            let status = library::get_status_from_paths(
-                ffmpeg_final.clone(),
+            // 能力查询经门面直调，状态组装走 library 纯函数（缺二进制吞空见 facade）。
+            let version = facade::query_version(&ffmpeg_final);
+            let codecs = facade::query_encoders(&ffmpeg_final);
+            let status = library::assemble_status(
+                Some(ffmpeg_final.clone()),
                 Some(ffprobe_final.clone()),
-            )?;
+                version,
+                codecs,
+            );
             Ok((ffmpeg_final, ffprobe_final, status))
         },
     )
@@ -203,7 +208,7 @@ fn install_from_url(
 }
 
 /// 严格验证 ffmpeg 二进制可启动并输出版本行。
-/// 与 `library::get_status_from_paths`（通过 `.ok()` 吞掉错误）不同，
+/// 与门面能力查询（缺二进制吞为空/None）不同，
 /// 当二进制无法运行时（例如代理返回的错误页面伪装文件或被系统拦截的可执行文件），
 /// 此处直接判定整个安装失败。
 fn verify_binary(ffmpeg_path: &Path) -> AppResult<()> {
