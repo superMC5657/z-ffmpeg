@@ -117,7 +117,7 @@ describe("encoderStore quality adaptation", () => {
     });
 
     // 启用 NVENC 硬编，AV1 推荐值由 30 自动提升为 32（抵消硬件编码码率浮躁）
-    useEncoderStore.getState().setHwAccel({ device: "NVENC", deviceIndex: null });
+    useEncoderStore.getState().setHwAccel({ device: "NVENC" });
     expect(useEncoderStore.getState().rateControl).toEqual({ type: "CRF", value: 32 });
 
     // 切回 CPU 软编，自动恢复为 30

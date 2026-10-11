@@ -157,11 +157,12 @@ pub fn ensure_even_dimension(val: u32) -> u32 {
     }
 }
 
+/// 硬件加速配置：只保留设备类型。多卡索引从未被使用（恒为 None），
+// 已删除以收敛接口；旧载荷若带该字段会被 serde 默认忽略，安全兼容。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HwAccelConfig {
     pub device: HwAccelDevice,
-    pub device_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

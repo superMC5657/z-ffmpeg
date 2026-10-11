@@ -236,7 +236,7 @@ mod tests {
 
     fn hw_config(device: HwAccelDevice) -> EncodeConfig {
         let mut c = base_config();
-        c.hw_accel = Some(HwAccelConfig { device, device_index: None });
+        c.hw_accel = Some(HwAccelConfig { device });
         c
     }
 
@@ -268,19 +268,19 @@ mod tests {
     #[test]
     fn matrix_estimate_factors_snapshot() {
         assert_eq!(hardware_accel_factor(None, Some(30.0)), 1.0);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None }), Some(30.0)), 1.30);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::QSV, device_index: None }), Some(30.0)), 1.20);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::AMF, device_index: None }), Some(30.0)), 1.35);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::VAAPI, device_index: None }), Some(30.0)), 1.25);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(30.0)), 1.30);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::QSV }), Some(30.0)), 1.20);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::AMF }), Some(30.0)), 1.35);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::VAAPI }), Some(30.0)), 1.25);
         // 高帧率 +0.15，低帧率 -0.05（带 1.0 下限）
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None }), Some(60.0)), 1.45);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None }), Some(24.0)), 1.25);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(60.0)), 1.45);
+        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(24.0)), 1.25);
         // baseline 快照
         assert_eq!(crf_baseline(&VideoCodec::H264, None), 18.0);
         assert_eq!(crf_baseline(&VideoCodec::H265, None), 20.0);
-        assert_eq!(crf_baseline(&VideoCodec::H265, Some(&HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None })), 22.0);
+        assert_eq!(crf_baseline(&VideoCodec::H265, Some(&HwAccelConfig { device: HwAccelDevice::NVENC })), 22.0);
         assert_eq!(crf_baseline(&VideoCodec::AV1, None), 24.0);
-        assert_eq!(crf_baseline(&VideoCodec::AV1, Some(&HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None })), 26.0);
+        assert_eq!(crf_baseline(&VideoCodec::AV1, Some(&HwAccelConfig { device: HwAccelDevice::NVENC })), 26.0);
         // 编解码因子快照
         assert_eq!(codec_factor(&VideoCodec::H264), 1.0);
         assert_eq!(codec_factor(&VideoCodec::H265), 0.65);

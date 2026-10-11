@@ -384,8 +384,7 @@ mod tests {
         // 此处改为调用 flags 接口后断言输出，不重复硬编码。
         use crate::encoder::flags as flags;
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         let encoder = flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
         let expected_video = flags::video_encoding_args(&config, encoder, None);
@@ -402,8 +401,7 @@ mod tests {
         // 快照锁死，此处只锁“构建输出包含 flags 接口输出”。
         use crate::encoder::flags as flags;
         let mut hevc = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         hevc.video_codec = VideoCodec::H265;
         let encoder = flags::encoder_name(&hevc.video_codec, hevc.hw_accel.as_ref());
@@ -412,8 +410,7 @@ mod tests {
         assert_contains_in_order(&args, &expected_video);
 
         let mut av1 = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         av1.video_codec = VideoCodec::AV1;
         let encoder = flags::encoder_name(&av1.video_codec, av1.hw_accel.as_ref());
@@ -425,8 +422,7 @@ mod tests {
     #[test]
     fn build_args_qsv_keeps_preset_name() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::QSV,
-            device_index: None,
+            device: HwAccelDevice::QSV
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
         assert_args_contain(&args, &["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "23"]);
@@ -435,8 +431,7 @@ mod tests {
     #[test]
     fn build_args_amf_maps_preset_to_quality() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::AMF,
-            device_index: None,
+            device: HwAccelDevice::AMF
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
         assert_args_contain(&args, &["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "23", "-qp_p", "23"]);
@@ -523,8 +518,7 @@ mod tests {
     #[test]
     fn build_args_auto_maxrate_guard_nvenc() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         // 输入码率 4000 kbps -> maxrate = 4000 * 1.25 = 5000k, bufsize = 10000k
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
@@ -547,8 +541,7 @@ mod tests {
         // 顺序锁死：自动 guard（-maxrate/-bufsize）必须先于用户 extra 追加，
         // 顺序由本单测与 flags::video_encoding_args 文档共同锁定，不改行为。
         let mut config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         config.video_settings.additional_params = vec!["-movflags".into(), "+faststart".into()];
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
@@ -570,8 +563,7 @@ mod tests {
         // Copy+NVENC 生产路径：直接 `-c:v copy`，不经过视频编码 flags；
         // flags::video_encoding_args(Copy, …) 直调组合生产不可达，故只在 args 层锁定。
         let mut config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC,
-            device_index: None,
+            device: HwAccelDevice::NVENC
         }));
         config.video_codec = VideoCodec::Copy;
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));

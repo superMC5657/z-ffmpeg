@@ -10,29 +10,29 @@ fn builtin_presets() -> Vec<Preset> {
     vec![
         // --- H.264 软编 ---
         p("builtin-h264-fast", "H.264 快速", "ultrafast, CRF 23 — 最快编码",
-            "H264", "ultrafast", "CRF", 23, "MP4", "AAC"),
+            "H264", "ultrafast", 23, "MP4", "AAC"),
         p("builtin-h264-balanced", "H.264 平衡", "medium, CRF 23 — 通用编码",
-            "H264", "medium", "CRF", 23, "MP4", "AAC"),
+            "H264", "medium", 23, "MP4", "AAC"),
         p("builtin-h264-hq", "H.264 高质量", "slow, CRF 18, high profile — 高画质存档",
-            "H264", "slow", "CRF", 18, "MP4", "AAC"),
+            "H264", "slow", 18, "MP4", "AAC"),
         p("builtin-h264-archive", "H.264 无损存档", "veryslow, CRF 0 — 最大画质",
-            "H264", "veryslow", "CRF", 0, "MKV", "Opus"),
+            "H264", "veryslow", 0, "MKV", "Opus"),
 
         // --- H.265 软编 ---
         p("builtin-h265-fast", "H.265 快速", "fast, CRF 28 — HEVC 快速",
-            "H265", "fast", "CRF", 28, "MKV", "AAC"),
+            "H265", "fast", 28, "MKV", "AAC"),
         p("builtin-h265-balanced", "H.265 平衡", "medium, CRF 24 — HEVC 通用",
-            "H265", "medium", "CRF", 24, "MKV", "AAC"),
+            "H265", "medium", 24, "MKV", "AAC"),
         p("builtin-h265-hq", "H.265 高质量", "slower, CRF 20, main10 — HEVC 高画质",
-            "H265", "slower", "CRF", 20, "MKV", "Opus"),
+            "H265", "slower", 20, "MKV", "Opus"),
 
         // --- AV1 软编 ---
         p("builtin-av1", "AV1 通用", "preset 6, CRF 30 — SVT-AV1",
-            "AV1", "medium", "CRF", 30, "MKV", "Opus"),
+            "AV1", "medium", 30, "MKV", "Opus"),
 
         // --- VP9 软编 ---
         p("builtin-vp9", "VP9 Web", "CRF 30 — Web 优化",
-            "VP9", "medium", "CRF", 30, "WebM", "Opus"),
+            "VP9", "medium", 30, "WebM", "Opus"),
 
         // --- NVENC 硬编 ---
         hw_p("builtin-nvenc-h264", "NVENC H.264", "h264_nvenc — NVIDIA GPU 加速",
@@ -113,15 +113,14 @@ fn preset_config(
         },
         audio_settings: audio_settings(audio),
         container_format,
-        hw_accel: device.map(|d| HwAccelConfig {
-            device: d,
-            device_index: None,
-        }),
+        hw_accel: device.map(|d| HwAccelConfig { device: d }),
     };
     serde_json::to_value(&config).expect("builtin preset config must serialize")
 }
 
 /// 预设公共外壳（id/名称/描述/配置）
+// 内置走默认：profile/pixel_format 恒 None、additional_params 恒空；
+// 定制需求（分辨率/帧率/额外参数）走 args 单测覆盖的透传路径，不在内置里展开。
 fn build_preset(id: &str, name: &str, desc: &str, config: serde_json::Value) -> Preset {
     Preset {
         id: id.into(),
@@ -134,14 +133,13 @@ fn build_preset(id: &str, name: &str, desc: &str, config: serde_json::Value) -> 
     }
 }
 
-/// 软编预设构造辅助函数
+/// 软编预设构造辅助函数（恒 CRF，调用方只传数值）
 #[allow(clippy::too_many_arguments)]
 fn p(
     id: &str, name: &str, desc: &str,
-    codec: &str, preset: &str, rc: &str, value: u32,
+    codec: &str, preset: &str, value: u32,
     container: &str, audio: &str,
 ) -> Preset {
-    let _ = rc;
     build_preset(
         id,
         name,
@@ -161,6 +159,7 @@ fn p(
 
 /// 硬件加速预设构造辅助函数
 fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
+    // 未知 device 统一回退 NVENC（与历史行为一致，避免拼写漂移产生不可用预设）
     let device = match device {
         "QSV" => HwAccelDevice::QSV,
         "AMF" => HwAccelDevice::AMF,
@@ -257,6 +256,43 @@ pub async fn export_preset_to_file(
     Ok(path)
 }
 
+/// 导入 JSON 解析与校验（纯函数，import_preset 的唯一解析入口）：
+/// 支持完整导出格式 { name, description, config } 与纯编解码配置两种形状；
+/// 校验 config 符合 EncodeConfig 结构，防止损坏或不兼容的配置入库。
+/// 返回 (preset_name, description, config)。与搬运前逐行一致，仅抽取为可单测形态。
+fn parse_import_preset(json: &str, name: &str) -> AppResult<(String, String, serde_json::Value)> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(AppError::Serialization)?;
+
+    let (config, description) = if let Some(c) = value.get("config") {
+        if !c.is_object() {
+            return Err(AppError::InvalidConfig("预设 config 必须是 JSON 对象".into()));
+        }
+        (
+            c.clone(),
+            value.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string(),
+        )
+    } else {
+        if !value.is_object() {
+            return Err(AppError::InvalidConfig("预设 JSON 格式无效".into()));
+        }
+        (value.clone(), String::new())
+    };
+
+    // 校验 config 是否符合 EncodeConfig 结构
+    let _validated: crate::encoder::codec::EncodeConfig = serde_json::from_value(config.clone())
+        .map_err(|e| AppError::InvalidConfig(format!("预设编码配置解析失败: {}", e.top_line())))?;
+
+    let preset_name = if name.trim().is_empty() {
+        value.get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("导入的预设")
+            .to_string()
+    } else {
+        name.trim().to_string()
+    };
+    Ok((preset_name, description, config))
+}
+
 /// 从 JSON 导入预设并持久化保存到数据库。
 /// 支持完整导出格式（{ name, description, config }）或纯编解码配置 JSON。
 /// `name`（由前端传入，默认取导入文件的文件名无后缀）优先级高于 JSON 中的名称。
@@ -274,52 +310,13 @@ pub async fn import_preset(
         log::warn!("preset import failed reason {top}");
     };
 
-    let value: serde_json::Value = match serde_json::from_str(&json) {
+    // 解析与校验走纯函数（双形状 + EncodeConfig 校验，单测锁定），此处只补日志
+    let (preset_name, description, config) = match parse_import_preset(&json, &name) {
         Ok(v) => v,
         Err(e) => {
-            let err = AppError::Serialization(e);
-            warn_import(&err);
-            return Err(err);
+            warn_import(&e);
+            return Err(e);
         }
-    };
-
-    let (config, description) = if let Some(c) = value.get("config") {
-        if !c.is_object() {
-            let err = AppError::InvalidConfig("预设 config 必须是 JSON 对象".into());
-            warn_import(&err);
-            return Err(err);
-        }
-        (
-            c.clone(),
-            value.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string(),
-        )
-    } else {
-        if !value.is_object() {
-            let err = AppError::InvalidConfig("预设 JSON 格式无效".into());
-            warn_import(&err);
-            return Err(err);
-        }
-        (value.clone(), String::new())
-    };
-
-    // 校验 config 是否符合 EncodeConfig 结构，防止损坏或不兼容的配置入库
-    let _validated: crate::encoder::codec::EncodeConfig = match serde_json::from_value(config.clone()) {
-        Ok(v) => v,
-        Err(e) => {
-            let top = e.top_line();
-            let err = AppError::InvalidConfig(format!("预设编码配置解析失败: {top}"));
-            warn_import(&err);
-            return Err(err);
-        }
-    };
-
-    let preset_name = if name.trim().is_empty() {
-        value.get("name")
-            .and_then(|n| n.as_str())
-            .unwrap_or("导入的预设")
-            .to_string()
-    } else {
-        name.trim().to_string()
     };
 
     let manager = match state.preset_manager.as_ref() {
@@ -351,4 +348,61 @@ pub async fn import_preset(
 #[tauri::command]
 pub async fn get_builtin_presets() -> AppResult<Vec<Preset>> {
     Ok(builtin_presets())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 合法 EncodeConfig（经内置构造，与历史快照同一序列化路径）
+    fn valid_config() -> serde_json::Value {
+        preset_config(
+            "H264",
+            "medium",
+            "MP4",
+            "AAC",
+            RateControl::Crf { value: 23 },
+            None,
+        )
+    }
+
+    #[test]
+    fn parse_import_accepts_both_shapes() {
+        // 形状一：完整导出格式 { name, description, config }，空 name 时取 JSON 名
+        let full = serde_json::json!({
+            "name": "我的预设",
+            "description": "备注",
+            "config": valid_config(),
+        });
+        let (name, desc, cfg) = parse_import_preset(&full.to_string(), "").unwrap();
+        assert_eq!(name, "我的预设");
+        assert_eq!(desc, "备注");
+        assert_eq!(cfg, valid_config());
+        // 前端传入名优先级高于 JSON 名
+        let (name, _, _) = parse_import_preset(&full.to_string(), "文件名").unwrap();
+        assert_eq!(name, "文件名");
+
+        // 形状二：纯编解码配置（bare），description 置空
+        let (name, desc, cfg) = parse_import_preset(&valid_config().to_string(), "文件名").unwrap();
+        assert_eq!(name, "文件名");
+        assert_eq!(desc, "");
+        assert_eq!(cfg, valid_config());
+    }
+
+    #[test]
+    fn parse_import_rejects_malicious_and_missing_fields() {
+        // 恶意：config 非对象
+        let bad = serde_json::json!({ "name": "x", "config": "not-an-object" });
+        let err = parse_import_preset(&bad.to_string(), "").unwrap_err().to_string();
+        assert!(err.contains("预设 config 必须是 JSON 对象"), "{err}");
+        // 非对象顶层（数组）
+        let err = parse_import_preset("[1,2]", "").unwrap_err().to_string();
+        assert!(err.contains("预设 JSON 格式无效"), "{err}");
+        // 缺字段：bare 对象但不符合 EncodeConfig（如缺 videoSettings）
+        let thin = serde_json::json!({ "videoCodec": "H264" });
+        let err = parse_import_preset(&thin.to_string(), "").unwrap_err().to_string();
+        assert!(err.contains("预设编码配置解析失败"), "{err}");
+        // 非法 JSON
+        assert!(parse_import_preset("not json", "").is_err());
+    }
 }

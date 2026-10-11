@@ -19,6 +19,15 @@ use crate::ffmpeg::facade;
 pub const DEFAULT_SEGMENTS: usize = 4;
 pub const DEFAULT_SEGMENT_SECONDS: f64 = 5.0;
 
+/// 最大采样段数：commands/vmaf.rs 的段数上限唯一来源
+///（get/set_vmaf_segments 与 compute_vmaf 的 clamp 都经本接口，不各自定义）。
+pub const MAX_SEGMENTS: usize = 32;
+
+/// 段数归一化：0 = 全量对比，超过上限截断到 [`MAX_SEGMENTS`]。
+pub fn clamp_segments(n: usize) -> usize {
+    n.clamp(0, MAX_SEGMENTS)
+}
+
 /// 一段 VMAF 采样
 #[derive(Debug, Clone)]
 pub struct VmafSegment {
@@ -433,5 +442,14 @@ mod tests {
         // .x5 边界 f64 可能双向舍入，断言落在两个合法值之一
         assert!([92.34, 92.35].contains(&round2(92.345)));
         assert!((round2(92.344) - 92.34).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clamp_segments_caps_at_max() {
+        // 段数上限唯一来源：0=全量透传，超限截断到 MAX_SEGMENTS
+        assert_eq!(clamp_segments(0), 0);
+        assert_eq!(clamp_segments(4), 4);
+        assert_eq!(clamp_segments(MAX_SEGMENTS), MAX_SEGMENTS);
+        assert_eq!(clamp_segments(MAX_SEGMENTS + 100), MAX_SEGMENTS);
     }
 }

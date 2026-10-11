@@ -49,7 +49,7 @@ export default function EngineSelector() {
       setHwAccel(null);
       return;
     }
-    setHwAccel({ device, deviceIndex: null });
+    setHwAccel({ device });
   };
 
   return (

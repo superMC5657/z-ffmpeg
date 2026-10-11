@@ -374,7 +374,7 @@ mod tests {
 
     fn hw_config(device: HwAccelDevice) -> EncodeConfig {
         let mut c = base_config();
-        c.hw_accel = Some(HwAccelConfig { device, device_index: None });
+        c.hw_accel = Some(HwAccelConfig { device });
         c
     }
 
@@ -390,27 +390,27 @@ mod tests {
         assert_eq!(encoder_name(&VideoCodec::Copy, None), "copy");
         // NVENC / QSV / AMF / VAAPI / VTB：VP9 与 Copy 永远回退软件实现
         for device in [HwAccelDevice::NVENC, HwAccelDevice::QSV, HwAccelDevice::AMF, HwAccelDevice::VAAPI, HwAccelDevice::VideoToolbox] {
-            let hw = HwAccelConfig { device, device_index: None };
+            let hw = HwAccelConfig { device };
             let hw_ref = Some(&hw);
             assert_eq!(encoder_name(&VideoCodec::VP9, hw_ref), "libvpx-vp9");
             assert_eq!(encoder_name(&VideoCodec::Copy, hw_ref), "copy");
         }
-        let nvenc = HwAccelConfig { device: HwAccelDevice::NVENC, device_index: None };
+        let nvenc = HwAccelConfig { device: HwAccelDevice::NVENC };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&nvenc)), "h264_nvenc");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&nvenc)), "hevc_nvenc");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&nvenc)), "av1_nvenc");
-        let qsv = HwAccelConfig { device: HwAccelDevice::QSV, device_index: None };
+        let qsv = HwAccelConfig { device: HwAccelDevice::QSV };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&qsv)), "h264_qsv");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&qsv)), "hevc_qsv");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&qsv)), "av1_qsv");
-        let amf = HwAccelConfig { device: HwAccelDevice::AMF, device_index: None };
+        let amf = HwAccelConfig { device: HwAccelDevice::AMF };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&amf)), "h264_amf");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&amf)), "hevc_amf");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&amf)), "av1_amf");
-        let vaapi = HwAccelConfig { device: HwAccelDevice::VAAPI, device_index: None };
+        let vaapi = HwAccelConfig { device: HwAccelDevice::VAAPI };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&vaapi)), "h264_vaapi");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&vaapi)), "av1_vaapi");
-        let vtb = HwAccelConfig { device: HwAccelDevice::VideoToolbox, device_index: None };
+        let vtb = HwAccelConfig { device: HwAccelDevice::VideoToolbox };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&vtb)), "h264_videotoolbox");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&vtb)), "hevc_videotoolbox");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&vtb)), "av1_videotoolbox");

@@ -46,7 +46,6 @@ export interface AudioSettings {
 
 export interface HwAccelConfig {
   device: HwAccelDevice;
-  deviceIndex: number | null;
 }
 
 export interface CodecConfig {

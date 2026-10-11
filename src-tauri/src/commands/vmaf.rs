@@ -3,10 +3,9 @@ use tauri::State;
 use crate::encoder::vmaf::{
     self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
 };
+use crate::encoder::vmaf::clamp_segments;
 use crate::error::{AppResult, LogDisplay};
 use crate::queue::store::SETTINGS_KEY_VMAF_SEGMENTS;
-
-const MAX_VMAF_SEGMENTS: usize = 32;
 
 /// 计算已完成编码任务的 VMAF 质量得分。
 ///
@@ -48,8 +47,8 @@ pub async fn compute_vmaf(
         ));
     }
 
-    // 0 = 全量，1..=32 = 采样段数
-    let segments = segments.clamp(0, MAX_VMAF_SEGMENTS);
+    // 0 = 全量，1..=32 = 采样段数（上限经 vmaf::clamp_segments 统一收拢）
+    let segments = clamp_segments(segments);
 
     let input = input_path.clone();
     let output = output_path.clone();
@@ -108,7 +107,7 @@ pub async fn set_vmaf_segments(
         .queue_manager
         .as_ref()
         .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
-    let value = value.clamp(0, MAX_VMAF_SEGMENTS);
+    let value = clamp_segments(value);
     queue.set_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS, value);
     Ok(value)
 }

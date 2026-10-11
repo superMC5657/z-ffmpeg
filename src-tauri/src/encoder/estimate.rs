@@ -526,8 +526,7 @@ mod tests {
 
         let mut hw_cfg = cpu_cfg.clone();
         hw_cfg.hw_accel = Some(HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::NVENC,
-            device_index: None,
+            device: crate::encoder::codec::HwAccelDevice::NVENC
         });
         let hw_est = estimate_output_size(&hw_cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected).unwrap();
 
@@ -560,8 +559,7 @@ mod tests {
     fn auto_maxrate_guard_clamps_estimate() {
         let mut cfg = base_config();
         cfg.hw_accel = Some(HwAccelConfig {
-            device: crate::encoder::codec::HwAccelDevice::NVENC,
-            device_index: None,
+            device: crate::encoder::codec::HwAccelDevice::NVENC
         });
         // 极高画质 CRF 10（理论码率会飙升）
         cfg.video_settings.rate_control = RateControl::Crf { value: 10 };
