@@ -4,7 +4,7 @@ use crate::encoder::vmaf::{
     self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
 };
 use crate::error::{AppResult, LogDisplay};
-use crate::queue::settings::SETTINGS_KEY_VMAF_SEGMENTS;
+use crate::queue::store::SETTINGS_KEY_VMAF_SEGMENTS;
 
 const MAX_VMAF_SEGMENTS: usize = 32;
 

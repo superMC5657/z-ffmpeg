@@ -1,13 +1,16 @@
-//! 队列持久化 seam：`jobs` 表全部 SQLite 访问的唯一拥有者。
+//! 队列持久化 seam：`jobs` 表与 `settings` 表全部 SQLite 访问的唯一拥有者。
 //!
 //! 收敛前 `history.rs` 名义上是持久化模块，实则直掏 manager 的
-//! `pub(crate) jobs` / db 锁，且 `remove_jobs` / `delete_history` /
+//! `jobs` / db 锁，且 `remove_jobs` / `delete_history` /
 //! `clear_completed` 三处手写同一条留存规则（Pending 行删、Finished 行留）。
-//! 本模块唯一拥有：全部 SQL（save/delete/history/paths/vmaf）、
-//! finished-vs-pending 留存谓词、重启恢复查询。`QueueManager` 只保留
-//! 调度状态（deque、active 计数、cancel flags、pause），经显式接口与
-//! store 对话，不再直接触碰 rusqlite。`settings` 表经薄透传保留在
-//! 同一连接上（`settings.rs` 本体不动）。
+//! 本模块唯一拥有：全部 SQL（save/delete/history/paths/vmaf/settings KV）、
+//! finished-vs-pending 留存谓词、重启恢复查询、内存优先→DB 回退的分支真相
+//! （`resolve_job_paths` / `write_vmaf_score`，调用方只传内存预查结果）。
+//! `QueueManager` 只保留调度状态（deque、active 计数、cancel flags、pause），
+//! 经显式接口与 store 对话，不再直接触碰 rusqlite。`settings` 表原
+//! `settings.rs` 薄 adapter（经 Connection 直透）已并入本模块，JobStore
+//! 是 settings KV 的唯一 interface（`max_concurrent` + `vmaf_segments`
+//! 语义不变）。
 
 use std::sync::Mutex as StdMutex;
 
@@ -40,6 +43,11 @@ const QUEUE_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS jobs (
                 value TEXT NOT NULL
             );";
 
+/// settings 表中已知的 key（原 `settings.rs`，现并入本模块；
+/// JobStore 是 settings KV 的唯一 interface）。
+pub(crate) const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
+pub(crate) const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
+
 /// 全部 jobs 表访问的唯一拥有者。内部以 std Mutex 串行化 Connection
 ///（Connection 实现 Send 但未实现 Sync，与搬运前一致）。
 pub(crate) struct JobStore {
@@ -60,15 +68,36 @@ impl JobStore {
         Ok(Self { db: StdMutex::new(db) })
     }
 
-    /// settings 表薄透传（KV 与 job 留存无关，`settings.rs` 本体不动）。
+    /// settings KV 读：缺失/解析失败返回 None，调用方再套默认值。
+    /// 与并入前 `settings::load_usize` 逐行一致（含 trim）。
     pub(crate) fn load_setting_usize(&self, key: &str) -> Option<usize> {
-        let db = self.db.lock().unwrap();
-        crate::queue::settings::load_usize(&db, key)
+        self.load_setting_string(key)?.trim().parse().ok()
     }
 
+    /// settings KV 写：INSERT OR REPLACE。与并入前 `settings::save_usize` 一致。
     pub(crate) fn save_setting_usize(&self, key: &str, value: usize) {
-        let db = self.db.lock().unwrap();
-        crate::queue::settings::save_usize(&db, key, value);
+        self.save_setting_string(key, &value.to_string());
+    }
+
+    /// settings 表字符串读（私有 helper，原 `settings::load_string` 下沉）。
+    fn load_setting_string(&self, key: &str) -> Option<String> {
+        self.db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get(0),
+            )
+            .ok()
+    }
+
+    /// settings 表字符串写（私有 helper，原 `settings::save_string` 下沉）。
+    fn save_setting_string(&self, key: &str, value: &str) {
+        let _ = self.db.lock().unwrap().execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        );
     }
 
     /// 重启恢复查询：仅 Pending / Encoding 行，Encoding 回 Pending。
@@ -142,7 +171,7 @@ impl JobStore {
         );
     }
 
-    pub(crate) fn delete_job(&self, id: &str) {
+    fn delete_job(&self, id: &str) {
         let _ = self.db.lock().unwrap().execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![id]);
     }
 
@@ -155,6 +184,15 @@ impl JobStore {
         )
     }
 
+    /// 留存语义三者分工（行为与收拢前逐行一致，只收拢位置）：
+    /// - `clear_completed`（manager 侧）：仅内存 retain，绝不碰 DB；
+    ///   队列页“清除已完成”只把已结束任务移出内存，DB 行保留，历史页仍可读。
+    /// - `clear_history_rows`（本模块，下方）：SQL DELETE 全部已结束行；
+    ///   历史页“清空”连库一起删，但 Pending 行不动。
+    /// - `remove_from_queue`（本模块，下方）：按 ID + 内存状态逐行处理，
+    ///   Pending / Encoding 行删库，Finished 行留库；未知 ID（`status=None`，
+    ///   仅历史残留）按 `unwrap_or(true)` 视为已结束、绝不删库。
+    ///
     /// 队列页移除的 DB 侧：Pending / Encoding 行删除，Finished 行保留，
     /// 未知 ID（仅历史残留）视为已结束、绝不删库。与搬运前
     /// `remove_jobs` 的 `unwrap_or(true)` 语义一致。
@@ -181,8 +219,9 @@ impl JobStore {
         );
     }
 
-    /// VMAF 的 DB 回退读：jobs 活得比内存久时的纯 DB 路径。
-    pub(crate) fn job_paths_row(&self, job_id: &str) -> Option<(String, String)> {
+    /// VMAF 的 DB 回退读：jobs 活得比内存久时的纯 DB 路径（私有，
+    /// 对外经 `resolve_job_paths` 统一口径）。
+    fn job_paths_row(&self, job_id: &str) -> Option<(String, String)> {
         let db = self.db.lock().unwrap();
         db.query_row(
             "SELECT input_path, output_path FROM jobs WHERE id = ?1",
@@ -192,13 +231,48 @@ impl JobStore {
         .ok()
     }
 
-    /// VMAF 的 DB 回退写：已移出内存的历史任务直接 UPDATE，避免静默丢结果。
-    pub(crate) fn update_vmaf_row(&self, job_id: &str, score: f64, detail_json: Option<String>) {
+    /// VMAF 的 DB 回退写：已移出内存的历史任务直接 UPDATE，避免静默丢结果
+    ///（私有，对外经 `write_vmaf_score` 统一口径）。
+    fn update_vmaf_row(&self, job_id: &str, score: f64, detail_json: Option<String>) {
         let db = self.db.lock().unwrap();
         let _ = db.execute(
             "UPDATE jobs SET vmaf_score = ?1, vmaf_detail = ?2 WHERE id = ?3",
             rusqlite::params![score, detail_json, job_id],
         );
+    }
+
+    /// 路径解析的唯一真相源：内存优先→DB 回退的分支原在 `history.rs`，
+    /// 现下沉到此。`memory_hit` 是调用方在内存队列中的预查结果
+    ///（Some=命中直接返回；None=未命中，回退查 DB 历史行）。
+    /// 调用方只做内存预查，不再手写回退分支。
+    pub(crate) fn resolve_job_paths(
+        &self,
+        memory_hit: Option<(String, String)>,
+        job_id: &str,
+    ) -> Option<(String, String)> {
+        if let Some(paths) = memory_hit {
+            return Some(paths);
+        }
+        self.job_paths_row(job_id)
+    }
+
+    /// VMAF 写分支的唯一真相源：原在 `history.rs` 的内存/DB 双写分支下沉到此。
+    /// `memory_job` 是调用方持锁查到的可变借用（Some=在内存：更新字段并经
+    /// save_job 持久化；None=已移出内存：直接 UPDATE DB 行）。
+    pub(crate) fn write_vmaf_score(
+        &self,
+        memory_job: Option<&mut EncodeJob>,
+        job_id: &str,
+        score: f64,
+        detail_json: Option<String>,
+    ) {
+        if let Some(job) = memory_job {
+            job.vmaf_score = Some(score);
+            job.vmaf_detail = detail_json;
+            self.save_job(job);
+            return;
+        }
+        self.update_vmaf_row(job_id, score, detail_json);
     }
 
     /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
@@ -469,5 +543,24 @@ mod tests {
         let (p1, _) = store.history_filtered(Some(2), 2, None, None);
         assert_eq!((p0.len(), total), (2, 5));
         assert_eq!(p1.len(), 2);
+    }
+
+    /// settings KV（原 `settings.rs` 并入）：缺省 None、写入覆盖、解析语义不变。
+    #[test]
+    fn settings_roundtrip_and_default() {
+        let store = mem_store();
+        assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), None);
+        store.save_setting_usize(SETTINGS_KEY_MAX_CONCURRENT, 4);
+        assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), Some(4));
+        // 覆盖写
+        store.save_setting_usize(SETTINGS_KEY_MAX_CONCURRENT, 8);
+        assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), Some(8));
+        // 脏值解析失败按缺失处理
+        store.save_setting_string(SETTINGS_KEY_VMAF_SEGMENTS, "not-a-number");
+        assert_eq!(store.load_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS), None);
+        // 字符串口径 roundtrip
+        store.save_setting_string(SETTINGS_KEY_VMAF_SEGMENTS, "6");
+        assert_eq!(store.load_setting_string(SETTINGS_KEY_VMAF_SEGMENTS).as_deref(), Some("6"));
+        assert_eq!(store.load_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS), Some(6));
     }
 }
