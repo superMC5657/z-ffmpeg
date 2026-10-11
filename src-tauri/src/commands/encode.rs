@@ -32,6 +32,8 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
             return Err(e);
         }
     };
+    // 解析口径唯一拥有者为 probe::parse_probe_result，此处仅做 IPC 薄转调
+    //（exists-check + probe + parse + log），不重复实现任何解析分支。
     let info = match probe::parse_probe_result(&json, &file_path) {
         Ok(info) => info,
         Err(e) => {

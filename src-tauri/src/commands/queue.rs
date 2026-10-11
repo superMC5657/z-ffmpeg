@@ -41,7 +41,7 @@ pub async fn add_to_queue(
         probes.spawn(async move {
             let _permit = sem.acquire().await;
             let est = match probe::probe_file_async(&input).await {
-                Ok(json) => estimate::estimate_output_bytes(&config, &json),
+                Ok(json) => estimate::estimate_output_size(&config, &json, &input).map(|e| e.expected),
                 Err(_) => None,
             };
             (idx, est)

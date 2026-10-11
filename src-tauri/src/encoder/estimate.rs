@@ -17,12 +17,6 @@ pub struct EstimatedSize {
     pub max: u64,
 }
 
-/// 预估压缩后的期望输出体积（字节），返回 expected 值。
-/// 供队列 Pending 状态持久化使用。
-pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64> {
-    estimate_output_size(config, probe).map(|e| e.expected)
-}
-
 /// 预估压缩后的输出体积区间（字节）。
 ///
 /// 编码开始前（Pending 状态）无法拿到实际写出大小，结合多维度模型推算：
@@ -33,18 +27,16 @@ pub fn estimate_output_bytes(config: &EncodeConfig, probe: &Value) -> Option<u64
 ///   3. 硬件编码芯片（NVENC/QSV/AMF）高帧率动态膨胀补偿；
 ///   4. Auto Maxrate Guard 与用户自定义 -maxrate 硬截断；
 ///   5. 生成平缓场景（下限）与高动态/噪点场景（上限）的合理区间。
-pub fn estimate_output_size(config: &EncodeConfig, probe: &Value) -> Option<EstimatedSize> {
-    // 唯一路径：probe JSON 先构造 FileInfo（封面跳过 / 音频回退 / zero-duration
-    // guard 全部收敛在 parse_probe_result 内），再走统一 FileInfo 预估核心。
-    let info = parse_probe_result(probe, "").ok()?;
+pub fn estimate_output_size(
+    config: &EncodeConfig,
+    probe: &Value,
+    input_path: &str,
+) -> Option<EstimatedSize> {
+    // JSON→FileInfo 解析口径唯一拥有者为 probe::parse_probe_result，此处只做
+    // probe+parse+delegate 三行；透传真实输入路径填充 FileInfo.path/file_name
+    //（预估核心不消费该字段，不藏副作用）。
+    let info = parse_probe_result(probe, input_path).ok()?;
     estimate_output_size_from_info(config, &info)
-}
-
-/// 基于前端已探测的 `FileInfo` 预估输出体积（字节单值）。
-/// 生产路径用 `estimate_output_size_from_info`（命令返回区间）；单值版仅测试与内部对照使用。
-#[cfg(test)]
-pub fn estimate_output_bytes_from_info(config: &EncodeConfig, info: &FileInfo) -> Option<u64> {
-    estimate_output_size_from_info(config, info).map(|e| e.expected)
 }
 
 /// 基于前端已探测的 `FileInfo` 预估输出体积区间。
@@ -212,7 +204,7 @@ mod tests {
         // (2000 + 128) kbps × 100s → 字节数
         let expected = (2128.0 * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
-            estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000)),
+            estimate_output_size(&cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected),
             Some(expected)
         );
     }
@@ -226,7 +218,7 @@ mod tests {
             max_bitrate_kbps: None,
         };
         // 输入 8000kbps + 音频 128kbps ≈ 8128kbps × 100s
-        let est = estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000));
+        let est = estimate_output_size(&cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected);
         assert!(est.is_some());
         let kbps_implied = est.unwrap() as f64 / 100.0 * 8.0 / 1000.0;
         // 应接近输入总码率（8000 + 128），而不是 2128（ABR 配置值）
@@ -236,7 +228,7 @@ mod tests {
     #[test]
     fn crf_scales_with_input_bitrate() {
         let cfg = base_config(); // 默认 H264 CRF 23 配置
-        let est = estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000));
+        let est = estimate_output_size(&cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected);
         // 输入 8000kbps × 0.8 × 2^((18-23)/6) ≈ 3592kbps + 128kbps 音频
         assert!(est.is_some());
         let bytes = est.unwrap();
@@ -247,7 +239,7 @@ mod tests {
     #[test]
     fn missing_duration_returns_none() {
         let cfg = base_config();
-        assert_eq!(estimate_output_bytes(&cfg, &json!({"format": {}})), None);
+        assert_eq!(estimate_output_size(&cfg, &json!({"format": {}}), r"C:\in\a.mp4").map(|e| e.expected), None);
     }
 
     /// 无 streams 的 probe（极端情况）应退化为不缩放，仍能正常预估
@@ -257,13 +249,13 @@ mod tests {
         let json = json!({
             "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
         });
-        let est = estimate_output_bytes(&cfg, &json);
+        let est = estimate_output_size(&cfg, &json, r"C:\in\a.mp4").map(|e| e.expected);
         assert!(est.is_some());
         // 与带空 streams 的结果一致（无缩放）
-        let with_empty = estimate_output_bytes(&cfg, &json!({
+        let with_empty = estimate_output_size(&cfg, &json!({
             "format": { "duration": "100.0", "bit_rate": "8000000", "size": "100000000" },
             "streams": [],
-        }));
+        }), r"C:\in\a.mp4").map(|e| e.expected);
         assert_eq!(est, with_empty);
     }
 
@@ -290,8 +282,8 @@ mod tests {
             ],
         });
         assert_eq!(
-            estimate_output_bytes(&cfg, &with_cover),
-            estimate_output_bytes(&cfg, &without_cover)
+            estimate_output_size(&cfg, &with_cover, r"C:\in\a.mkv").map(|e| e.expected),
+            estimate_output_size(&cfg, &without_cover, r"C:\in\a.mkv").map(|e| e.expected)
         );
     }
 
@@ -379,10 +371,10 @@ mod tests {
     #[test]
     fn crf_output_resolution_and_fps_shrink_estimate() {
         let mut cfg = base_config(); // H264 CRF 23，输入 8000kbps / 100s
-        let base_est = estimate_output_bytes_from_info(&cfg, &sample_info()).unwrap();
+        let base_est = estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected).unwrap();
         cfg.video_settings.resolution = Some(Resolution { width: 1280, height: 720 }); // 0.444×
         cfg.video_settings.frame_rate = Some(24.0); // 24/30 = 0.8×
-        let shrunk = estimate_output_bytes_from_info(&cfg, &sample_info()).unwrap();
+        let shrunk = estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected).unwrap();
         let ratio = shrunk as f64 / base_est as f64;
         // 视频部分缩放 0.444 × 0.8 ≈ 0.3556；音频 128kbps 不缩放会把整体比例
         // 抬到 ≈0.378（视频 3592kbps → 1277kbps + 128kbps 音频）
@@ -397,10 +389,10 @@ mod tests {
             bitrate_kbps: 2000,
             max_bitrate_kbps: None,
         };
-        let base_est = estimate_output_bytes_from_info(&cfg, &sample_info()).unwrap();
+        let base_est = estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected).unwrap();
         cfg.video_settings.resolution = Some(Resolution { width: 1280, height: 720 });
         cfg.video_settings.frame_rate = Some(24.0);
-        let same_est = estimate_output_bytes_from_info(&cfg, &sample_info()).unwrap();
+        let same_est = estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected).unwrap();
         assert_eq!(base_est, same_est);
     }
 
@@ -412,22 +404,22 @@ mod tests {
         let mut info = sample_info();
         info.width = None;
         info.height = None;
-        assert!(estimate_output_bytes_from_info(&cfg, &info).is_some());
+        assert!(estimate_output_size_from_info(&cfg, &info).map(|e| e.expected).is_some());
     }
 
     /// 分辨率任一维度为 0（如前端输入框被清空）应视为未设置，不缩放、回到原始预估
     #[test]
     fn zero_dimension_resolution_ignored() {
         let mut cfg = base_config();
-        let base_est = estimate_output_bytes_from_info(&cfg, &sample_info()).unwrap();
+        let base_est = estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected).unwrap();
         cfg.video_settings.resolution = Some(Resolution { width: 0, height: 1080 });
         assert_eq!(
-            estimate_output_bytes_from_info(&cfg, &sample_info()),
+            estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected),
             Some(base_est)
         );
         cfg.video_settings.resolution = Some(Resolution { width: 1920, height: 0 });
         assert_eq!(
-            estimate_output_bytes_from_info(&cfg, &sample_info()),
+            estimate_output_size_from_info(&cfg, &sample_info()).map(|e| e.expected),
             Some(base_est)
         );
     }
@@ -475,7 +467,7 @@ mod tests {
         // 视频 2000kbps + 音频 Copy 192kbps × 100s
         let expected = (2192.0 * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
-            estimate_output_bytes_from_info(&cfg, &info),
+            estimate_output_size_from_info(&cfg, &info).map(|e| e.expected),
             Some(expected)
         );
     }
@@ -497,21 +489,21 @@ mod tests {
             audio_bitrate: None,
             pixel_format: None,
         };
-        assert_eq!(estimate_output_bytes_from_info(&cfg, &info), None);
+        assert_eq!(estimate_output_size_from_info(&cfg, &info).map(|e| e.expected), None);
         // 无容器码率但有文件大小 → 由 size/duration 推算
         info.duration = Some(100.0);
         info.file_size = 100_000_000;
-        assert!(estimate_output_bytes_from_info(&cfg, &info).is_some());
+        assert!(estimate_output_size_from_info(&cfg, &info).map(|e| e.expected).is_some());
         // 无码率也无大小 → 无法推算
         info.file_size = 0;
-        assert_eq!(estimate_output_bytes_from_info(&cfg, &info), None);
+        assert_eq!(estimate_output_size_from_info(&cfg, &info).map(|e| e.expected), None);
     }
 
     #[test]
     fn no_audio_reduces_estimate() {
         let mut cfg = base_config();
         cfg.audio_settings.codec = AudioCodec::None;
-        let est = estimate_output_bytes(&cfg, &probe_json(100.0, 8_000_000, 100_000_000));
+        let est = estimate_output_size(&cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected);
         assert!(est.is_some());
     }
 
@@ -523,21 +515,21 @@ mod tests {
             "format": { "duration": "100.0", "size": "104857600" },
             "streams": [],
         });
-        assert!(estimate_output_bytes(&cfg, &json).is_some());
+        assert!(estimate_output_size(&cfg, &json, r"C:\in\a.mp4").map(|e| e.expected).is_some());
     }
 
     #[test]
     fn hw_accel_factor_increases_crf_estimate() {
         let mut cpu_cfg = base_config();
         cpu_cfg.audio_settings.codec = AudioCodec::None;
-        let cpu_est = estimate_output_bytes(&cpu_cfg, &probe_json(100.0, 8_000_000, 100_000_000)).unwrap();
+        let cpu_est = estimate_output_size(&cpu_cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected).unwrap();
 
         let mut hw_cfg = cpu_cfg.clone();
         hw_cfg.hw_accel = Some(HwAccelConfig {
             device: crate::encoder::codec::HwAccelDevice::NVENC,
             device_index: None,
         });
-        let hw_est = estimate_output_bytes(&hw_cfg, &probe_json(100.0, 8_000_000, 100_000_000)).unwrap();
+        let hw_est = estimate_output_size(&hw_cfg, &probe_json(100.0, 8_000_000, 100_000_000), r"C:\in\a.mp4").map(|e| e.expected).unwrap();
 
         // 硬件加速预估体积应显著高于 CPU 预估（NVENC 约 1.25~1.35 倍）
         let ratio = hw_est as f64 / cpu_est as f64;
@@ -553,11 +545,11 @@ mod tests {
 
         let mut info_h264 = sample_info();
         info_h264.video_codec = Some("h264".into());
-        let est_from_h264 = estimate_output_bytes_from_info(&cfg, &info_h264).unwrap();
+        let est_from_h264 = estimate_output_size_from_info(&cfg, &info_h264).map(|e| e.expected).unwrap();
 
         let mut info_av1 = sample_info();
         info_av1.video_codec = Some("av1".into());
-        let est_from_av1 = estimate_output_bytes_from_info(&cfg, &info_av1).unwrap();
+        let est_from_av1 = estimate_output_size_from_info(&cfg, &info_av1).map(|e| e.expected).unwrap();
 
         // 原片已是 AV1，再转 AV1 的预估码率应明显高于从低效 H.264 重新转成 AV1 的折算码率
         assert!(est_from_av1 > est_from_h264, "av1->av1 ({est_from_av1}) should be > h264->av1 ({est_from_h264})");
