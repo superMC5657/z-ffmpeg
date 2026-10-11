@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::encoder::probe::{FileInfo, parse_probe_result};
 use crate::encoder::codec::{AudioCodec, EncodeConfig, VideoCodec};
-use crate::encoder::policy::{self, SourceMediaInfo};
+use crate::encoder::volume::{self, SourceMediaInfo};
 
 /// 包含预估期望值（预期中位数）、乐观值（平缓场景下限）与悲观值（剧烈动态/高噪点场景上限）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -116,7 +116,7 @@ fn output_scale_factor(
 }
 
 /// 公共预估核心：目标码率（或 CRF/CQP 外推与锚点融合）× 时长 → 字节区间。
-/// 体积模型（codec×device 因子、guard 截断）唯一拥有者为 `policy`，此处仅消费。
+/// 体积模型（codec×device 因子、guard 截断）唯一拥有者为 `volume`，此处仅消费。
 fn estimate_bytes(
     config: &EncodeConfig,
     duration: f64,
@@ -129,7 +129,7 @@ fn estimate_bytes(
         return Some(EstimatedSize { expected: b, min: b, max: b });
     }
 
-    let (exp_v, min_v, max_v) = policy::estimate_video_kbps(config, input_kbps, media);
+    let (exp_v, min_v, max_v) = volume::estimate_video_kbps(config, input_kbps, media);
 
     let audio_kbps = match config.audio_settings.codec {
         AudioCodec::None => 0.0,

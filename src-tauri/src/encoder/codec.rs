@@ -26,17 +26,8 @@ pub enum VideoCodec {
     Copy,
 }
 
-impl VideoCodec {
-    /// 映射到 FFmpeg 编码器名称（策略知识唯一拥有者：`crate::encoder::policy`）。
-    /// 此处仅做薄委托，保持调用点与 wire 格式不变。
-    pub fn encoder_name(&self, hw: Option<&HwAccelConfig>) -> &'static str {
-        crate::encoder::policy::encoder_name(self, hw)
-    }
-
-    pub fn software_encoder(&self) -> &'static str {
-        crate::encoder::policy::software_encoder(self)
-    }
-}
+// 编码器映射唯一拥有者：`crate::encoder::flags::encoder_name`
+// （此前的 `VideoCodec::encoder_name / software_encoder` 薄委托已删除，调用方直调 flags）。
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,7 +1,7 @@
 //! FFmpeg 参数与输出路径构建：从 `EncodeConfig` 推导 ffmpeg CLI 参数、
 //! 以及输入 → 输出路径的推导与批量去重。
-//! 编码策略矩阵（preset / rate-control / guard）唯一拥有者为
-//! `crate::encoder::policy`，此处仅消费不重述。
+//! 编码策略矩阵中属于 CLI flags 的部分（preset / rate-control / guard）唯一拥有者为
+//! `crate::encoder::flags`，此处仅消费不重述；体积模型见 `crate::encoder::volume`。
 
 use std::collections::HashSet;
 
@@ -30,14 +30,14 @@ pub fn build_ffmpeg_args_with_bitrate(
     args.push("-i".into());
     args.push(input_path.into());
 
-    // 视频编码器（映射唯一拥有者：policy）
-    let encoder = crate::encoder::policy::encoder_name(&config.video_codec, config.hw_accel.as_ref());
+    // 视频编码器（映射唯一拥有者：flags）
+    let encoder = crate::encoder::flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
     if config.video_codec != VideoCodec::Copy {
         args.push("-c:v".into());
         args.push(encoder.into());
 
-        // 视频编码策略一次学会：preset + rate-control + guard（顺序由 policy 快照锁死）
-        args.extend(crate::encoder::policy::video_encoding_args(
+        // 视频编码策略一次学会：preset + rate-control + guard（顺序由 flags 快照锁死）
+        args.extend(crate::encoder::flags::video_encoding_args(
             config,
             encoder,
             input_bitrate_kbps,
@@ -78,7 +78,10 @@ pub fn build_ffmpeg_args_with_bitrate(
     // 音频设置
     args.extend(config.audio_settings.to_args());
 
-    // 附加自定义参数
+    // 附加自定义参数（顺序要求：必须在 guard 之后追加——
+    // `flags::video_encoding_args` 产出的自动 `-maxrate` 在前，用户 extra 在后，
+    // 否则“已有自定义 -maxrate 则不自动注入”（has_custom）与 ffmpeg 后值优先的
+    // 覆盖语义会被打乱；顺序由 flags 侧快照与本模块单测共同锁定，此处不改行为）。
     args.extend(config.video_settings.additional_params.clone());
 
     // 输出路径
@@ -348,6 +351,20 @@ mod tests {
         }
     }
 
+    /// 断言 `expected` 作为有序子序列出现在 `args` 中（顺序一致，不要求连续）。
+    /// 供 NVENC 收拢单测使用：期望值经 flags 接口算出，此处只锁“输出包含”，
+    /// 不重复硬编码具体 flag 字符串。
+    fn assert_contains_in_order(args: &[String], expected: &[String]) {
+        let mut idx = 0;
+        for e in expected {
+            let pos = args[idx..]
+                .iter()
+                .position(|a| a == e)
+                .unwrap_or_else(|| panic!("flag {e} not found in order in {args:?}"));
+            idx += pos + 1;
+        }
+    }
+
     #[test]
     fn build_args_software_h264_crf() {
         let args = build_ffmpeg_args(&sample_config(), r"C:\in\movie.mkv", r"C:\out\movie.mp4");
@@ -363,33 +380,46 @@ mod tests {
 
     #[test]
     fn build_args_nvenc_maps_preset_to_p_scale() {
+        // 收拢：具体 flag 字符串只由 flags 侧快照拥有，
+        // 此处改为调用 flags 接口后断言输出，不重复硬编码。
+        use crate::encoder::flags as flags;
         let config = config_with_hw(Some(HwAccelConfig {
             device: HwAccelDevice::NVENC,
             device_index: None,
         }));
+        let encoder = flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
+        let expected_video = flags::video_encoding_args(&config, encoder, None);
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
+        // 编码器名同样经 flags 接口得出，不硬编码
+        let pos = args.iter().position(|a| a == "-c:v").expect("missing -c:v");
+        assert_eq!(args[pos + 1], encoder);
+        assert_contains_in_order(&args, &expected_video);
     }
 
     #[test]
     fn build_args_nvenc_wysiwyg_cq() {
+        // 收拢：不重复硬编码具体 flag 字符串；所见即所得的数值透传由 flags 侧
+        // 快照锁死，此处只锁“构建输出包含 flags 接口输出”。
+        use crate::encoder::flags as flags;
         let mut hevc = config_with_hw(Some(HwAccelConfig {
             device: HwAccelDevice::NVENC,
             device_index: None,
         }));
         hevc.video_codec = VideoCodec::H265;
+        let encoder = flags::encoder_name(&hevc.video_codec, hevc.hw_accel.as_ref());
+        let expected_video = flags::video_encoding_args(&hevc, encoder, None);
         let args = build_ffmpeg_args(&hevc, "in.mp4", "out.mp4");
-        // 所见即所得：UI 设置 23，底层直接传递 -cq 23，不做黑盒偏移
-        assert_args_contain(&args, &["-c:v", "hevc_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
+        assert_contains_in_order(&args, &expected_video);
 
         let mut av1 = config_with_hw(Some(HwAccelConfig {
             device: HwAccelDevice::NVENC,
             device_index: None,
         }));
         av1.video_codec = VideoCodec::AV1;
+        let encoder = flags::encoder_name(&av1.video_codec, av1.hw_accel.as_ref());
+        let expected_video = flags::video_encoding_args(&av1, encoder, None);
         let args_av1 = build_ffmpeg_args(&av1, "in.mp4", "out.mp4");
-        // 所见即所得：UI 设置 23，底层直接传递 -cq 23
-        assert_args_contain(&args_av1, &["-c:v", "av1_nvenc", "-preset", "p4", "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1"]);
+        assert_contains_in_order(&args_av1, &expected_video);
     }
 
     #[test]
@@ -510,5 +540,45 @@ mod tests {
         let custom_args = build_ffmpeg_args_with_bitrate(&custom, "in.mp4", "out.mp4", Some(4000));
         let pos = custom_args.iter().position(|a| a == "-maxrate").unwrap();
         assert_eq!(custom_args[pos + 1], "3000k");
+    }
+
+    #[test]
+    fn build_args_guard_before_extra_params() {
+        // 顺序锁死：自动 guard（-maxrate/-bufsize）必须先于用户 extra 追加，
+        // 顺序由本单测与 flags::video_encoding_args 文档共同锁定，不改行为。
+        let mut config = config_with_hw(Some(HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+            device_index: None,
+        }));
+        config.video_settings.additional_params = vec!["-movflags".into(), "+faststart".into()];
+        let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
+        let maxrate_pos = args.iter().position(|a| a == "-maxrate").expect("应含自动 -maxrate");
+        let bufsize_pos = args.iter().position(|a| a == "-bufsize").expect("应含自动 -bufsize");
+        let extra_pos = args.iter().position(|a| a == "-movflags").expect("应含用户 extra");
+        assert!(
+            maxrate_pos < extra_pos,
+            "-maxrate 应在用户 extra 之前：{args:?}"
+        );
+        assert!(
+            bufsize_pos < extra_pos,
+            "-bufsize 应在用户 extra 之前：{args:?}"
+        );
+    }
+
+    #[test]
+    fn build_args_copy_hw_skips_all_video_flags() {
+        // Copy+NVENC 生产路径：直接 `-c:v copy`，不经过视频编码 flags；
+        // flags::video_encoding_args(Copy, …) 直调组合生产不可达，故只在 args 层锁定。
+        let mut config = config_with_hw(Some(HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+            device_index: None,
+        }));
+        config.video_codec = VideoCodec::Copy;
+        let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
+        let pos = args.iter().position(|a| a == "-c:v").expect("应含 -c:v");
+        assert_eq!(args[pos + 1], "copy");
+        for f in ["-preset", "-crf", "-maxrate", "-bufsize"] {
+            assert!(!args.iter().any(|a| a == f), "Copy 不得含 {f}：{args:?}");
+        }
     }
 }

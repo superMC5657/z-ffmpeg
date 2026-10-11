@@ -6,7 +6,8 @@ pub mod progress;
 pub mod hw_accel;
 pub mod estimate;
 pub mod vmaf;
-pub mod policy;
+pub mod flags;
+pub mod volume;
 pub mod supervisor;
 
 /// 取路径的文件名（含扩展名）；路径无文件名时返回空字符串。
