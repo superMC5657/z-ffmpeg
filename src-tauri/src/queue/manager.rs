@@ -136,9 +136,9 @@ impl QueueManager {
 
     pub fn cancel_job(&self, job_id: &str) {
         // 取消语义归 supervisor 注册表：一处置位 flag（含子进程尚未挂接的
-        // 窗口）+ kill 已挂接进程（经 engine 薄委托，语义与搬运前“先设 flag
+        // 窗口）+ kill 已挂接进程（直调 supervisor，语义与此前“先设 flag
         // 再 kill”一致）。恰好一次终态由编码侧状态机保证。
-        crate::encoder::engine::cancel_process(job_id);
+        supervisor::request_cancel(job_id);
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
             if job.status == JobStatus::Pending || job.status == JobStatus::Encoding {

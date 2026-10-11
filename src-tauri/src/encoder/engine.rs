@@ -1,5 +1,8 @@
-//! 编码引擎：ffmpeg 子进程的启动、进度解析循环、取消与结束处理。
-//! 参数构建见 `args`，探测见 `probe`，进度结构见 `progress`。
+//! 编码引擎：ffmpeg 子进程的启动、进度循环与终态 emit（深模块对外小接口）。
+//! 对外只暴露 `start_encode` + `EncodeResult`；取消/注册表语义归 `supervisor`
+//!（调用方直调 `supervisor::request_cancel` / `kill_all`，不再经本模块中转）。
+//! 参数构建见 `args`，探测解析归 `probe`（时长/码率经 `parse_probe_result` 统一口径），
+//! 进度结构见 `progress`。
 
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
@@ -15,7 +18,7 @@ use crate::ffmpeg::facade;
 // 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
 // 进程监管（注册表/取消状态机/进度块拼装）归 `supervisor`，本模块只做事件→emit 薄映射。
 use super::args::{build_ffmpeg_args_with_bitrate, format_command_line};
-use super::probe::probe_file;
+use super::probe::{parse_probe_result, probe_file};
 use super::supervisor::{self, BlockPoller, CancelPoint, Supervision, TerminalOutcome};
 
 /// 编码失败时附加到错误信息中的 stderr 尾部行数（ffmpeg 把真正的报错原因
@@ -36,14 +39,6 @@ pub struct EncodeResult {
     pub error: Option<String>,
 }
 
-impl EncodeResult {
-    /// 取消路径的统一载荷：三处取消分支（spawn 前 / spawn 中 / 运行中）共用。
-    /// 字段语义唯一拥有者为 `supervisor::TerminalOutcome`，此处薄映射保持 wire 形状不变。
-    fn cancelled(job_id: String, file_name: String, duration_seconds: f64) -> Self {
-        TerminalOutcome::cancelled(job_id, file_name, duration_seconds).into()
-    }
-}
-
 impl From<TerminalOutcome> for EncodeResult {
     fn from(t: TerminalOutcome) -> Self {
         Self {
@@ -57,19 +52,6 @@ impl From<TerminalOutcome> for EncodeResult {
             error: t.error,
         }
     }
-}
-
-/// 请求取消正在运行的编码任务：设置取消标记并立即终止
-/// ffmpeg 进程（即使 ffmpeg 没有输出时也能立即生效）。
-/// 薄委托：语义归 supervisor 注册表。
-pub fn cancel_process(job_id: &str) -> bool {
-    supervisor::request_cancel(job_id)
-}
-
-/// 终止所有正在运行的编码子进程（在应用退出时调用）。
-/// 薄委托：语义归 supervisor 注册表。
-pub fn kill_all_processes() {
-    supervisor::kill_all()
 }
 
 /// 启动编码并通过 Tauri 事件上报进度。
@@ -102,37 +84,22 @@ pub fn start_encode(
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed:.1}s", CancelPoint::PreSpawn.as_str());
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, elapsed),
+            EncodeResult::from(TerminalOutcome::cancelled(job_id, file_name, elapsed)),
         );
         return Ok(());
     }
 
     let input_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
 
-    // 首先进行探测以获取总时长和码率，用于进度计算和自动最大码率保护
-    let probe_json = probe_file(&input_path).ok();
-    let total_duration = probe_json.as_ref().and_then(|json| {
-        json.get("format")
-            .and_then(|f| f.get("duration"))
-            .and_then(|d| d.as_str())
-            .and_then(|s| s.parse::<f64>().ok())
-    });
-
-    let input_bitrate_kbps = probe_json.as_ref().and_then(|json| {
-        let format = json.get("format")?;
-        format.get("bit_rate")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<f64>().ok())
-            .map(|bps| (bps / 1000.0).round() as u32)
-            .or_else(|| {
-                let dur = total_duration?;
-                if dur > 0.0 && input_size > 0 {
-                    Some(((input_size as f64 * 8.0) / (dur * 1000.0)).round() as u32)
-                } else {
-                    None
-                }
-            })
-    });
+    // 探测时长/码率统一走 `probe::parse_probe_result`（唯一口径，与预估侧一致）：
+    // 进度计算与自动最大码率保护只消费 `duration` / `bitrate`，解析失败时退化为
+    // None（与此前手工解析缺字段行为一致）。`input_size` 仍取文件元数据，供日志与完成比展示。
+    let probe_info = probe_file(&input_path)
+        .ok()
+        .and_then(|json| parse_probe_result(&json, &input_path).ok());
+    let total_duration = probe_info.as_ref().and_then(|info| info.duration);
+    // fs 兜底：format.size 缺失导致统一口径无码率时，用文件元数据回退，避免丢 1.25x 封顶。
+    let input_bitrate_kbps = probe_info.as_ref().and_then(|info| info.bitrate).map(|bps| (bps as f64 / 1000.0).round() as u32).or_else(|| total_duration.filter(|d| *d > 0.0).and_then(|d| (input_size > 0).then(|| ((input_size as f64 * 8.0) / (d * 1000.0)).round() as u32)));
 
     let args = build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
     let cmd_preview = format_command_line(&args);
@@ -170,7 +137,7 @@ pub fn start_encode(
     );
 
     // 子进程注册后重新检查取消状态：用户可能在 probe/spawn 期间取消了任务，
-    // 此时子进程尚未注册，因此 `cancel_process` 无法终止任何进程。
+    // 此时子进程尚未注册，因此 `request_cancel` 无法终止任何进程。
     // 若此时已取消则立即终止——否则编码会在后台持续运行直到完成，
     // 而 UI 上任务状态却显示为“已取消”。终态认领归状态机（恰好一次）。
     if supervision.claim_cancellation(CancelPoint::PostSpawn).is_some() {
@@ -182,7 +149,7 @@ pub fn start_encode(
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed:.1}s", CancelPoint::PostSpawn.as_str());
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, elapsed),
+            EncodeResult::from(TerminalOutcome::cancelled(job_id, file_name, elapsed)),
         );
         return Ok(());
     }
@@ -238,7 +205,7 @@ pub fn start_encode(
         }
     }
 
-    // 回收子进程（从注册表中移除，防止 cancel_process 重复终止）
+    // 回收子进程（从注册表中移除，防止 request_cancel 重复终止）
     let status = supervisor::reap_child(&job_id);
     let stderr_tail: Vec<String> = stderr_thread
         .join()
@@ -254,7 +221,7 @@ pub fn start_encode(
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed_s:.1}s", CancelPoint::Running.as_str());
         let _ = app_handle.emit(
             "encode://complete",
-            EncodeResult::cancelled(job_id, file_name, elapsed_s),
+            EncodeResult::from(TerminalOutcome::cancelled(job_id, file_name, elapsed_s)),
         );
         return Ok(());
     }
@@ -334,7 +301,7 @@ pub fn start_encode(
 
 #[cfg(test)]
 mod tests {
-    use super::EncodeResult;
+    use super::{EncodeResult, TerminalOutcome};
 
     #[test]
     fn encode_result_serializes_camel_case_keys() {
@@ -360,8 +327,10 @@ mod tests {
     }
 
     #[test]
-    fn cancelled_constructor_marks_cancelled() {
-        let r = EncodeResult::cancelled("j1".into(), "a.mp4".into(), 2.0);
+    fn cancelled_terminal_maps_to_encode_result() {
+        // 取消载荷唯一拥有者为 `TerminalOutcome::cancelled`，engine 只做薄映射（From）；
+        // 此处锁定 wire 形状（cancelled/error/output 缺省）不变。
+        let r = EncodeResult::from(TerminalOutcome::cancelled("j1".into(), "a.mp4".into(), 2.0));
 
         assert!(r.cancelled);
         assert!(!r.success);

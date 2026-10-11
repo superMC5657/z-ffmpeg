@@ -1,7 +1,7 @@
 //! 进程监管：ffmpeg 子进程生命周期的可测试接口。
 //!
 //! 收敛前取消正确性散在三处：`QueueManager::cancel_job` 设 flag、
-//! `engine::cancel_process` 经 PROCESSES 全局注册表 kill、
+//! `supervisor::request_cancel` 经全局注册表 kill、
 //! `start_encode` 内三处检查（pre-spawn / post-spawn / running loop）
 //! 各带 emit+cleanup+log 分支，外加 manager 侧 `Arc::ptr_eq` 移除舞蹈。
 //! 本模块唯一拥有：job-handle 注册表（spawn / poll-progress-block /
@@ -108,7 +108,7 @@ pub struct TerminalOutcome {
 }
 
 impl TerminalOutcome {
-    /// 取消路径的统一载荷：三处取消分支共用（与搬运前 `EncodeResult::cancelled` 逐字段一致）。
+    /// 取消路径的统一载荷：三处取消分支共用（engine 侧经 `From` 薄映射为 wire 形状）。
     pub fn cancelled(job_id: String, file_name: String, duration_seconds: f64) -> Self {
         Self {
             job_id,

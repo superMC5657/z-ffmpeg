@@ -119,7 +119,7 @@ pub fn run() {
         .run(|app_handle, event| {
             // 正常退出时清理运行中的子进程，并一次性上报会话聚合埋点（最多等 3s）
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                encoder::engine::kill_all_processes();
+                encoder::supervisor::kill_all();
                 analytics::report::report_on_exit(app_handle);
             }
         });
