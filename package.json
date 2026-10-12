@@ -1,7 +1,7 @@
 {
   "name": "z-ffmpeg",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
@@ -12,6 +12,7 @@
     "test": "vitest run",
     "lint": "eslint .",
     "tauri": "tauri",
+    "build:linux": "APPIMAGE_EXTRACT_AND_RUN=1 tauri build --bundles deb,appimage",
     "clean": "rm -rf dist && rm -rf src-tauri/target"
   },
   "dependencies": {
