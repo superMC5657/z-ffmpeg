@@ -49,9 +49,7 @@ struct ProInfo {
     email: String,
     level_label: Option<String>,
     expires_at: String,
-    /// 令牌到期时间（Unix 秒），is_pro 快速判断用。注意：仅 release 构建读取
-    /// （debug 下 is_pro 短路 true），debug 构建的 dead_code warning 属预期。
-    #[cfg_attr(debug_assertions, allow(dead_code))]
+    /// 令牌到期时间（Unix 秒），is_pro 快速判断用。
     exp: i64,
     features: Vec<String>,
     /// 是否处于离线宽限期（最近一次在线验证失败 / 尚未在线验证）
@@ -190,7 +188,7 @@ impl LicenseManager {
         } else {
             Some(self.config.buy_url.clone())
         };
-        let status = match &*self.state.read() {
+        match &*self.state.read() {
             LicenseState::Free => LicenseStatus {
                 pro: false,
                 level_label: None,
@@ -211,27 +209,11 @@ impl LicenseManager {
                 code: Some(p.code.clone()),
                 buy_url,
             },
-        };
-        // debug 构建恒为已解锁（与 is_pro 一致），开发调试不被门控干扰
-        if cfg!(debug_assertions) && !status.pro {
-            return LicenseStatus {
-                pro: true,
-                level_label: Some("专业版（开发模式）".into()),
-                expires_at: None,
-                offline: false,
-                features: vec!["pro".into()],
-                ..status
-            };
         }
-        status
     }
 
-    /// Pro 门控判断。debug 构建恒为 true（开发调试不被门控干扰）。
+    /// Pro 门控判断。
     pub fn is_pro(&self) -> bool {
-        #[cfg(debug_assertions)]
-        return true;
-
-        #[cfg(not(debug_assertions))]
         match &*self.state.read() {
             LicenseState::Pro(p) => chrono::Utc::now().timestamp() < p.exp,
             LicenseState::Free => false,
@@ -457,5 +439,66 @@ mod tests {
         assert!(!is_valid_email("@example.com"));
         assert!(!is_valid_email("no-at-sign"));
         assert!(!is_valid_email(""));
+    }
+
+    #[test]
+    fn free_license_defaults_to_free_and_rejects_gate() {
+        let temp = std::env::temp_dir().join(format!("zffmpeg-test-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&temp);
+        let config = SoftCandyConfig::default();
+        let manager = LicenseManager::new(config, &temp);
+
+        assert!(!manager.is_pro());
+        let status = manager.status();
+        assert!(!status.pro);
+        assert_eq!(status.level_label, None);
+        assert_eq!(status.expires_at, None);
+        assert!(status.features.is_empty());
+
+        let err = manager.ensure_pro("VMAF 质量对比").unwrap_err();
+        assert!(err.to_string().contains("VMAF 质量对比为 Pro 版功能"));
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn pro_state_allows_gate_when_unexpired_and_rejects_when_expired() {
+        let temp = std::env::temp_dir().join(format!("zffmpeg-test-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&temp);
+        let config = SoftCandyConfig::default();
+        let manager = LicenseManager::new(config, &temp);
+
+        // 未过期
+        *manager.state.write() = LicenseState::Pro(ProInfo {
+            code: "SDX4-K9TP-2M7Q-W3HZ".into(),
+            email: "user@example.com".into(),
+            level_label: Some("专业版".into()),
+            expires_at: "2099-01-01T00:00:00Z".into(),
+            exp: chrono::Utc::now().timestamp() + 3600,
+            features: vec!["pro".into()],
+            offline: false,
+        });
+
+        assert!(manager.is_pro());
+        assert!(manager.ensure_pro("VMAF 质量对比").is_ok());
+        let status = manager.status();
+        assert!(status.pro);
+        assert_eq!(status.level_label.as_deref(), Some("专业版"));
+
+        // 已过期
+        *manager.state.write() = LicenseState::Pro(ProInfo {
+            code: "SDX4-K9TP-2M7Q-W3HZ".into(),
+            email: "user@example.com".into(),
+            level_label: Some("专业版".into()),
+            expires_at: "2020-01-01T00:00:00Z".into(),
+            exp: chrono::Utc::now().timestamp() - 3600,
+            features: vec!["pro".into()],
+            offline: false,
+        });
+
+        assert!(!manager.is_pro());
+        assert!(manager.ensure_pro("命令导出为文件").is_err());
+
+        let _ = std::fs::remove_dir_all(&temp);
     }
 }

@@ -72,7 +72,7 @@ export default function LicenseSection() {
         )}
         {!isPro && (
           <p className="text-[12px] leading-5 text-secondary">
-            免费版包含全部基础编码、硬件加速、并发调度与预设管理功能；VMAF 质量对比、命令导出为脚本文件需要激活 Pro。
+            激活 Pro 解锁：VMAF 质量对比、命令导出为脚本文件
           </p>
         )}
         {isPro && (
