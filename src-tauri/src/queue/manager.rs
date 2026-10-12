@@ -598,7 +598,10 @@ mod tests {
         // 第一次“会话”：添加任务并完成它
         let manager = QueueManager::new(&db_path).unwrap();
         let ids = manager.add_jobs(
-            vec![("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into())],
+            vec![(
+                dir.join("a.mp4").to_string_lossy().to_string(),
+                dir.join("a_encoded.mp4").to_string_lossy().to_string(),
+            )],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
@@ -658,10 +661,22 @@ mod tests {
         let manager = QueueManager::new(&db_path).unwrap();
         let ids = manager.add_jobs(
             vec![
-                ("C:\\in\\alpha.mp4".into(), "C:\\in\\alpha_encoded.mp4".into()),
-                ("C:\\in\\beta.mp4".into(), "C:\\in\\beta_encoded.mp4".into()),
-                ("C:\\in\\gamma.mp4".into(), "C:\\in\\gamma_encoded.mp4".into()),
-                ("C:\\in\\delta.mp4".into(), "C:\\in\\delta_encoded.mp4".into()),
+                (
+                    dir.join("alpha.mp4").to_string_lossy().to_string(),
+                    dir.join("alpha_encoded.mp4").to_string_lossy().to_string(),
+                ),
+                (
+                    dir.join("beta.mp4").to_string_lossy().to_string(),
+                    dir.join("beta_encoded.mp4").to_string_lossy().to_string(),
+                ),
+                (
+                    dir.join("gamma.mp4").to_string_lossy().to_string(),
+                    dir.join("gamma_encoded.mp4").to_string_lossy().to_string(),
+                ),
+                (
+                    dir.join("delta.mp4").to_string_lossy().to_string(),
+                    dir.join("delta_encoded.mp4").to_string_lossy().to_string(),
+                ),
             ],
             sample_config(),
         );

@@ -235,53 +235,88 @@ mod tests {
     #[test]
     fn derive_output_path_uses_input_dir_and_container_ext() {
         let config = sample_config();
+        let in_dir = std::path::PathBuf::from("in");
+        let out_dir = std::path::PathBuf::from("out");
+        let input = in_dir.join("movie.mkv").to_string_lossy().to_string();
+        let out_dir_str = out_dir.to_string_lossy().to_string();
+
         assert_eq!(
-            derive_output_path(r"C:\in\movie.mkv", &config, None),
-            r"C:\in\movie_encoded.mp4"
+            derive_output_path(&input, &config, None),
+            in_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
         );
         assert_eq!(
-            derive_output_path(r"C:\in\movie.mkv", &config, Some(r"D:\out")),
-            r"D:\out\movie_encoded.mp4"
+            derive_output_path(&input, &config, Some(&out_dir_str)),
+            out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
         );
     }
 
     #[test]
     fn derive_output_paths_unique_avoids_collisions() {
         let config = sample_config();
+        let dir_a = std::path::PathBuf::from("a");
+        let dir_b = std::path::PathBuf::from("b");
+        let dir_c = std::path::PathBuf::from("c");
+        let out_dir = std::path::PathBuf::from("out");
+        let out_dir_str = out_dir.to_string_lossy().to_string();
+
         // 不指定输出目录时，不同文件夹下的输入会生成不同的路径
         let outputs = derive_output_paths_unique(
             &[
-                r"C:\a\movie.mp4".into(),
-                r"C:\b\movie.mp4".into(),
+                dir_a.join("movie.mp4").to_string_lossy().to_string(),
+                dir_b.join("movie.mp4").to_string_lossy().to_string(),
             ],
             &config,
             None,
         );
-        assert_eq!(outputs[0], r"C:\a\movie_encoded.mp4");
-        assert_eq!(outputs[1], r"C:\b\movie_encoded.mp4");
+        assert_eq!(
+            outputs[0],
+            dir_a.join("movie_encoded.mp4").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            outputs[1],
+            dir_b.join("movie_encoded.mp4").to_string_lossy().to_string()
+        );
 
         // 自定义输出目录：来自不同文件夹的同名文件会发生冲突，后续条目会追加数字后缀
         let outputs = derive_output_paths_unique(
             &[
-                r"C:\a\movie.mp4".into(),
-                r"C:\b\movie.mp4".into(),
-                r"C:\c\movie.mp4".into(),
+                dir_a.join("movie.mp4").to_string_lossy().to_string(),
+                dir_b.join("movie.mp4").to_string_lossy().to_string(),
+                dir_c.join("movie.mp4").to_string_lossy().to_string(),
             ],
             &config,
-            Some(r"D:\out"),
+            Some(&out_dir_str),
         );
-        assert_eq!(outputs[0], r"D:\out\movie_encoded.mp4");
-        assert_eq!(outputs[1], r"D:\out\movie_encoded_1.mp4");
-        assert_eq!(outputs[2], r"D:\out\movie_encoded_2.mp4");
+        assert_eq!(
+            outputs[0],
+            out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            outputs[1],
+            out_dir.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            outputs[2],
+            out_dir.join("movie_encoded_2.mp4").to_string_lossy().to_string()
+        );
 
         // 同一文件被添加两次时，即使不指定输出目录也会发生冲突
         let outputs = derive_output_paths_unique(
-            &[r"C:\a\movie.mp4".into(), r"C:\a\movie.mp4".into()],
+            &[
+                dir_a.join("movie.mp4").to_string_lossy().to_string(),
+                dir_a.join("movie.mp4").to_string_lossy().to_string(),
+            ],
             &config,
             None,
         );
-        assert_eq!(outputs[0], r"C:\a\movie_encoded.mp4");
-        assert_eq!(outputs[1], r"C:\a\movie_encoded_1.mp4");
+        assert_eq!(
+            outputs[0],
+            dir_a.join("movie_encoded.mp4").to_string_lossy().to_string()
+        );
+        assert_eq!(
+            outputs[1],
+            dir_a.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+        );
     }
 
     #[test]
@@ -322,14 +357,21 @@ mod tests {
     #[test]
     fn derive_output_paths_unique_avoids_claimed_collision() {
         let config = sample_config();
-        let claimed = vec![r"D:\out\movie_encoded.mp4".to_string()];
+        let dir_a = std::path::PathBuf::from("a");
+        let out_dir = std::path::PathBuf::from("out");
+        let out_dir_str = out_dir.to_string_lossy().to_string();
+
+        let claimed = vec![out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()];
         let outputs = derive_output_paths_unique_with_claimed(
-            &[r"C:\a\movie.mp4".into()],
+            &[dir_a.join("movie.mp4").to_string_lossy().to_string()],
             &config,
-            Some(r"D:\out"),
+            Some(&out_dir_str),
             &claimed,
         );
-        assert_eq!(outputs[0], r"D:\out\movie_encoded_1.mp4");
+        assert_eq!(
+            outputs[0],
+            out_dir.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+        );
     }
 
     // ---- build_ffmpeg_args 测试 ----

@@ -521,13 +521,14 @@ mod tests {
     #[test]
     fn retention_history_filter_search_pagination() {
         let store = mem_store();
+        let in_dir = std::path::PathBuf::from("in");
         for name in ["alpha", "beta", "gamma", "delta"] {
             let mut j = finished_job(JobStatus::Completed);
-            j.input_path = format!("C:\\in\\{name}.mp4");
+            j.input_path = in_dir.join(format!("{name}.mp4")).to_string_lossy().to_string();
             store.save_job(&j);
         }
         let mut f = finished_job(JobStatus::Failed);
-        f.input_path = "C:\\in\\epsilon.mp4".into();
+        f.input_path = in_dir.join("epsilon.mp4").to_string_lossy().to_string();
         store.save_job(&f);
 
         let (all, total) = store.history_filtered(None, 0, None, None);
