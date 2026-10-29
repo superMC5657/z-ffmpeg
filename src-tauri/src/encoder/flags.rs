@@ -22,41 +22,49 @@ pub const MAXRATE_GUARD_FLOOR_KBPS: f64 = 500.0;
 // 编码器映射（原 codec.rs 策略知识，原样搬运）
 // ============================================================
 
+/// (加速设备, 视频编码) → FFmpeg 编码器名，`encoder_name` 的唯一事实来源。
+/// 新增加速设备/编码组合只需加行；未列出的组合（含 VP9/Copy）一律回退软件编码器。
+const HW_ENCODER_NAMES: &[(HwAccelDevice, VideoCodec, &str)] = &[
+    (HwAccelDevice::NVENC, VideoCodec::H264, "h264_nvenc"),
+    (HwAccelDevice::NVENC, VideoCodec::H265, "hevc_nvenc"),
+    (HwAccelDevice::NVENC, VideoCodec::AV1, "av1_nvenc"),
+    (HwAccelDevice::QSV, VideoCodec::H264, "h264_qsv"),
+    (HwAccelDevice::QSV, VideoCodec::H265, "hevc_qsv"),
+    (HwAccelDevice::QSV, VideoCodec::AV1, "av1_qsv"),
+    (HwAccelDevice::AMF, VideoCodec::H264, "h264_amf"),
+    (HwAccelDevice::AMF, VideoCodec::H265, "hevc_amf"),
+    (HwAccelDevice::AMF, VideoCodec::AV1, "av1_amf"),
+    (
+        HwAccelDevice::VideoToolbox,
+        VideoCodec::H264,
+        "h264_videotoolbox",
+    ),
+    (
+        HwAccelDevice::VideoToolbox,
+        VideoCodec::H265,
+        "hevc_videotoolbox",
+    ),
+    (
+        HwAccelDevice::VideoToolbox,
+        VideoCodec::AV1,
+        "av1_videotoolbox",
+    ),
+    (HwAccelDevice::VAAPI, VideoCodec::H264, "h264_vaapi"),
+    (HwAccelDevice::VAAPI, VideoCodec::H265, "hevc_vaapi"),
+    (HwAccelDevice::VAAPI, VideoCodec::AV1, "av1_vaapi"),
+];
+
 /// 映射到 FFmpeg 编码器名称
 pub fn encoder_name(codec: &VideoCodec, hw: Option<&HwAccelConfig>) -> &'static str {
-    match hw {
-        Some(HwAccelConfig { device: HwAccelDevice::NVENC, .. }) => match codec {
-            VideoCodec::H264 => "h264_nvenc",
-            VideoCodec::H265 => "hevc_nvenc",
-            VideoCodec::AV1 => "av1_nvenc",
-            _ => software_encoder(codec),
-        },
-        Some(HwAccelConfig { device: HwAccelDevice::QSV, .. }) => match codec {
-            VideoCodec::H264 => "h264_qsv",
-            VideoCodec::H265 => "hevc_qsv",
-            VideoCodec::AV1 => "av1_qsv",
-            _ => software_encoder(codec),
-        },
-        Some(HwAccelConfig { device: HwAccelDevice::AMF, .. }) => match codec {
-            VideoCodec::H264 => "h264_amf",
-            VideoCodec::H265 => "hevc_amf",
-            VideoCodec::AV1 => "av1_amf",
-            _ => software_encoder(codec),
-        },
-        Some(HwAccelConfig { device: HwAccelDevice::VideoToolbox, .. }) => match codec {
-            VideoCodec::H264 => "h264_videotoolbox",
-            VideoCodec::H265 => "hevc_videotoolbox",
-            VideoCodec::AV1 => "av1_videotoolbox",
-            _ => software_encoder(codec),
-        },
-        Some(HwAccelConfig { device: HwAccelDevice::VAAPI, .. }) => match codec {
-            VideoCodec::H264 => "h264_vaapi",
-            VideoCodec::H265 => "hevc_vaapi",
-            VideoCodec::AV1 => "av1_vaapi",
-            _ => software_encoder(codec),
-        },
-        None => software_encoder(codec),
+    if let Some(HwAccelConfig { device, .. }) = hw {
+        if let Some(&(_, _, name)) = HW_ENCODER_NAMES
+            .iter()
+            .find(|(d, c, _)| d == device && c == codec)
+        {
+            return name;
+        }
     }
+    software_encoder(codec)
 }
 
 pub fn software_encoder(codec: &VideoCodec) -> &'static str {
@@ -191,6 +199,9 @@ pub fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
 /// - libvpx-vp9：恒定质量需要 `-crf <val> -b:v 0`。
 /// - libsvtav1：不支持 -qp；使用 `-crf <val>`。
 /// - libx264 / libx265：标准的 `-crf <val>` 或 `-qp <val>`。
+///
+/// 派发键是解析后的最终编码器名，而非 `HwAccelDevice`：设备 × VP9/Copy 的
+/// 组合在 `encoder_name` 已回退软件编码器，按设备派发会误入硬件分支。
 pub fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
     match &config.video_settings.rate_control {
         RateControl::Crf { value } => {
@@ -199,22 +210,21 @@ pub fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
                 // 1. 必须附加 `-b:v 0`，解除默认 target bitrate 约束，由 -cq 决定质量；
                 // 2. 启用 `-spatial-aq 1`（空间自适应量化）与 `-rc-lookahead 32`（前瞻分析）以显著提升压缩效率。
                 vec![
-                    "-rc:v".into(), "vbr".into(),
-                    "-cq".into(), value.to_string(),
-                    "-b:v".into(), "0".into(),
-                    "-spatial-aq".into(), "1".into(),
-                    "-rc-lookahead".into(), "32".into(),
+                    "-rc:v".into(),
+                    "vbr".into(),
+                    "-cq".into(),
+                    value.to_string(),
+                    "-b:v".into(),
+                    "0".into(),
+                    "-spatial-aq".into(),
+                    "1".into(),
+                    "-rc-lookahead".into(),
+                    "32".into(),
                 ]
             } else if encoder.contains("qsv") {
                 vec!["-global_quality".into(), value.to_string()]
-            } else if encoder.contains("amf") {
-                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
-            } else if encoder.contains("vaapi") {
-                vec!["-qp".into(), value.to_string()]
-            } else if encoder.contains("videotoolbox") {
-                vec!["-q:v".into(), value.to_string()]
-            } else if encoder == "libvpx-vp9" {
-                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
+            } else if let Some(args) = qp_style_args(encoder, value) {
+                args
             } else {
                 vec!["-crf".into(), value.to_string()]
             }
@@ -222,22 +232,19 @@ pub fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
         RateControl::Cqp { value } => {
             if encoder.contains("nvenc") {
                 vec![
-                    "-rc:v".into(), "constqp".into(),
-                    "-qp".into(), value.to_string(),
-                    "-spatial-aq".into(), "1".into(),
+                    "-rc:v".into(),
+                    "constqp".into(),
+                    "-qp".into(),
+                    value.to_string(),
+                    "-spatial-aq".into(),
+                    "1".into(),
                 ]
             } else if encoder.contains("qsv") {
                 vec!["-q:v".into(), value.to_string()]
-            } else if encoder.contains("amf") {
-                vec!["-rc".into(), "cqp".into(), "-qp_i".into(), value.to_string(), "-qp_p".into(), value.to_string()]
-            } else if encoder.contains("vaapi") {
-                vec!["-qp".into(), value.to_string()]
-            } else if encoder.contains("videotoolbox") {
-                vec!["-q:v".into(), value.to_string()]
+            } else if let Some(args) = qp_style_args(encoder, value) {
+                args
             } else if encoder == "libsvtav1" {
                 vec!["-crf".into(), value.to_string()]
-            } else if encoder == "libvpx-vp9" {
-                vec!["-crf".into(), value.to_string(), "-b:v".into(), "0".into()]
             } else {
                 vec!["-qp".into(), value.to_string()]
             }
@@ -255,6 +262,34 @@ pub fn rate_control_args(config: &EncodeConfig, encoder: &str) -> Vec<String> {
             }
             args
         }
+    }
+}
+
+/// AMF / VAAPI / VideoToolbox / libvpx-vp9 的 CRF 与 CQP 产出完全一致，收拢共用；
+/// 返回 None = 该编码器不在此组，由调用方继续各自的分支（如 libsvtav1 / 兜底）。
+fn qp_style_args(encoder: &str, value: impl std::fmt::Display) -> Option<Vec<String>> {
+    if encoder.contains("amf") {
+        Some(vec![
+            "-rc".into(),
+            "cqp".into(),
+            "-qp_i".into(),
+            value.to_string(),
+            "-qp_p".into(),
+            value.to_string(),
+        ])
+    } else if encoder.contains("vaapi") {
+        Some(vec!["-qp".into(), value.to_string()])
+    } else if encoder.contains("videotoolbox") {
+        Some(vec!["-q:v".into(), value.to_string()])
+    } else if encoder == "libvpx-vp9" {
+        Some(vec![
+            "-crf".into(),
+            value.to_string(),
+            "-b:v".into(),
+            "0".into(),
+        ])
+    } else {
+        None
     }
 }
 
@@ -281,7 +316,9 @@ pub fn has_custom_maxrate(config: &EncodeConfig) -> bool {
 
 /// 1.25x guard 换算（kbps），带 500k 下限。
 pub fn guard_maxrate_kbps(input_kbps: f64) -> f64 {
-    (input_kbps * MAXRATE_GUARD_FACTOR).round().max(MAXRATE_GUARD_FLOOR_KBPS)
+    (input_kbps * MAXRATE_GUARD_FACTOR)
+        .round()
+        .max(MAXRATE_GUARD_FLOOR_KBPS)
 }
 
 /// 解析用户显式指定的 -maxrate 值（kbps）：支持 `6000k` / `5M` / 裸数字（bps→kbps）。
@@ -389,31 +426,56 @@ mod tests {
         assert_eq!(encoder_name(&VideoCodec::VP9, None), "libvpx-vp9");
         assert_eq!(encoder_name(&VideoCodec::Copy, None), "copy");
         // NVENC / QSV / AMF / VAAPI / VTB：VP9 与 Copy 永远回退软件实现
-        for device in [HwAccelDevice::NVENC, HwAccelDevice::QSV, HwAccelDevice::AMF, HwAccelDevice::VAAPI, HwAccelDevice::VideoToolbox] {
+        for device in [
+            HwAccelDevice::NVENC,
+            HwAccelDevice::QSV,
+            HwAccelDevice::AMF,
+            HwAccelDevice::VAAPI,
+            HwAccelDevice::VideoToolbox,
+        ] {
             let hw = HwAccelConfig { device };
             let hw_ref = Some(&hw);
             assert_eq!(encoder_name(&VideoCodec::VP9, hw_ref), "libvpx-vp9");
             assert_eq!(encoder_name(&VideoCodec::Copy, hw_ref), "copy");
         }
-        let nvenc = HwAccelConfig { device: HwAccelDevice::NVENC };
+        let nvenc = HwAccelConfig {
+            device: HwAccelDevice::NVENC,
+        };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&nvenc)), "h264_nvenc");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&nvenc)), "hevc_nvenc");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&nvenc)), "av1_nvenc");
-        let qsv = HwAccelConfig { device: HwAccelDevice::QSV };
+        let qsv = HwAccelConfig {
+            device: HwAccelDevice::QSV,
+        };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&qsv)), "h264_qsv");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&qsv)), "hevc_qsv");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&qsv)), "av1_qsv");
-        let amf = HwAccelConfig { device: HwAccelDevice::AMF };
+        let amf = HwAccelConfig {
+            device: HwAccelDevice::AMF,
+        };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&amf)), "h264_amf");
         assert_eq!(encoder_name(&VideoCodec::H265, Some(&amf)), "hevc_amf");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&amf)), "av1_amf");
-        let vaapi = HwAccelConfig { device: HwAccelDevice::VAAPI };
+        let vaapi = HwAccelConfig {
+            device: HwAccelDevice::VAAPI,
+        };
         assert_eq!(encoder_name(&VideoCodec::H264, Some(&vaapi)), "h264_vaapi");
         assert_eq!(encoder_name(&VideoCodec::AV1, Some(&vaapi)), "av1_vaapi");
-        let vtb = HwAccelConfig { device: HwAccelDevice::VideoToolbox };
-        assert_eq!(encoder_name(&VideoCodec::H264, Some(&vtb)), "h264_videotoolbox");
-        assert_eq!(encoder_name(&VideoCodec::H265, Some(&vtb)), "hevc_videotoolbox");
-        assert_eq!(encoder_name(&VideoCodec::AV1, Some(&vtb)), "av1_videotoolbox");
+        let vtb = HwAccelConfig {
+            device: HwAccelDevice::VideoToolbox,
+        };
+        assert_eq!(
+            encoder_name(&VideoCodec::H264, Some(&vtb)),
+            "h264_videotoolbox"
+        );
+        assert_eq!(
+            encoder_name(&VideoCodec::H265, Some(&vtb)),
+            "hevc_videotoolbox"
+        );
+        assert_eq!(
+            encoder_name(&VideoCodec::AV1, Some(&vtb)),
+            "av1_videotoolbox"
+        );
     }
 
     // ---- 矩阵：preset 词汇（device × preset 快照） ----
@@ -421,19 +483,43 @@ mod tests {
     #[test]
     fn matrix_preset_vocab_snapshot() {
         // 软件：H264 透传、AV1 数值、VP9 cpu-used
-        assert_eq!(encoder_preset_args(&base_config()), vec!["-preset".to_string(), "medium".to_string()]);
+        assert_eq!(
+            encoder_preset_args(&base_config()),
+            vec!["-preset".to_string(), "medium".to_string()]
+        );
         let mut av1 = base_config();
         av1.video_codec = VideoCodec::AV1;
-        assert_eq!(encoder_preset_args(&av1), vec!["-preset".to_string(), "6".to_string()]);
+        assert_eq!(
+            encoder_preset_args(&av1),
+            vec!["-preset".to_string(), "6".to_string()]
+        );
         let mut vp9 = base_config();
         vp9.video_codec = VideoCodec::VP9;
-        assert_eq!(encoder_preset_args(&vp9), vec!["-cpu-used".to_string(), "3".to_string()]);
+        assert_eq!(
+            encoder_preset_args(&vp9),
+            vec!["-cpu-used".to_string(), "3".to_string()]
+        );
         // 硬件 medium 快照
-        assert_eq!(encoder_preset_args(&hw_config(HwAccelDevice::NVENC)), vec!["-preset".to_string(), "p4".to_string()]);
-        assert_eq!(encoder_preset_args(&hw_config(HwAccelDevice::QSV)), vec!["-preset".to_string(), "medium".to_string()]);
-        assert_eq!(encoder_preset_args(&hw_config(HwAccelDevice::AMF)), vec!["-quality".to_string(), "balanced".to_string()]);
-        assert_eq!(encoder_preset_args(&hw_config(HwAccelDevice::VAAPI)), vec!["-compression_level".to_string(), "4".to_string()]);
-        assert_eq!(encoder_preset_args(&hw_config(HwAccelDevice::VideoToolbox)), Vec::<String>::new());
+        assert_eq!(
+            encoder_preset_args(&hw_config(HwAccelDevice::NVENC)),
+            vec!["-preset".to_string(), "p4".to_string()]
+        );
+        assert_eq!(
+            encoder_preset_args(&hw_config(HwAccelDevice::QSV)),
+            vec!["-preset".to_string(), "medium".to_string()]
+        );
+        assert_eq!(
+            encoder_preset_args(&hw_config(HwAccelDevice::AMF)),
+            vec!["-quality".to_string(), "balanced".to_string()]
+        );
+        assert_eq!(
+            encoder_preset_args(&hw_config(HwAccelDevice::VAAPI)),
+            vec!["-compression_level".to_string(), "4".to_string()]
+        );
+        assert_eq!(
+            encoder_preset_args(&hw_config(HwAccelDevice::VideoToolbox)),
+            Vec::<String>::new()
+        );
         // 边界词汇快照（与搬运前逐 flag 一致）
         let mut nvenc_fast = hw_config(HwAccelDevice::NVENC);
         nvenc_fast.video_settings.encoder_preset = "ultrafast".into();
@@ -466,16 +552,36 @@ mod tests {
         assert_eq!(rate_control_args(&cfg, "libx264"), vec!["-crf", "23"]);
         assert_eq!(
             rate_control_args(&cfg, "h264_nvenc"),
-            vec!["-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1", "-rc-lookahead", "32"]
+            vec![
+                "-rc:v",
+                "vbr",
+                "-cq",
+                "23",
+                "-b:v",
+                "0",
+                "-spatial-aq",
+                "1",
+                "-rc-lookahead",
+                "32"
+            ]
         );
-        assert_eq!(rate_control_args(&cfg, "h264_qsv"), vec!["-global_quality", "23"]);
+        assert_eq!(
+            rate_control_args(&cfg, "h264_qsv"),
+            vec!["-global_quality", "23"]
+        );
         assert_eq!(
             rate_control_args(&cfg, "h264_amf"),
             vec!["-rc", "cqp", "-qp_i", "23", "-qp_p", "23"]
         );
         assert_eq!(rate_control_args(&cfg, "h264_vaapi"), vec!["-qp", "23"]);
-        assert_eq!(rate_control_args(&cfg, "h264_videotoolbox"), vec!["-q:v", "23"]);
-        assert_eq!(rate_control_args(&cfg, "libvpx-vp9"), vec!["-crf", "23", "-b:v", "0"]);
+        assert_eq!(
+            rate_control_args(&cfg, "h264_videotoolbox"),
+            vec!["-q:v", "23"]
+        );
+        assert_eq!(
+            rate_control_args(&cfg, "libvpx-vp9"),
+            vec!["-crf", "23", "-b:v", "0"]
+        );
 
         let mut cqp = base_config();
         cqp.video_settings.rate_control = RateControl::Cqp { value: 23 };
@@ -485,16 +591,25 @@ mod tests {
         );
         assert_eq!(rate_control_args(&cqp, "h264_qsv"), vec!["-q:v", "23"]);
         assert_eq!(rate_control_args(&cqp, "libsvtav1"), vec!["-crf", "23"]);
-        assert_eq!(rate_control_args(&cqp, "libvpx-vp9"), vec!["-crf", "23", "-b:v", "0"]);
+        assert_eq!(
+            rate_control_args(&cqp, "libvpx-vp9"),
+            vec!["-crf", "23", "-b:v", "0"]
+        );
         assert_eq!(rate_control_args(&cqp, "libx264"), vec!["-qp", "23"]);
 
         let mut abr = base_config();
-        abr.video_settings.rate_control = RateControl::Abr { bitrate_kbps: 4000, max_bitrate_kbps: Some(6000) };
+        abr.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 4000,
+            max_bitrate_kbps: Some(6000),
+        };
         assert_eq!(
             rate_control_args(&abr, "libx264"),
             vec!["-b:v", "4000k", "-maxrate", "6000k", "-bufsize", "12000k"]
         );
-        abr.video_settings.rate_control = RateControl::Abr { bitrate_kbps: 4000, max_bitrate_kbps: None };
+        abr.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 4000,
+            max_bitrate_kbps: None,
+        };
         assert_eq!(rate_control_args(&abr, "libx264"), vec!["-b:v", "4000k"]);
     }
 
@@ -507,16 +622,30 @@ mod tests {
         assert_eq!(guard_maxrate_kbps(4000.0), 5000.0);
         assert_eq!(guard_maxrate_kbps(100.0), 500.0);
         // 自定义解析：k / M / 裸数字
-        assert_eq!(parse_custom_maxrate_kbps(&["-maxrate".into(), "6000k".into()]), Some(6000.0));
-        assert_eq!(parse_custom_maxrate_kbps(&["-maxrate".into(), "5M".into()]), Some(5000.0));
-        assert_eq!(parse_custom_maxrate_kbps(&["-maxrate".into(), "3000k".into()]), Some(3000.0));
+        assert_eq!(
+            parse_custom_maxrate_kbps(&["-maxrate".into(), "6000k".into()]),
+            Some(6000.0)
+        );
+        assert_eq!(
+            parse_custom_maxrate_kbps(&["-maxrate".into(), "5M".into()]),
+            Some(5000.0)
+        );
+        assert_eq!(
+            parse_custom_maxrate_kbps(&["-maxrate".into(), "3000k".into()]),
+            Some(3000.0)
+        );
         assert_eq!(parse_custom_maxrate_kbps(&[]), None);
         // 生效条件：CPU 永不 guard，ABR 永不 guard
         assert!(!should_apply_auto_maxrate_guard(&base_config()));
         let mut abr_hw = hw_config(HwAccelDevice::NVENC);
-        abr_hw.video_settings.rate_control = RateControl::Abr { bitrate_kbps: 4000, max_bitrate_kbps: None };
+        abr_hw.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 4000,
+            max_bitrate_kbps: None,
+        };
         assert!(!should_apply_auto_maxrate_guard(&abr_hw));
-        assert!(should_apply_auto_maxrate_guard(&hw_config(HwAccelDevice::NVENC)));
+        assert!(should_apply_auto_maxrate_guard(&hw_config(
+            HwAccelDevice::NVENC
+        )));
         // args 侧 guard 标志快照
         assert_eq!(
             auto_maxrate_guard_args(&hw_config(HwAccelDevice::NVENC), Some(4000)),
@@ -543,14 +672,30 @@ mod tests {
         assert_eq!(
             video_encoding_args(&cfg, encoder, Some(4000)),
             vec![
-                "-preset", "p4",
-                "-rc:v", "vbr", "-cq", "23", "-b:v", "0", "-spatial-aq", "1", "-rc-lookahead", "32",
-                "-maxrate", "5000k", "-bufsize", "10000k",
+                "-preset",
+                "p4",
+                "-rc:v",
+                "vbr",
+                "-cq",
+                "23",
+                "-b:v",
+                "0",
+                "-spatial-aq",
+                "1",
+                "-rc-lookahead",
+                "32",
+                "-maxrate",
+                "5000k",
+                "-bufsize",
+                "10000k",
             ]
         );
         // 同配置 ABR：无 guard，只有 -b:v
         let mut abr = hw_config(HwAccelDevice::NVENC);
-        abr.video_settings.rate_control = RateControl::Abr { bitrate_kbps: 2000, max_bitrate_kbps: None };
+        abr.video_settings.rate_control = RateControl::Abr {
+            bitrate_kbps: 2000,
+            max_bitrate_kbps: None,
+        };
         let encoder = encoder_name(&abr.video_codec, abr.hw_accel.as_ref());
         assert_eq!(
             video_encoding_args(&abr, encoder, Some(4000)),
@@ -562,5 +707,4 @@ mod tests {
         let flags = video_encoding_args(&cpu, encoder, Some(4000));
         assert!(!flags.contains(&"-maxrate".to_string()), "{flags:?}");
     }
-
 }
