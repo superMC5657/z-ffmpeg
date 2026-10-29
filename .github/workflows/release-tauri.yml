@@ -77,6 +77,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPIMAGE_EXTRACT_AND_RUN: '1'
+          # 埋点上报鉴权 token：编译期注入，不在 tauri.conf.json 明文维护
+          #（上线前在仓库 Secrets 配置 SOFTCANDY_ANALYTICS_TOKEN）
+          SOFTCANDY_ANALYTICS_TOKEN: ${{ secrets.SOFTCANDY_ANALYTICS_TOKEN }}
 
       # 收集产物: windows = exe+sig; linux = AppImage+sig 与 deb (普通安装资产，不参与自动更新)
       - name: Collect artifacts

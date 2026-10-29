@@ -85,7 +85,7 @@
       "verifyPath": "/api/v1/apps/z-ffmpeg/verify",
       "deactivatePath": "/api/v1/apps/z-ffmpeg/deactivate",
       "analyticsPath": "/api/v1/apps/z-ffmpeg/analytics",
-      "analyticsToken": "1ff0e5046df7373c0e97508dcf5fab8d5af5e05d06bc67d13f58e6a587affce2"
+      "analyticsToken": ""
     }
   }
 }
