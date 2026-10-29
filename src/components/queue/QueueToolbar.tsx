@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Layers, Pause, Play, Trash2, Zap } from "lucide-react";
 import { useQueueStore } from "@/store/queueStore";
 import { useToastStore, showErrorToast } from "@/store/toastStore";
+import { FREE_MAX_CONCURRENT } from "@/store/licenseStore";
 import AppleButton from "@/components/layout/AppleButton";
 import AppleSelect from "@/components/layout/AppleSelect";
 
@@ -21,9 +22,6 @@ export default function QueueToolbar() {
   useEffect(() => {
     fetchMaxConcurrent();
   }, [fetchMaxConcurrent]);
-
-  // 队列并发数上限 16
-  const concurrencyCap = 16;
 
   const hasPending = jobs.some((j) => j.status === "Pending");
   const hasCompleted = jobs.some(
@@ -105,11 +103,11 @@ export default function QueueToolbar() {
         <span className="text-[12px] text-secondary">并发</span>
         <AppleSelect
           className="w-16"
-          value={Math.min(maxConcurrent, concurrencyCap)}
+          value={Math.min(maxConcurrent, FREE_MAX_CONCURRENT)}
           disabled={!maxConcurrentLoaded || savingConcurrent}
           onChange={(e) => handleConcurrentChange(parseInt(e.target.value, 10))}
         >
-          {Array.from({ length: concurrencyCap }, (_, i) => i + 1).map((n) => (
+          {Array.from({ length: FREE_MAX_CONCURRENT }, (_, i) => i + 1).map((n) => (
             <option key={n} value={n}>
               {n}
             </option>

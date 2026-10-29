@@ -104,7 +104,7 @@ describe("licenseStore", () => {
     expect(useLicenseStore.getState().activationOpen).toBe(false);
   });
 
-  it("FREE_MAX_CONCURRENT matches the backend constant", () => {
+  it("FREE_MAX_CONCURRENT 与后端并发上限（1..=16）一致", () => {
     expect(FREE_MAX_CONCURRENT).toBe(16);
   });
 });

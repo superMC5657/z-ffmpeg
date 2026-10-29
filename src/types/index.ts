@@ -119,20 +119,9 @@ export interface EncodeProgress {
 }
 
 /**
- * EncodeProgress 类型守卫（严格）：必须是对象且携带数值型关键字段
- * （percentage / percent / progress 之一），任意 object 不再通过。
- * 新代码请使用 `@/lib/progress` 的 isEncodeProgressStrict / normalizeProgress，
- * 此处保留同名导出以兼容旧调用方。
+ * EncodeProgress 的严格类型守卫与归一统一收敛在 `@/lib/progress`
+ *（isEncodeProgressStrict / normalizeProgress），本文件不再重复导出。
  */
-export function isEncodeProgress(p: unknown): p is EncodeProgress {
-  if (typeof p !== "object" || p === null) return false;
-  const o = p as Record<string, unknown>;
-  return (
-    typeof o.percentage === "number" ||
-    typeof o.percent === "number" ||
-    typeof o.progress === "number"
-  );
-}
 
 export interface EncodeResult {
   jobId: string;

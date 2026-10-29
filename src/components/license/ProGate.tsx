@@ -14,7 +14,7 @@ interface ProGateProps {
 /**
  * Pro 门控包装器：未激活时内容半透明禁点，覆盖层显示 PRO 徽标，
  * 点击任意处拉起全局激活对话框。已激活时原样渲染 children。
- * 注意这只是 UI 层锁定——真正的强制在后端命令层（ensure_config_allowed 等）。
+ * 注意这只是 UI 层锁定——真正的强制在后端命令层（ensure_pro 等）。
  */
 export default function ProGate({ children, className, title }: ProGateProps) {
   const isPro = useLicenseStore((s) => s.status?.pro === true);
