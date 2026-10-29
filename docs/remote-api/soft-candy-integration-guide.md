@@ -141,6 +141,34 @@ Authorization: Bearer <analyticsToken>
 - 在应用正常退出或会话结束时上报。
 - 上报失败静默处理，不阻塞界面与主流程。
 
+### 3.1 负载示例（客户端字段顺序锁定）
+
+客户端负载字段书写顺序与下方示例一致（serde_json `preserve_order`，由测试 `payload_fields_follow_doc_order` 全字段锁定）：
+
+```json
+{
+  "deviceId": "machine-hash-00000001",
+  "licenseStatus": "free",
+  "version": "0.1.5",
+  "os": "Windows 11 专业版",
+  "arch": "x86_64",
+  "sessionStart": 1761772800,
+  "sessionEnd": 1761859200,
+  "filesAdded": 3,
+  "encodeCompleted": 2,
+  "encodeFailed": 0,
+  "encodeCancelled": 1,
+  "retries": 0,
+  "hwAccelJobs": 1,
+  "vmafRuns": 0,
+  "presets": { "saved": 0, "imported": 0, "exported": 0 },
+  "ffmpegDownloaded": 0,
+  "commandsExported": 0
+}
+```
+
+可选 map（为空则不带，保持负载干净）：`codecs`（编码器使用分布）、`events`（UI 行为事件计数）。
+
 ## 4. 检查更新
 
 ```http
@@ -166,3 +194,8 @@ GET /api/v1/apps/{slug}/latest?platform=windows&channel=stable
 行为规范：
 - 客户端按分段数字版本号进行比较。
 - 检查失败时静默跳过，不阻断应用使用。
+
+> **z-ffmpeg 偏差声明**：客户端未接入本节端点，更新检查走自建 Tauri updater
+>（`latest.json` 双清单，见 `tauri.conf.json → plugins.updater` 与发布流水线）。
+> 该偏差已确认接受（`docs/reviews/2026-10-30-full-review.md` P1/D1）；
+> 若平台侧要求集中管控更新，再按本节实现。

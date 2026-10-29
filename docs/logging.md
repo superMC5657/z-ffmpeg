@@ -33,10 +33,11 @@
 噪音源是 ffmpeg 子进程的 stderr + `-progress pipe:1` 每帧报告。控制手段：
 
 1. `level_for("zffmpeg_lib::encoder", Info@release / Debug@dev)`：release 下进度类 `Debug/Trace` 不落盘。
-2. 进度循环零 log：`encoder/engine.rs` 的 stdout 解析循环内无任何 `log!`；stderr 由独立线程消费，保留尾部 50 行（`STDERR_TAIL_LINES`）用于失败诊断，不逐行打 log。
+2. 进度循环零 log：`encoder/engine.rs` 的 stdout 解析循环内无逐帧/逐块 `log!`，唯一例外是 25% 步进里程碑日志（`next_milestone`，每文件约 4 条，含 pct/fps/speed，排障用）；stderr 由独立线程消费，保留尾部 50 行（`STDERR_TAIL_LINES`）用于失败诊断，不逐行打 log。
 3. 关键生命周期点位（`target = "zffmpeg_lib::encoder"`）：
    - `error` encode ffmpeg not found（含 `job_id` + basename `file`）
    - `info` encode started（含 `job_id` + basename `file`）
+   - `info` encode progress（25% 步进里程碑；含 `job_id` + `file` + pct/fps/speed）
    - `info` encode completed（含 `job_id` + 输出字节数 + `elapsed` 秒）
    - `error` encode failed（含 `job_id` + `exit_code` + `elapsed` + stderr 尾部单行摘要）
    - `warn` encode cancelled（含 `job_id` + 已耗时）
