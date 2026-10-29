@@ -1,6 +1,6 @@
 //! 埋点负载组装与退出时一次性上报。
 //!
-//! 契约约定（接入指南 4.5 节）：失败静默、不重试不弹窗、
+//! 契约约定（接入指南第 3 节）：失败静默、不重试不弹窗、
 //! 会话结束时一次性上报避免高频小请求（服务端限流 60 次/分钟/产品/IP）。
 
 use std::sync::atomic::Ordering;
@@ -18,7 +18,7 @@ pub fn build_payload(device_id: &str, license_status: &str, version: &str) -> Va
     let num = |ctr: &std::sync::atomic::AtomicU64| ctr.load(Ordering::Relaxed);
 
     let mut payload = json!({
-        // 字段顺序对齐接入指南 4.1 节示例负载（需 serde_json preserve_order）
+        // 字段顺序对齐接入指南 3.1 节示例负载（需 serde_json preserve_order）
         "deviceId": device_id,
         "licenseStatus": license_status,
         "version": version,
@@ -27,7 +27,6 @@ pub fn build_payload(device_id: &str, license_status: &str, version: &str) -> Va
         "sessionStart": super::session_start(),
         "sessionEnd": chrono::Utc::now().timestamp(),
         "filesAdded": num(&c.files_added),
-        "jobsAdded": num(&c.jobs_added),
         "encodeCompleted": num(&c.encode_completed),
         "encodeFailed": num(&c.encode_failed),
         "encodeCancelled": num(&c.encode_cancelled),
@@ -45,10 +44,16 @@ pub fn build_payload(device_id: &str, license_status: &str, version: &str) -> Va
 
     // 可选 map：为空则不带，保持负载干净
     if !codecs.is_empty() {
-        payload["codecs"] = json!(codecs.iter().cloned().collect::<std::collections::BTreeMap<_, _>>());
+        payload["codecs"] = json!(codecs
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeMap<_, _>>());
     }
     if !events.is_empty() {
-        payload["events"] = json!(events.iter().cloned().collect::<std::collections::BTreeMap<_, _>>());
+        payload["events"] = json!(events
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeMap<_, _>>());
     }
     payload
 }
@@ -73,7 +78,11 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
 
     let (cfg, device_id, license_status) = {
         let state = app.state::<crate::AppState>();
-        let license_status = if state.license.is_pro() { "pro" } else { "free" };
+        let license_status = if state.license.is_pro() {
+            "pro"
+        } else {
+            "free"
+        };
         (
             state.license.config().clone(),
             state.license.device_id().to_string(),
@@ -108,14 +117,14 @@ pub fn report_on_exit(app: &tauri::AppHandle) {
 
 /// 阻塞 POST 上报（Bearer token 按产品配置决定是否携带）
 fn send_blocking(url: &str, token: &str, payload: &Value) -> Result<(), String> {
+    // 请求超时按契约第 1 节统一 10s；退出上报另有 3s 有界等待（report_on_exit），
+    // 属 UX 取舍：超时口径对齐契约，进程等待按体验，失败依旧静默。
     let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut req = client
-        .post(url)
-        .json(payload);
+    let mut req = client.post(url).json(payload);
     if !token.is_empty() {
         req = req.bearer_auth(token);
     }
@@ -125,7 +134,10 @@ fn send_blocking(url: &str, token: &str, payload: &Value) -> Result<(), String> 
     if status.is_success() {
         Ok(())
     } else {
-        Err(format!("HTTP {status}: {}", resp.text().unwrap_or_default()))
+        Err(format!(
+            "HTTP {status}: {}",
+            resp.text().unwrap_or_default()
+        ))
     }
 }
 
@@ -160,11 +172,29 @@ mod tests {
     #[test]
     fn payload_fields_follow_doc_order() {
         // 回归：serde_json 默认 BTreeMap 会按字母序打乱键序，
-        // 开启 preserve_order 后应按指南 4.1 示例的书写顺序输出
+        // 开启 preserve_order 后应按指南 3.1 示例的书写顺序输出（全字段锁定）
         let payload = build_payload("d", "free", "0.3.0");
         let text = serde_json::to_string(&payload).unwrap();
         let pos = |k: &str| text.find(&format!("\"{k}\":")).expect(k);
-        let order = ["deviceId", "licenseStatus", "version", "os", "arch", "sessionStart", "sessionEnd", "filesAdded", "encodeCompleted", "vmafRuns", "presets", "ffmpegDownloaded", "commandsExported"];
+        let order = [
+            "deviceId",
+            "licenseStatus",
+            "version",
+            "os",
+            "arch",
+            "sessionStart",
+            "sessionEnd",
+            "filesAdded",
+            "encodeCompleted",
+            "encodeFailed",
+            "encodeCancelled",
+            "retries",
+            "hwAccelJobs",
+            "vmafRuns",
+            "presets",
+            "ffmpegDownloaded",
+            "commandsExported",
+        ];
         for pair in order.windows(2) {
             assert!(
                 pos(pair[0]) < pos(pair[1]),

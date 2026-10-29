@@ -1,52 +1,15 @@
-use serde::{Deserialize, Serialize};
 use crate::error::AppResult;
 use crate::queue::job::JobSnapshot;
 use crate::AppState;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryEntry {
-    pub id: String,
-    pub input_path: String,
-    pub output_path: String,
-    pub file_name: String,
-    pub status: String,
-    pub vmaf_score: Option<f64>,
-    pub vmaf_detail: Option<String>,
-    pub output_size: Option<u64>,
-    pub input_size: Option<u64>,
-    pub created_at: String,
-    pub completed_at: Option<String>,
-    pub error: Option<String>,
-}
-
-/// `JobSnapshot` → `HistoryEntry`：丢弃历史页不需要的
-/// `progress` / `estimated_output_size` / `started_at`。
-impl From<JobSnapshot> for HistoryEntry {
-    fn from(j: JobSnapshot) -> Self {
-        Self {
-            id: j.id,
-            input_path: j.input_path,
-            output_path: j.output_path,
-            file_name: j.file_name,
-            status: j.status,
-            vmaf_score: j.vmaf_score,
-            vmaf_detail: j.vmaf_detail,
-            output_size: j.output_size,
-            input_size: j.input_size,
-            created_at: j.created_at,
-            completed_at: j.completed_at,
-            error: j.error,
-        }
-    }
-}
+use serde::Serialize;
 
 /// 分页后的历史结果：entries 为当前页，total 为筛选后的总条数
 /// （供前端计算页数），与前端 `HistoryPageResult` 对齐。
+/// 条目直接复用 `JobSnapshot`（前端历史页只读其子集字段，多余字段被忽略）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPageResult {
-    pub entries: Vec<HistoryEntry>,
+    pub entries: Vec<JobSnapshot>,
     pub total: usize,
 }
 
@@ -66,27 +29,27 @@ pub async fn get_history(
     //（内存中的队列在启动时仅恢复活动任务）。
     let queue = match state.queue_manager.as_ref() {
         Some(q) => q,
-        None => return Ok(HistoryPageResult { entries: vec![], total: 0 }),
+        None => {
+            return Ok(HistoryPageResult {
+                entries: vec![],
+                total: 0,
+            })
+        }
     };
 
-    let (snapshots, total) = queue.history_filtered(
+    let (entries, total) = queue.history_filtered(
         limit,
         offset.unwrap_or(0),
         status.as_deref(),
         search.as_deref(),
     );
 
-    let entries: Vec<HistoryEntry> = snapshots.into_iter().map(|j| j.into()).collect();
-
     Ok(HistoryPageResult { entries, total })
 }
 
 /// 按 ID 删除指定的历史记录条目。
 #[tauri::command]
-pub async fn delete_history(
-    state: tauri::State<'_, AppState>,
-    ids: Vec<String>,
-) -> AppResult<()> {
+pub async fn delete_history(state: tauri::State<'_, AppState>, ids: Vec<String>) -> AppResult<()> {
     let queue = match state.queue_manager.as_ref() {
         Some(q) => q,
         None => return Ok(()),
@@ -97,9 +60,7 @@ pub async fn delete_history(
 
 /// 清空所有历史记录条目（已完成 / 失败 / 已取消）。
 #[tauri::command]
-pub async fn clear_history(
-    state: tauri::State<'_, AppState>,
-) -> AppResult<()> {
+pub async fn clear_history(state: tauri::State<'_, AppState>) -> AppResult<()> {
     let queue = match state.queue_manager.as_ref() {
         Some(q) => q,
         None => return Ok(()),

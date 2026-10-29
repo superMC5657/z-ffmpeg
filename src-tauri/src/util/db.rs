@@ -12,15 +12,11 @@ use crate::error::{AppResult, LogDisplay};
 /// 4. 执行 `init_sql` 建表语句。
 ///
 /// 失败时记 `{tag} db ... failed reason {top}` 并返回 `AppError::Internal`。
-///
-/// 参数顺序兼容两种调用形态：`(path, init_sql, tag)` 与 `(path, tag, init_sql)`，
-/// 通过是否像 SQL（分号 / CREATE TABLE / 换行）自动识别，避免并行分支的顺序分歧导致建表失败。
 pub fn open_sqlite_store(
     db_path: &std::path::Path,
-    init_sql_or_tag: &str,
-    tag_or_init_sql: &str,
+    init_sql: &str,
+    tag: &str,
 ) -> AppResult<rusqlite::Connection> {
-    let (init_sql, tag) = resolve_sql_and_tag(init_sql_or_tag, tag_or_init_sql);
     if let Some(parent) = db_path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -50,23 +46,6 @@ pub fn open_sqlite_store(
     })?;
 
     Ok(db)
-}
-
-/// 识别两个 `&str` 参数中哪个是建表 SQL、哪个是日志 tag。
-/// SQL 特征：含分号 / 换行 / `CREATE TABLE`；tag 通常是 `queue` / `presets` 短标识。
-fn looks_like_sql(s: &str) -> bool {
-    s.contains(';') || s.contains('\n') || s.to_ascii_uppercase().contains("CREATE TABLE")
-}
-
-fn resolve_sql_and_tag<'a>(a: &'a str, b: &'a str) -> (&'a str, &'a str) {
-    let a_sql = looks_like_sql(a);
-    let b_sql = looks_like_sql(b);
-    match (a_sql, b_sql) {
-        (true, false) => (a, b),
-        (false, true) => (b, a),
-        // 歧义时回退到契约顺序 (init_sql, tag)
-        _ => (a, b),
-    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,21 @@
-use tauri::State;
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::estimate;
 use crate::encoder::probe;
-use crate::queue::QueueStatus;
 use crate::error::AppResult;
+use crate::queue::QueueStatus;
+use tauri::State;
+
+/// 队列管理器统一取用：写命令在队列未初始化时显式报错，
+/// 与 add_to_queue/retry_job 的既有口径一致，避免静默成功掩盖初始化失败。
+/// 只读命令（get_queue_status / get_history）保留空形状回退，前端需要形状可用。
+fn queue_or_err<'a>(
+    state: &'a State<'a, crate::AppState>,
+) -> AppResult<&'a std::sync::Arc<crate::queue::QueueManager>> {
+    state
+        .queue_manager
+        .as_ref()
+        .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))
+}
 
 #[tauri::command]
 pub async fn add_to_queue(
@@ -15,14 +27,15 @@ pub async fn add_to_queue(
 ) -> AppResult<Vec<String>> {
     // 埋点：入队规模、编码器分布、硬件加速使用
     crate::analytics::bump(&crate::analytics::COUNTERS.files_added, files.len() as u64);
-    crate::analytics::bump(&crate::analytics::COUNTERS.jobs_added, files.len() as u64);
     crate::analytics::record_codec(&codec_key(&config), files.len() as u64);
     if config.hw_accel.is_some() {
-        crate::analytics::bump(&crate::analytics::COUNTERS.hw_accel_jobs, files.len() as u64);
+        crate::analytics::bump(
+            &crate::analytics::COUNTERS.hw_accel_jobs,
+            files.len() as u64,
+        );
     }
 
-    let queue = state.queue_manager.as_ref()
-        .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
+    let queue = queue_or_err(&state)?;
 
     // 构建 (输入, 输出) 文件路径对。输出路径会对磁盘已有文件、当前队列中的活动任务
     // 以及批处理中排在前面的项目进行去重，防止发生意外覆盖。
@@ -41,7 +54,9 @@ pub async fn add_to_queue(
         probes.spawn(async move {
             let _permit = sem.acquire().await;
             let est = match probe::probe_file_async(&input).await {
-                Ok(json) => estimate::estimate_output_size(&config, &json, &input).map(|e| e.expected),
+                Ok(json) => {
+                    estimate::estimate_output_size(&config, &json, &input).map(|e| e.expected)
+                }
                 Err(_) => None,
             };
             (idx, est)
@@ -69,9 +84,7 @@ pub async fn start_queue(
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
     log::info!("queue start triggered by user");
-    if let Some(queue) = state.queue_manager.as_ref() {
-        queue.process_queue(app_handle);
-    }
+    queue_or_err(&state)?.process_queue(app_handle);
     Ok(())
 }
 
@@ -81,10 +94,9 @@ pub async fn remove_from_queue(
     state: State<'_, crate::AppState>,
     job_ids: Vec<String>,
 ) -> AppResult<()> {
-    if let Some(queue) = state.queue_manager.as_ref() {
-        queue.remove_jobs(&job_ids);
-        queue.emit_updated(&app_handle);
-    }
+    let queue = queue_or_err(&state)?;
+    queue.remove_jobs(&job_ids);
+    queue.emit_updated(&app_handle);
     Ok(())
 }
 
@@ -95,21 +107,23 @@ pub async fn cancel_job(
     state: State<'_, crate::AppState>,
     job_id: String,
 ) -> AppResult<()> {
-    if let Some(queue) = state.queue_manager.as_ref() {
-        queue.cancel_job(&job_id);
-        queue.emit_updated(&app_handle);
-    }
+    let queue = queue_or_err(&state)?;
+    queue.cancel_job(&job_id);
+    queue.emit_updated(&app_handle);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn get_queue_status(
-    state: State<'_, crate::AppState>,
-) -> AppResult<QueueStatus> {
+pub async fn get_queue_status(state: State<'_, crate::AppState>) -> AppResult<QueueStatus> {
     match state.queue_manager.as_ref() {
         Some(queue) => Ok(queue.get_status()),
         None => Ok(QueueStatus {
-            jobs: vec![], total: 0, pending: 0, encoding: 0, completed: 0, failed: 0,
+            jobs: vec![],
+            total: 0,
+            pending: 0,
+            encoding: 0,
+            completed: 0,
+            failed: 0,
             paused: false,
         }),
     }
@@ -121,10 +135,9 @@ pub async fn pause_queue(
     app_handle: tauri::AppHandle,
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    if let Some(queue) = state.queue_manager.as_ref() {
-        queue.pause_queue();
-        queue.emit_updated(&app_handle);
-    }
+    let queue = queue_or_err(&state)?;
+    queue.pause_queue();
+    queue.emit_updated(&app_handle);
     Ok(())
 }
 
@@ -134,13 +147,12 @@ pub async fn resume_queue(
     app_handle: tauri::AppHandle,
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    if let Some(queue) = state.queue_manager.as_ref() {
-        let was = queue.resume_queue();
-        if was {
-            queue.process_queue(app_handle.clone());
-        }
-        queue.emit_updated(&app_handle);
+    let queue = queue_or_err(&state)?;
+    let was = queue.resume_queue();
+    if was {
+        queue.process_queue(app_handle.clone());
     }
+    queue.emit_updated(&app_handle);
     Ok(())
 }
 
@@ -149,10 +161,9 @@ pub async fn clear_completed(
     app_handle: tauri::AppHandle,
     state: State<'_, crate::AppState>,
 ) -> AppResult<()> {
-    if let Some(queue) = state.queue_manager.as_ref() {
-        queue.clear_completed();
-        queue.emit_updated(&app_handle);
-    }
+    let queue = queue_or_err(&state)?;
+    queue.clear_completed();
+    queue.emit_updated(&app_handle);
     Ok(())
 }
 
@@ -163,8 +174,7 @@ pub async fn retry_job(
     state: State<'_, crate::AppState>,
     job_id: String,
 ) -> AppResult<bool> {
-    let queue = state.queue_manager.as_ref()
-        .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
+    let queue = queue_or_err(&state)?;
     let retried = queue.retry_job(&job_id);
     if retried {
         queue.process_queue(app_handle.clone());
@@ -175,11 +185,8 @@ pub async fn retry_job(
 
 /// 获取当前最大并发编码任务数限制。
 #[tauri::command]
-pub async fn get_max_concurrent(
-    state: State<'_, crate::AppState>,
-) -> AppResult<usize> {
-    let queue = state.queue_manager.as_ref()
-        .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
+pub async fn get_max_concurrent(state: State<'_, crate::AppState>) -> AppResult<usize> {
+    let queue = queue_or_err(&state)?;
     Ok(queue.max_concurrent())
 }
 
@@ -189,8 +196,7 @@ pub async fn set_max_concurrent(
     state: State<'_, crate::AppState>,
     value: usize,
 ) -> AppResult<usize> {
-    let queue = state.queue_manager.as_ref()
-        .ok_or_else(|| crate::error::AppError::Internal("Queue not initialized".into()))?;
+    let queue = queue_or_err(&state)?;
     Ok(queue.set_max_concurrent(value))
 }
 

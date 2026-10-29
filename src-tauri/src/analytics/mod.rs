@@ -10,7 +10,6 @@ use std::sync::{Mutex, OnceLock};
 /// 会话级计数器（进程内静态，随进程结束销毁——正好符合"会话聚合"语义）
 pub struct Counters {
     pub files_added: AtomicU64,
-    pub jobs_added: AtomicU64,
     pub encode_completed: AtomicU64,
     pub encode_failed: AtomicU64,
     pub encode_cancelled: AtomicU64,
@@ -26,7 +25,6 @@ pub struct Counters {
 
 pub static COUNTERS: Counters = Counters {
     files_added: AtomicU64::new(0),
-    jobs_added: AtomicU64::new(0),
     encode_completed: AtomicU64::new(0),
     encode_failed: AtomicU64::new(0),
     encode_cancelled: AtomicU64::new(0),
