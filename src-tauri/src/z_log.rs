@@ -15,6 +15,8 @@ use log::LevelFilter;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
+use crate::error::AppResult;
+
 /// 单个日志文件滚动阈值：5MB（单文件封顶，避免单个日志过大拖慢导出）。
 const MAX_FILE_SIZE: u128 = 5 * 1024 * 1024;
 /// 日志保留天数：14 天。
@@ -343,7 +345,11 @@ pub fn prune(dir: &Path) {
                 })
                 .filter_map(|e| {
                     let m = e.metadata().ok()?;
-                    Some((e.path(), m.len(), m.modified().unwrap_or(SystemTime::UNIX_EPOCH)))
+                    Some((
+                        e.path(),
+                        m.len(),
+                        m.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    ))
                 })
                 .collect()
         })
@@ -367,24 +373,25 @@ pub fn prune(dir: &Path) {
 
 /// 取日志目录（前端“打开日志目录 / 导出诊断包”入口）。
 #[tauri::command]
-pub fn zlog_get_dir(app: AppHandle) -> Result<String, String> {
+pub fn zlog_get_dir(app: AppHandle) -> AppResult<String> {
     Ok(log_dir(&app).to_string_lossy().into_owned())
 }
 
 /// 导出诊断包：把日志目录下 *.log 打包为 temp 下的 zip（文件名带时间戳），
 /// 返回 zip 绝对路径。不上报、不碰 sqlite 业务库。
 #[tauri::command]
-pub fn zlog_export_bundle(app: AppHandle) -> Result<String, String> {
+pub fn zlog_export_bundle(app: AppHandle) -> AppResult<String> {
+    use crate::error::AppError;
     use std::io::Write;
 
     let dir = log_dir(&app);
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let out_path = std::env::temp_dir().join(format!("zffmpeg-logs-{}.zip", stamp));
 
-    let file = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+    let file = std::fs::File::create(&out_path).map_err(|e| AppError::Internal(e.to_string()))?;
     let mut zip = zip::ZipWriter::new(file);
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
 
     let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map(|rd| {
@@ -402,9 +409,9 @@ pub fn zlog_export_bundle(app: AppHandle) -> Result<String, String> {
     entries.sort();
     if entries.is_empty() {
         zip.start_file("README.txt", options)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         zip.write_all(b"no log files yet")
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
     }
     for path in entries {
         let name = path
@@ -415,13 +422,13 @@ pub fn zlog_export_bundle(app: AppHandle) -> Result<String, String> {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
         let redacted = redact(&content);
         zip.start_file(name, options)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
         zip.write_all(redacted.as_bytes())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Internal(e.to_string()))?;
     }
     // 附带一行版本信息，方便定位问题
     zip.start_file("bundle-info.txt", options)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     zip.write_all(
         format!(
             "product=z-ffmpeg version={} exported_at={}\n",
@@ -430,8 +437,9 @@ pub fn zlog_export_bundle(app: AppHandle) -> Result<String, String> {
         )
         .as_bytes(),
     )
-    .map_err(|e| e.to_string())?;
-    zip.finish().map_err(|e| e.to_string())?;
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+    zip.finish()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(out_path.to_string_lossy().into_owned())
 }

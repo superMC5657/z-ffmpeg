@@ -5,11 +5,11 @@
 //! `parse_probe_result`；`commands::encode` 仅做薄 adapter（重导出类型以
 //! 保持命令签名与前端契约不变）。
 
-use serde::{Deserialize, Serialize};
 use crate::encoder::codec::parse_fraction_fps;
 use crate::encoder::file_name_from_path;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg::facade;
+use serde::{Deserialize, Serialize};
 
 /// 由 probe_file 返回的文件元信息结构体
 /// serde 形状（camelCase）与前端 `src/types/index.ts` 对齐，禁止改动。
@@ -53,8 +53,7 @@ fn parse_ffprobe_stdout(stdout: &[u8]) -> AppResult<serde_json::Value> {
 
 /// 运行 ffprobe 获取文件信息（阻塞执行——需在 spawn_blocking 上下文中调用）。
 pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
-    let ffprobe = facade::get_ffprobe_path()
-        .ok_or(AppError::FfmpegNotFound)?;
+    let ffprobe = facade::get_ffprobe_path().ok_or(AppError::FfmpegNotFound)?;
 
     let output = facade::hidden_command(ffprobe)
         .args(ffprobe_args(input_path))
@@ -66,8 +65,7 @@ pub fn probe_file(input_path: &str) -> AppResult<serde_json::Value> {
 
 /// 异步运行 ffprobe 获取文件信息——不会阻塞异步运行时线程。
 pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> {
-    let ffprobe = facade::get_ffprobe_path()
-        .ok_or(AppError::FfmpegNotFound)?;
+    let ffprobe = facade::get_ffprobe_path().ok_or(AppError::FfmpegNotFound)?;
 
     let mut cmd = facade::async_hidden_command(ffprobe);
     let output = cmd
@@ -83,13 +81,10 @@ pub async fn probe_file_async(input_path: &str) -> AppResult<serde_json::Value> 
 /// 封面流常被 ffprobe 列在首位，直接取第一个视频流会拿到封面尺寸/帧率，
 /// 导致输出缩放按封面面积计算（可能 clamp 到 4.0 放大预估）。全部为封面时
 /// 回退取第一个视频流。
-pub(crate) fn find_main_video_stream(
-    streams: &serde_json::Value,
-) -> Option<&serde_json::Value> {
+pub(crate) fn find_main_video_stream(streams: &serde_json::Value) -> Option<&serde_json::Value> {
     let arr = streams.as_array()?;
-    let is_video = |s: &&serde_json::Value| {
-        s.get("codec_type").and_then(|t| t.as_str()) == Some("video")
-    };
+    let is_video =
+        |s: &&serde_json::Value| s.get("codec_type").and_then(|t| t.as_str()) == Some("video");
     let is_cover = |s: &&serde_json::Value| {
         s.get("disposition")
             .and_then(|d| d.get("attached_pic"))
@@ -118,7 +113,9 @@ pub(crate) fn fallback_audio_bps(container_bps: f64, video_bps: Option<f64>) -> 
 /// `streams` 缺失按空数组处理（ffprobe 带 `-show_streams` 时总会输出该键，
 /// 容忍手工构造/裁剪过的 JSON）。
 pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<FileInfo> {
-    let format = json.get("format").ok_or_else(|| AppError::Ffmpeg("No format info".into()))?;
+    let format = json
+        .get("format")
+        .ok_or_else(|| AppError::Ffmpeg("ffprobe 输出缺少 format 信息".into()))?;
     let streams = json.get("streams").unwrap_or(&serde_json::Value::Null);
 
     let file_name = file_name_from_path(path);
@@ -137,9 +134,10 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
     // 查找主视频流（跳过内嵌封面/attached_pic 流）
     let video_stream = find_main_video_stream(streams);
 
-    let audio_stream = streams
-        .as_array()
-        .and_then(|arr| arr.iter().find(|s| s.get("codec_type").and_then(|t| t.as_str()) == Some("audio")));
+    let audio_stream = streams.as_array().and_then(|arr| {
+        arr.iter()
+            .find(|s| s.get("codec_type").and_then(|t| t.as_str()) == Some("audio"))
+    });
 
     Ok(FileInfo {
         path: path.to_string(),
@@ -217,7 +215,12 @@ mod tests {
         assert_eq!(
             ffprobe_args(r"C:\in\movie.mkv"),
             vec![
-                "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
                 r"C:\in\movie.mkv",
             ]
         );
@@ -303,7 +306,10 @@ mod tests {
     #[test]
     fn fallback_audio_bps_edges() {
         // 正常：容器 − 视频
-        assert_eq!(fallback_audio_bps(8_388_608.0, Some(8_000_000.0)), 388_608.0);
+        assert_eq!(
+            fallback_audio_bps(8_388_608.0, Some(8_000_000.0)),
+            388_608.0
+        );
         // 视频码率 ≥ 容器：clamp 到容器总码率的 1%，不出现 0/负
         assert_eq!(fallback_audio_bps(8_000_000.0, Some(8_000_000.0)), 80_000.0);
         assert_eq!(fallback_audio_bps(8_000_000.0, Some(9_000_000.0)), 80_000.0);

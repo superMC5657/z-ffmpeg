@@ -3,19 +3,19 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AppError {
-    #[error("FFmpeg error: {0}")]
+    #[error("FFmpeg 错误:{0}")]
     Ffmpeg(String),
-    #[error("FFmpeg not found. Please install FFmpeg or configure the path.")]
+    #[error("未找到 FFmpeg,请安装或配置路径。")]
     FfmpegNotFound,
-    #[error("Encoding failed: {0}")]
+    #[error("编码失败:{0}")]
     EncodingFailed(String),
-    #[error("Invalid configuration: {0}")]
+    #[error("配置无效:{0}")]
     InvalidConfig(String),
-    #[error("Job not found: {0}")]
+    #[error("任务不存在:{0}")]
     JobNotFound(String),
-    #[error("IO error: {0}")]
+    #[error("IO 错误:{0}")]
     Io(#[from] std::io::Error),
-    #[error("Serialization error: {0}")]
+    #[error("序列化错误:{0}")]
     Serialization(#[from] serde_json::Error),
     #[error("{0}")]
     Internal(String),
@@ -46,7 +46,11 @@ pub trait LogDisplay {
 
 impl<T: std::fmt::Display> LogDisplay for T {
     fn top_line(&self) -> String {
-        self.to_string().lines().next().unwrap_or("unknown").to_string()
+        self.to_string()
+            .lines()
+            .next()
+            .unwrap_or("unknown")
+            .to_string()
     }
 }
 

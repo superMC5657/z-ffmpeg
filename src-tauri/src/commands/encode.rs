@@ -17,10 +17,7 @@ pub async fn probe_file(file_path: String) -> AppResult<FileInfo> {
     let path = std::path::Path::new(&file_path);
     if !path.exists() {
         log::warn!("probe failed file {basename} reason not found");
-        return Err(AppError::InvalidConfig(format!(
-            "File not found: {}",
-            file_path
-        )));
+        return Err(AppError::InvalidConfig(format!("文件不存在:{file_path}")));
     }
 
     // 使用 ffprobe 异步获取详细信息（不阻塞异步运行时线程）
@@ -91,8 +88,7 @@ pub async fn save_command_to_file(
 ) -> AppResult<()> {
     state.license.ensure_pro("命令导出为文件")?;
 
-    std::fs::write(&path, content)
-        .map_err(AppError::Io)?;
+    std::fs::write(&path, content).map_err(AppError::Io)?;
     crate::analytics::bump(&crate::analytics::COUNTERS.commands_exported, 1);
     Ok(())
 }

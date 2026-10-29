@@ -1,13 +1,13 @@
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use parking_lot::RwLock;
-use tauri::{AppHandle, Emitter};
-use crate::encoder::engine;
 use crate::encoder::codec::EncodeConfig;
+use crate::encoder::engine;
 use crate::encoder::supervisor;
 use crate::error::{AppResult, LogDisplay};
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus, QueueStatus};
+use parking_lot::RwLock;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter};
 
 const DEFAULT_MAX_CONCURRENT: usize = 2;
 use crate::queue::store::{JobStore, SETTINGS_KEY_MAX_CONCURRENT};
@@ -85,7 +85,12 @@ impl QueueManager {
             self.store.save_job(&job);
             ids.push(job.id.clone());
             // 入队只记一行：id + basename + 队列长度（禁 {:?} 全 dump，config 明细不落盘）
-            log::info!("queue enqueued job {} file {} len={}", job.id, job.file_name(), jobs.len() + 1);
+            log::info!(
+                "queue enqueued job {} file {} len={}",
+                job.id,
+                job.file_name(),
+                jobs.len() + 1
+            );
             jobs.push_back(job);
         }
         ids
@@ -192,7 +197,11 @@ impl QueueManager {
             if job.status == JobStatus::Cancelled {
                 return;
             }
-            job.status = if success { JobStatus::Completed } else { JobStatus::Failed };
+            job.status = if success {
+                JobStatus::Completed
+            } else {
+                JobStatus::Failed
+            };
             job.completed_at = Some(chrono::Utc::now().to_rfc3339());
             crate::analytics::bump(
                 if success {
@@ -206,7 +215,9 @@ impl QueueManager {
                 // 完成时读取实际输出体积（读不到则保留 None，仅影响展示）
                 job.output_size = std::fs::metadata(&job.output_path).ok().map(|m| m.len());
             }
-            if error.is_some() { job.error = error; }
+            if error.is_some() {
+                job.error = error;
+            }
             // 失败即终态 Failed（本项目无自动重试，重试仅用户手动 retry_job）
             if !success {
                 let reason = job.error.clone().unwrap_or_default();
@@ -224,10 +235,22 @@ impl QueueManager {
     pub fn get_status(&self) -> QueueStatus {
         let jobs = self.jobs.read();
         let snapshots: Vec<JobSnapshot> = jobs.iter().map(JobSnapshot::from).collect();
-        let pending = jobs.iter().filter(|j| j.status == JobStatus::Pending).count();
-        let encoding = jobs.iter().filter(|j| j.status == JobStatus::Encoding).count();
-        let completed = jobs.iter().filter(|j| j.status == JobStatus::Completed).count();
-        let failed = jobs.iter().filter(|j| j.status == JobStatus::Failed).count();
+        let pending = jobs
+            .iter()
+            .filter(|j| j.status == JobStatus::Pending)
+            .count();
+        let encoding = jobs
+            .iter()
+            .filter(|j| j.status == JobStatus::Encoding)
+            .count();
+        let completed = jobs
+            .iter()
+            .filter(|j| j.status == JobStatus::Completed)
+            .count();
+        let failed = jobs
+            .iter()
+            .filter(|j| j.status == JobStatus::Failed)
+            .count();
         QueueStatus {
             total: jobs.len(),
             pending,
@@ -257,10 +280,7 @@ impl QueueManager {
     ) -> Vec<String> {
         let claimed = self.get_active_output_paths();
         crate::encoder::args::derive_output_paths_unique_with_claimed(
-            files,
-            config,
-            output_dir,
-            &claimed,
+            files, config, output_dir, &claimed,
         )
     }
 
@@ -323,7 +343,8 @@ impl QueueManager {
     pub fn set_vmaf_score(&self, job_id: &str, score: f64, detail_json: Option<String>) {
         let mut jobs = self.jobs.write();
         let memory_job = jobs.iter_mut().find(|j| j.id == job_id);
-        self.store.write_vmaf_score(memory_job, job_id, score, detail_json);
+        self.store
+            .write_vmaf_score(memory_job, job_id, score, detail_json);
     }
 
     /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
@@ -362,8 +383,15 @@ impl QueueManager {
         !self.is_paused() && *self.active_count.read() < *self.max_concurrent.read()
     }
 
-    fn inc_active(&self) { *self.active_count.write() += 1; }
-    fn dec_active(&self) { let mut c = self.active_count.write(); if *c > 0 { *c -= 1; } }
+    fn inc_active(&self) {
+        *self.active_count.write() += 1;
+    }
+    fn dec_active(&self) {
+        let mut c = self.active_count.write();
+        if *c > 0 {
+            *c -= 1;
+        }
+    }
 
     /// 当前最大并发编码任务数。
     pub fn max_concurrent(&self) -> usize {
@@ -398,7 +426,7 @@ impl QueueManager {
                 let config = match &job.config {
                     Some(c) => c.clone(),
                     None => {
-                        qm.complete_job(&job_id, false, Some("Missing config".into()));
+                        qm.complete_job(&job_id, false, Some("任务缺少编码配置".into()));
                         continue;
                     }
                 };
@@ -420,7 +448,12 @@ impl QueueManager {
                 // 消除 dequeue_next 与标记注册之间的时间窗口：
                 // 如果 cancel_job 在该间隙运行而未找到标记，但已将任务标记为 Cancelled，
                 // 则在此予以识别，阻止编码启动。
-                if qm.jobs.read().iter().any(|j| j.id == job_id && j.status == JobStatus::Cancelled) {
+                if qm
+                    .jobs
+                    .read()
+                    .iter()
+                    .any(|j| j.id == job_id && j.status == JobStatus::Cancelled)
+                {
                     cancel_flag.store(true, Ordering::Relaxed);
                 }
 
@@ -439,7 +472,7 @@ impl QueueManager {
                     let output_exists = std::path::Path::new(&job.output_path).exists();
                     let (success, error) = match result {
                         Ok(()) if output_exists => (true, None),
-                        Ok(()) => (false, Some("Output file not created".into())),
+                        Ok(()) => (false, Some("未生成输出文件".into())),
                         Err(e) => (false, Some(e.to_string())),
                     };
                     // complete_job 绝不覆盖已被用户取消的任务
@@ -543,8 +576,17 @@ mod tests {
 
         // dequeue_next 绝不能启动已取消（Cancelled）的任务——
         // 否则 UI 显示“已取消”时后台却仍在运行编码。
-        assert!(manager.dequeue_next().is_none(), "cancelled job must not be dequeued");
-        let job = manager.jobs.read().iter().find(|j| j.id == ids[0]).unwrap().clone();
+        assert!(
+            manager.dequeue_next().is_none(),
+            "cancelled job must not be dequeued"
+        );
+        let job = manager
+            .jobs
+            .read()
+            .iter()
+            .find(|j| j.id == ids[0])
+            .unwrap()
+            .clone();
         assert_eq!(job.status, JobStatus::Cancelled);
         assert!(job.completed_at.is_some());
 
@@ -568,18 +610,36 @@ mod tests {
         );
         manager.complete_job(&ids[0], false, Some("boom".into()));
         manager.cancel_job(&ids[1]);
-        assert!(!manager.retry_job(&ids[2]), "pending jobs are not retryable");
+        assert!(
+            !manager.retry_job(&ids[2]),
+            "pending jobs are not retryable"
+        );
 
         // 重试失败的任务
         assert!(manager.retry_job(&ids[0]));
-        let job = manager.jobs.read().iter().find(|j| j.id == ids[0]).unwrap().clone();
+        let job = manager
+            .jobs
+            .read()
+            .iter()
+            .find(|j| j.id == ids[0])
+            .unwrap()
+            .clone();
         assert_eq!(job.status, JobStatus::Pending);
         assert!(job.error.is_none());
         assert!(job.completed_at.is_none());
 
         // 重试已取消的任务（未曾启动过 ffmpeg 进程）
         assert!(manager.retry_job(&ids[1]));
-        assert!(manager.jobs.read().iter().find(|j| j.id == ids[1]).unwrap().status == JobStatus::Pending);
+        assert!(
+            manager
+                .jobs
+                .read()
+                .iter()
+                .find(|j| j.id == ids[1])
+                .unwrap()
+                .status
+                == JobStatus::Pending
+        );
 
         // 未知 ID
         assert!(!manager.retry_job("nope"));
@@ -609,7 +669,11 @@ mod tests {
         // 第二次“会话”：重启管理器——仅数据库数据保留
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
-        assert_eq!(reopened.jobs.read().len(), 0, "active queue should be empty after restart");
+        assert_eq!(
+            reopened.jobs.read().len(),
+            0,
+            "active queue should be empty after restart"
+        );
 
         let history = reopened.history();
         assert_eq!(history.len(), 1, "finished job must be visible in history");
@@ -711,7 +775,11 @@ mod tests {
         assert_eq!(total, 4);
         assert_eq!(page1.len(), 2);
         // 两页合起来覆盖全部 id
-        let mut seen: Vec<&str> = page0.iter().chain(page1.iter()).map(|j| j.id.as_str()).collect();
+        let mut seen: Vec<&str> = page0
+            .iter()
+            .chain(page1.iter())
+            .map(|j| j.id.as_str())
+            .collect();
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), 4, "分页不应重复或丢失条目");
@@ -728,7 +796,10 @@ mod tests {
 
         let manager = QueueManager::new(&db_path).unwrap();
         let ids = manager.add_jobs(
-            vec![("C:\\in\\a.mp4".into(), out_path.to_string_lossy().to_string())],
+            vec![(
+                "C:\\in\\a.mp4".into(),
+                out_path.to_string_lossy().to_string(),
+            )],
             sample_config(),
         );
 
@@ -738,7 +809,10 @@ mod tests {
 
         // 重建一个任务，写一个真实输出文件再完成 → 记录实际大小
         let ids2 = manager.add_jobs(
-            vec![("C:\\in\\b.mp4".into(), out_path.to_string_lossy().to_string())],
+            vec![(
+                "C:\\in\\b.mp4".into(),
+                out_path.to_string_lossy().to_string(),
+            )],
             sample_config(),
         );
         std::fs::write(&out_path, vec![0u8; 4096]).unwrap();
@@ -749,7 +823,9 @@ mod tests {
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
         let hist = reopened.history();
-        assert!(hist.iter().any(|h| h.id == ids2[0] && h.output_size == Some(4096)));
+        assert!(hist
+            .iter()
+            .any(|h| h.id == ids2[0] && h.output_size == Some(4096)));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -788,7 +864,11 @@ mod tests {
         assert!(reopened.get_job_paths(&ids[0]).is_some());
 
         // DB-only 任务写 VMAF 分数 → history 可读（不丢结果）
-        reopened.set_vmaf_score(&ids[0], 91.25, Some(r#"{"mode":"sampled","scores":[90.1,92.4]}"#.into()));
+        reopened.set_vmaf_score(
+            &ids[0],
+            91.25,
+            Some(r#"{"mode":"sampled","scores":[90.1,92.4]}"#.into()),
+        );
         let hist = reopened.history();
         let entry = hist.iter().find(|h| h.id == ids[0]).unwrap();
         assert_eq!(entry.vmaf_score, Some(91.25));
@@ -823,7 +903,11 @@ mod tests {
 
         // 历史记录保持不受影响
         let history = manager.history();
-        assert_eq!(history.len(), 2, "finished jobs must survive clear_completed");
+        assert_eq!(
+            history.len(),
+            2,
+            "finished jobs must survive clear_completed"
+        );
         assert!(history.iter().any(|h| h.id == ids[0]));
         assert!(history.iter().any(|h| h.id == ids[1]));
 
@@ -846,7 +930,7 @@ mod tests {
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None); // 已完成 -> 历史记录
-        // b 保持 Pending，c 保持 Pending
+                                                   // b 保持 Pending，c 保持 Pending
 
         // 队列页移除一个已完成任务和一个待处理任务
         manager.remove_jobs(&[ids[0].clone(), ids[1].clone()]);
@@ -859,15 +943,9 @@ mod tests {
         // 待处理任务的数据库行已被删除：重启后不得复活，仅保留 c 任务排队。
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
-        let remaining: Vec<String> = reopened
-            .jobs
-            .read()
-            .iter()
-            .map(|j| j.id.clone())
-            .collect();
+        let remaining: Vec<String> = reopened.jobs.read().iter().map(|j| j.id.clone()).collect();
         assert_eq!(remaining, vec![ids[2].clone()]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
-
 }
