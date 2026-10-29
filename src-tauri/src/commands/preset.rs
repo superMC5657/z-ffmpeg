@@ -1,64 +1,192 @@
-use tauri::State;
 use crate::encoder::codec::{
     AudioCodec, AudioSettings, ContainerFormat, EncodeConfig, HwAccelConfig, HwAccelDevice,
     RateControl, VideoCodec, VideoSettings,
 };
 use crate::error::{AppError, AppResult, LogDisplay};
 use crate::preset::Preset;
+use tauri::State;
 
 fn builtin_presets() -> Vec<Preset> {
     vec![
         // --- H.264 软编 ---
-        p("builtin-h264-fast", "H.264 快速", "ultrafast, CRF 23 — 最快编码",
-            "H264", "ultrafast", 23, "MP4", "AAC"),
-        p("builtin-h264-balanced", "H.264 平衡", "medium, CRF 23 — 通用编码",
-            "H264", "medium", 23, "MP4", "AAC"),
-        p("builtin-h264-hq", "H.264 高质量", "slow, CRF 18, high profile — 高画质存档",
-            "H264", "slow", 18, "MP4", "AAC"),
-        p("builtin-h264-archive", "H.264 无损存档", "veryslow, CRF 0 — 最大画质",
-            "H264", "veryslow", 0, "MKV", "Opus"),
-
+        p(
+            "builtin-h264-fast",
+            "H.264 快速",
+            "ultrafast, CRF 23 — 最快编码",
+            "H264",
+            "ultrafast",
+            23,
+            "MP4",
+            "AAC",
+        ),
+        p(
+            "builtin-h264-balanced",
+            "H.264 平衡",
+            "medium, CRF 23 — 通用编码",
+            "H264",
+            "medium",
+            23,
+            "MP4",
+            "AAC",
+        ),
+        p(
+            "builtin-h264-hq",
+            "H.264 高质量",
+            "slow, CRF 18, high profile — 高画质存档",
+            "H264",
+            "slow",
+            18,
+            "MP4",
+            "AAC",
+        ),
+        p(
+            "builtin-h264-archive",
+            "H.264 无损存档",
+            "veryslow, CRF 0 — 最大画质",
+            "H264",
+            "veryslow",
+            0,
+            "MKV",
+            "Opus",
+        ),
         // --- H.265 软编 ---
-        p("builtin-h265-fast", "H.265 快速", "fast, CRF 28 — HEVC 快速",
-            "H265", "fast", 28, "MKV", "AAC"),
-        p("builtin-h265-balanced", "H.265 平衡", "medium, CRF 24 — HEVC 通用",
-            "H265", "medium", 24, "MKV", "AAC"),
-        p("builtin-h265-hq", "H.265 高质量", "slower, CRF 20, main10 — HEVC 高画质",
-            "H265", "slower", 20, "MKV", "Opus"),
-
+        p(
+            "builtin-h265-fast",
+            "H.265 快速",
+            "fast, CRF 28 — HEVC 快速",
+            "H265",
+            "fast",
+            28,
+            "MKV",
+            "AAC",
+        ),
+        p(
+            "builtin-h265-balanced",
+            "H.265 平衡",
+            "medium, CRF 24 — HEVC 通用",
+            "H265",
+            "medium",
+            24,
+            "MKV",
+            "AAC",
+        ),
+        p(
+            "builtin-h265-hq",
+            "H.265 高质量",
+            "slower, CRF 20, main10 — HEVC 高画质",
+            "H265",
+            "slower",
+            20,
+            "MKV",
+            "Opus",
+        ),
         // --- AV1 软编 ---
-        p("builtin-av1", "AV1 通用", "preset 6, CRF 30 — SVT-AV1",
-            "AV1", "medium", 30, "MKV", "Opus"),
-
+        p(
+            "builtin-av1",
+            "AV1 通用",
+            "preset 6, CRF 30 — SVT-AV1",
+            "AV1",
+            "medium",
+            30,
+            "MKV",
+            "Opus",
+        ),
         // --- VP9 软编 ---
-        p("builtin-vp9", "VP9 Web", "CRF 30 — Web 优化",
-            "VP9", "medium", 30, "WebM", "Opus"),
-
+        p(
+            "builtin-vp9",
+            "VP9 Web",
+            "CRF 30 — Web 优化",
+            "VP9",
+            "medium",
+            30,
+            "WebM",
+            "Opus",
+        ),
         // --- NVENC 硬编 ---
-        hw_p("builtin-nvenc-h264", "NVENC H.264", "h264_nvenc — NVIDIA GPU 加速",
-            "H264", "p4", "NVENC", 23),
-        hw_p("builtin-nvenc-h265", "NVENC H.265", "hevc_nvenc — NVIDIA GPU 加速",
-            "H265", "p4", "NVENC", 28),
-        hw_p("builtin-nvenc-av1", "NVENC AV1", "av1_nvenc — NVIDIA RTX 40+",
-            "AV1", "p4", "NVENC", 32),
-
+        hw_p(
+            "builtin-nvenc-h264",
+            "NVENC H.264",
+            "h264_nvenc — NVIDIA GPU 加速",
+            "H264",
+            "p4",
+            "NVENC",
+            23,
+        ),
+        hw_p(
+            "builtin-nvenc-h265",
+            "NVENC H.265",
+            "hevc_nvenc — NVIDIA GPU 加速",
+            "H265",
+            "p4",
+            "NVENC",
+            28,
+        ),
+        hw_p(
+            "builtin-nvenc-av1",
+            "NVENC AV1",
+            "av1_nvenc — NVIDIA RTX 40+",
+            "AV1",
+            "p4",
+            "NVENC",
+            32,
+        ),
         // --- QSV 硬编 ---
-        hw_p("builtin-qsv-h264", "QSV H.264", "h264_qsv — Intel GPU 加速",
-            "H264", "medium", "QSV", 23),
-        hw_p("builtin-qsv-h265", "QSV H.265", "hevc_qsv — Intel GPU 加速",
-            "H265", "medium", "QSV", 26),
-
+        hw_p(
+            "builtin-qsv-h264",
+            "QSV H.264",
+            "h264_qsv — Intel GPU 加速",
+            "H264",
+            "medium",
+            "QSV",
+            23,
+        ),
+        hw_p(
+            "builtin-qsv-h265",
+            "QSV H.265",
+            "hevc_qsv — Intel GPU 加速",
+            "H265",
+            "medium",
+            "QSV",
+            26,
+        ),
         // --- AMF 硬编 ---
-        hw_p("builtin-amf-h264", "AMF H.264", "h264_amf — AMD GPU 加速",
-            "H264", "balanced", "AMF", 23),
-        hw_p("builtin-amf-h265", "AMF H.265", "hevc_amf — AMD GPU 加速",
-            "H265", "balanced", "AMF", 26),
-
+        hw_p(
+            "builtin-amf-h264",
+            "AMF H.264",
+            "h264_amf — AMD GPU 加速",
+            "H264",
+            "balanced",
+            "AMF",
+            23,
+        ),
+        hw_p(
+            "builtin-amf-h265",
+            "AMF H.265",
+            "hevc_amf — AMD GPU 加速",
+            "H265",
+            "balanced",
+            "AMF",
+            26,
+        ),
         // --- VideoToolbox 硬编 (macOS) ---
-        hw_p("builtin-vt-h264", "VideoToolbox H.264", "h264_videotoolbox — Apple 硬件加速",
-            "H264", "medium", "VideoToolbox", 23),
-        hw_p("builtin-vt-h265", "VideoToolbox H.265", "hevc_videotoolbox — Apple 硬件加速",
-            "H265", "medium", "VideoToolbox", 26),
+        hw_p(
+            "builtin-vt-h264",
+            "VideoToolbox H.264",
+            "h264_videotoolbox — Apple 硬件加速",
+            "H264",
+            "medium",
+            "VideoToolbox",
+            23,
+        ),
+        hw_p(
+            "builtin-vt-h265",
+            "VideoToolbox H.265",
+            "hevc_videotoolbox — Apple 硬件加速",
+            "H265",
+            "medium",
+            "VideoToolbox",
+            26,
+        ),
     ]
 }
 
@@ -136,9 +264,14 @@ fn build_preset(id: &str, name: &str, desc: &str, config: serde_json::Value) -> 
 /// 软编预设构造辅助函数（恒 CRF，调用方只传数值）
 #[allow(clippy::too_many_arguments)]
 fn p(
-    id: &str, name: &str, desc: &str,
-    codec: &str, preset: &str, value: u32,
-    container: &str, audio: &str,
+    id: &str,
+    name: &str,
+    desc: &str,
+    codec: &str,
+    preset: &str,
+    value: u32,
+    container: &str,
+    audio: &str,
 ) -> Preset {
     build_preset(
         id,
@@ -149,16 +282,22 @@ fn p(
             preset,
             container,
             audio,
-            RateControl::Crf {
-                value: value as u8,
-            },
+            RateControl::Crf { value: value as u8 },
             None,
         ),
     )
 }
 
 /// 硬件加速预设构造辅助函数
-fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &str, value: u32) -> Preset {
+fn hw_p(
+    id: &str,
+    name: &str,
+    desc: &str,
+    codec: &str,
+    preset: &str,
+    device: &str,
+    value: u32,
+) -> Preset {
     // 未知 device 统一回退 NVENC（与历史行为一致，避免拼写漂移产生不可用预设）
     let device = match device {
         "QSV" => HwAccelDevice::QSV,
@@ -176,9 +315,7 @@ fn hw_p(id: &str, name: &str, desc: &str, codec: &str, preset: &str, device: &st
             preset,
             if codec == "AV1" { "MKV" } else { "MP4" },
             "AAC",
-            RateControl::Crf {
-                value: value as u8,
-            },
+            RateControl::Crf { value: value as u8 },
             Some(device),
         ),
     )
@@ -265,11 +402,17 @@ fn parse_import_preset(json: &str, name: &str) -> AppResult<(String, String, ser
 
     let (config, description) = if let Some(c) = value.get("config") {
         if !c.is_object() {
-            return Err(AppError::InvalidConfig("预设 config 必须是 JSON 对象".into()));
+            return Err(AppError::InvalidConfig(
+                "预设 config 必须是 JSON 对象".into(),
+            ));
         }
         (
             c.clone(),
-            value.get("description").and_then(|d| d.as_str()).unwrap_or("").to_string(),
+            value
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("")
+                .to_string(),
         )
     } else {
         if !value.is_object() {
@@ -283,7 +426,8 @@ fn parse_import_preset(json: &str, name: &str) -> AppResult<(String, String, ser
         .map_err(|e| AppError::InvalidConfig(format!("预设编码配置解析失败: {}", e.top_line())))?;
 
     let preset_name = if name.trim().is_empty() {
-        value.get("name")
+        value
+            .get("name")
             .and_then(|n| n.as_str())
             .unwrap_or("导入的预设")
             .to_string()
@@ -393,14 +537,18 @@ mod tests {
     fn parse_import_rejects_malicious_and_missing_fields() {
         // 恶意：config 非对象
         let bad = serde_json::json!({ "name": "x", "config": "not-an-object" });
-        let err = parse_import_preset(&bad.to_string(), "").unwrap_err().to_string();
+        let err = parse_import_preset(&bad.to_string(), "")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("预设 config 必须是 JSON 对象"), "{err}");
         // 非对象顶层（数组）
         let err = parse_import_preset("[1,2]", "").unwrap_err().to_string();
         assert!(err.contains("预设 JSON 格式无效"), "{err}");
         // 缺字段：bare 对象但不符合 EncodeConfig（如缺 videoSettings）
         let thin = serde_json::json!({ "videoCodec": "H264" });
-        let err = parse_import_preset(&thin.to_string(), "").unwrap_err().to_string();
+        let err = parse_import_preset(&thin.to_string(), "")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("预设编码配置解析失败"), "{err}");
         // 非法 JSON
         assert!(parse_import_preset("not json", "").is_err());

@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::encoder::progress::{EncodeProgress, compute_percentage, parse_bitrate_kbps};
+use crate::encoder::progress::{compute_percentage, parse_bitrate_kbps, EncodeProgress};
 
 // ============================================================
 // 取消状态机：requested → killed → reaped → emitted（恰好一次终态）
@@ -239,7 +239,10 @@ pub fn assemble_progress_event(
         file_name: file_name.to_string(),
         frame: kv.get("frame").and_then(|s| s.parse().ok()).unwrap_or(0),
         fps: kv.get("fps").and_then(|s| s.parse().ok()).unwrap_or(0.0),
-        bitrate: kv.get("bitrate").map(|s| parse_bitrate_kbps(s)).unwrap_or(0.0),
+        bitrate: kv
+            .get("bitrate")
+            .map(|s| parse_bitrate_kbps(s))
+            .unwrap_or(0.0),
         total_size_kb,
         // 线性外推预估最终体积；进度为 0（编码刚开始）时没有可靠估算
         estimated_size_kb: (total_size_kb > 0 && percentage > 0.0)
@@ -292,10 +295,13 @@ fn take_handle(job_id: &str) -> Option<JobHandle> {
 
 /// 调度时注册取消标记（子进程尚未 spawn 的窗口也可用 `request_cancel` 取消）。
 pub fn dispatch_register(job_id: String, cancel: Arc<AtomicBool>) {
-    jobs()
-        .lock()
-        .unwrap()
-        .insert(job_id, JobHandle { cancel, child: None });
+    jobs().lock().unwrap().insert(
+        job_id,
+        JobHandle {
+            cancel,
+            child: None,
+        },
+    );
 }
 
 /// spawn 后挂接子进程（管道须在此之前取走，与搬运前顺序一致）。
@@ -388,7 +394,10 @@ mod tests {
     #[test]
     fn fake_pre_spawn_cancel_yields_single_terminal() {
         let (mut s, _flag) = supervision_with_flag(true);
-        assert_eq!(s.claim_cancellation(CancelPoint::PreSpawn), Some(CancelPoint::PreSpawn));
+        assert_eq!(
+            s.claim_cancellation(CancelPoint::PreSpawn),
+            Some(CancelPoint::PreSpawn)
+        );
         assert_eq!(s.claim_cancellation(CancelPoint::PostSpawn), None);
         assert_eq!(s.claim_cancellation(CancelPoint::Running), None);
 
@@ -406,7 +415,10 @@ mod tests {
         assert_eq!(s.claim_cancellation(CancelPoint::PreSpawn), None);
         // probe/spawn 期间到达的取消在 post-spawn 点获胜
         flag.store(true, Ordering::Relaxed);
-        assert_eq!(s.claim_cancellation(CancelPoint::PostSpawn), Some(CancelPoint::PostSpawn));
+        assert_eq!(
+            s.claim_cancellation(CancelPoint::PostSpawn),
+            Some(CancelPoint::PostSpawn)
+        );
         assert_eq!(s.claim_cancellation(CancelPoint::Running), None);
     }
 
@@ -417,7 +429,10 @@ mod tests {
         assert_eq!(s.claim_cancellation(CancelPoint::PostSpawn), None);
         // 运行中途到达的取消在 running 点获胜，且后续认领一律让行
         flag.store(true, Ordering::Relaxed);
-        assert_eq!(s.claim_cancellation(CancelPoint::Running), Some(CancelPoint::Running));
+        assert_eq!(
+            s.claim_cancellation(CancelPoint::Running),
+            Some(CancelPoint::Running)
+        );
         assert_eq!(s.claim_cancellation(CancelPoint::Running), None);
     }
 
@@ -428,7 +443,8 @@ mod tests {
         assert_eq!(s.claim_cancellation(CancelPoint::PostSpawn), None);
         assert_eq!(s.claim_cancellation(CancelPoint::Running), None);
 
-        let t = TerminalOutcome::completed("j4".into(), "a.mp4".into(), "out.mp4".into(), 1024, 1.5);
+        let t =
+            TerminalOutcome::completed("j4".into(), "a.mp4".into(), "out.mp4".into(), 1024, 1.5);
         assert!(!t.cancelled);
         assert!(t.success);
         assert_eq!(t.output_size_bytes, Some(1024));
@@ -497,7 +513,10 @@ mod tests {
 
     #[test]
     fn progress_assembler_zero_progress_has_no_estimate() {
-        let kv: HashMap<String, String> = [("frame", "10")].into_iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let kv: HashMap<String, String> = [("frame", "10")]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         let p = assemble_progress_event("j7", "a.mp4", &kv, None, 5);
         assert_eq!(p.percentage, 0.0);
         assert_eq!(p.estimated_size_kb, None);

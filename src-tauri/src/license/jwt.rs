@@ -112,8 +112,7 @@ pub fn verify_license_token(
     let payload_json = URL_SAFE_NO_PAD
         .decode(payload_b64)
         .map_err(|_| JwtError::Malformed)?;
-    let claims: Claims =
-        serde_json::from_slice(&payload_json).map_err(|_| JwtError::Malformed)?;
+    let claims: Claims = serde_json::from_slice(&payload_json).map_err(|_| JwtError::Malformed)?;
 
     // exp 校验：缺失视为已过期（服务端签发必含 exp）
     let exp = claims.exp.ok_or(JwtError::Expired)?;
@@ -185,7 +184,9 @@ mod tests {
         let raw = STANDARD.encode(public);
         assert_eq!(parse_public_key(&raw).as_ref(), Some(&public));
         // SPKI DER（12 字节头 + 32 字节公钥）
-        let mut der = vec![0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00];
+        let mut der = vec![
+            0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+        ];
         der.extend_from_slice(&public);
         let pem = format!(
             "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
@@ -200,7 +201,8 @@ mod tests {
     fn valid_token_passes() {
         let (signing, public) = make_keypair();
         let token = sign_jwt(&signing, &claims_json("device-0001", 2000));
-        let claims = verify_license_token(&token, &public, "device-0001", "z-ffmpeg", "pro", 1000).unwrap();
+        let claims =
+            verify_license_token(&token, &public, "device-0001", "z-ffmpeg", "pro", 1000).unwrap();
         assert_eq!(claims.email.as_deref(), Some("buyer@example.com"));
         assert_eq!(claims.level.as_deref(), Some("pro"));
     }

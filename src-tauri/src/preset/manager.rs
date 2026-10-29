@@ -1,7 +1,7 @@
-use std::sync::Mutex as StdMutex;
-use rusqlite::Connection;
 use crate::error::AppResult;
 use crate::preset::Preset;
+use rusqlite::Connection;
+use std::sync::Mutex as StdMutex;
 
 /// 基于 SQLite 的自定义预设持久化存储。
 pub struct PresetManager {
@@ -33,7 +33,7 @@ impl PresetManager {
         let db = self.db.lock().unwrap();
         let mut stmt = match db.prepare(
             "SELECT id, name, description, config_json, created_at, updated_at
-             FROM presets ORDER BY created_at ASC"
+             FROM presets ORDER BY created_at ASC",
         ) {
             Ok(s) => s,
             Err(_) => return vec![],

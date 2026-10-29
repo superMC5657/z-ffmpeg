@@ -16,4 +16,3 @@ pub fn track_event(name: String) -> AppResult<()> {
     analytics::record_event(name);
     Ok(())
 }
-

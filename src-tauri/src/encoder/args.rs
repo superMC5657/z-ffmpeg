@@ -31,7 +31,8 @@ pub fn build_ffmpeg_args_with_bitrate(
     args.push(input_path.into());
 
     // 视频编码器（映射唯一拥有者：flags）
-    let encoder = crate::encoder::flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
+    let encoder =
+        crate::encoder::flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
     if config.video_codec != VideoCodec::Copy {
         args.push("-c:v".into());
         args.push(encoder.into());
@@ -59,8 +60,12 @@ pub fn build_ffmpeg_args_with_bitrate(
         if let Some(ref res) = config.video_settings.resolution {
             let mut w = res.width.max(2);
             let mut h = res.height.max(2);
-            if w % 2 == 1 { w = w.saturating_sub(1).max(2); }
-            if h % 2 == 1 { h = h.saturating_sub(1).max(2); }
+            if w % 2 == 1 {
+                w = w.saturating_sub(1).max(2);
+            }
+            if h % 2 == 1 {
+                h = h.saturating_sub(1).max(2);
+            }
             args.push("-vf".into());
             args.push(format!("scale={}:{}", w, h));
         }
@@ -97,12 +102,16 @@ pub fn derive_output_path(input: &str, config: &EncodeConfig, output_dir: Option
 
     let parent = match output_dir {
         Some(dir) if !dir.trim().is_empty() => std::path::Path::new(dir).to_path_buf(),
-        _ => path.parent().unwrap_or(std::path::Path::new(".")).to_path_buf(),
+        _ => path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf(),
     };
 
     let ext = config.container_format.extension();
 
-    parent.join(format!("{}_encoded.{}", stem, ext))
+    parent
+        .join(format!("{}_encoded.{}", stem, ext))
         .to_string_lossy()
         .to_string()
 }
@@ -242,11 +251,17 @@ mod tests {
 
         assert_eq!(
             derive_output_path(&input, &config, None),
-            in_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
+            in_dir
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             derive_output_path(&input, &config, Some(&out_dir_str)),
-            out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
+            out_dir
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
     }
 
@@ -270,11 +285,17 @@ mod tests {
         );
         assert_eq!(
             outputs[0],
-            dir_a.join("movie_encoded.mp4").to_string_lossy().to_string()
+            dir_a
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             outputs[1],
-            dir_b.join("movie_encoded.mp4").to_string_lossy().to_string()
+            dir_b
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
 
         // 自定义输出目录：来自不同文件夹的同名文件会发生冲突，后续条目会追加数字后缀
@@ -289,15 +310,24 @@ mod tests {
         );
         assert_eq!(
             outputs[0],
-            out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()
+            out_dir
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             outputs[1],
-            out_dir.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+            out_dir
+                .join("movie_encoded_1.mp4")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             outputs[2],
-            out_dir.join("movie_encoded_2.mp4").to_string_lossy().to_string()
+            out_dir
+                .join("movie_encoded_2.mp4")
+                .to_string_lossy()
+                .to_string()
         );
 
         // 同一文件被添加两次时，即使不指定输出目录也会发生冲突
@@ -311,17 +341,24 @@ mod tests {
         );
         assert_eq!(
             outputs[0],
-            dir_a.join("movie_encoded.mp4").to_string_lossy().to_string()
+            dir_a
+                .join("movie_encoded.mp4")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             outputs[1],
-            dir_a.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+            dir_a
+                .join("movie_encoded_1.mp4")
+                .to_string_lossy()
+                .to_string()
         );
     }
 
     #[test]
     fn derive_output_paths_unique_avoids_disk_file_collision() {
-        let temp_dir = std::env::temp_dir().join(format!("zffmpeg_test_collision_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("zffmpeg_test_collision_{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
@@ -336,7 +373,10 @@ mod tests {
         let outputs = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
         assert_eq!(
             outputs[0],
-            temp_dir.join("video_encoded_1.mp4").to_string_lossy().to_string()
+            temp_dir
+                .join("video_encoded_1.mp4")
+                .to_string_lossy()
+                .to_string()
         );
 
         // 同样在磁盘上预先创建 video_encoded_1.mp4
@@ -344,10 +384,14 @@ mod tests {
         std::fs::write(&second_file, b"existing 1").unwrap();
 
         // 第 2 次推导：应检测到两者均存在，并生成 video_encoded_2.mp4
-        let outputs_next = derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
+        let outputs_next =
+            derive_output_paths_unique(&[input.into()], &config, Some(&temp_dir_str));
         assert_eq!(
             outputs_next[0],
-            temp_dir.join("video_encoded_2.mp4").to_string_lossy().to_string()
+            temp_dir
+                .join("video_encoded_2.mp4")
+                .to_string_lossy()
+                .to_string()
         );
 
         // 清理临时目录
@@ -361,7 +405,10 @@ mod tests {
         let out_dir = std::path::PathBuf::from("out");
         let out_dir_str = out_dir.to_string_lossy().to_string();
 
-        let claimed = vec![out_dir.join("movie_encoded.mp4").to_string_lossy().to_string()];
+        let claimed = vec![out_dir
+            .join("movie_encoded.mp4")
+            .to_string_lossy()
+            .to_string()];
         let outputs = derive_output_paths_unique_with_claimed(
             &[dir_a.join("movie.mp4").to_string_lossy().to_string()],
             &config,
@@ -370,7 +417,10 @@ mod tests {
         );
         assert_eq!(
             outputs[0],
-            out_dir.join("movie_encoded_1.mp4").to_string_lossy().to_string()
+            out_dir
+                .join("movie_encoded_1.mp4")
+                .to_string_lossy()
+                .to_string()
         );
     }
 
@@ -413,8 +463,23 @@ mod tests {
         assert_eq!(
             args,
             vec![
-                "-y", "-i", r"C:\in\movie.mkv", "-c:v", "libx264", "-preset", "medium",
-                "-crf", "23", "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000",
+                "-y",
+                "-i",
+                r"C:\in\movie.mkv",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "medium",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-ac",
+                "2",
+                "-ar",
+                "48000",
                 r"C:\out\movie.mp4",
             ]
         );
@@ -424,9 +489,9 @@ mod tests {
     fn build_args_nvenc_maps_preset_to_p_scale() {
         // 收拢：具体 flag 字符串只由 flags 侧快照拥有，
         // 此处改为调用 flags 接口后断言输出，不重复硬编码。
-        use crate::encoder::flags as flags;
+        use crate::encoder::flags;
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         let encoder = flags::encoder_name(&config.video_codec, config.hw_accel.as_ref());
         let expected_video = flags::video_encoding_args(&config, encoder, None);
@@ -441,9 +506,9 @@ mod tests {
     fn build_args_nvenc_wysiwyg_cq() {
         // 收拢：不重复硬编码具体 flag 字符串；所见即所得的数值透传由 flags 侧
         // 快照锁死，此处只锁“构建输出包含 flags 接口输出”。
-        use crate::encoder::flags as flags;
+        use crate::encoder::flags;
         let mut hevc = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         hevc.video_codec = VideoCodec::H265;
         let encoder = flags::encoder_name(&hevc.video_codec, hevc.hw_accel.as_ref());
@@ -452,7 +517,7 @@ mod tests {
         assert_contains_in_order(&args, &expected_video);
 
         let mut av1 = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         av1.video_codec = VideoCodec::AV1;
         let encoder = flags::encoder_name(&av1.video_codec, av1.hw_accel.as_ref());
@@ -464,19 +529,35 @@ mod tests {
     #[test]
     fn build_args_qsv_keeps_preset_name() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::QSV
+            device: HwAccelDevice::QSV,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", "23"]);
+        assert_args_contain(
+            &args,
+            &[
+                "-c:v",
+                "h264_qsv",
+                "-preset",
+                "medium",
+                "-global_quality",
+                "23",
+            ],
+        );
     }
 
     #[test]
     fn build_args_amf_maps_preset_to_quality() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::AMF
+            device: HwAccelDevice::AMF,
         }));
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
-        assert_args_contain(&args, &["-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "23", "-qp_p", "23"]);
+        assert_args_contain(
+            &args,
+            &[
+                "-c:v", "h264_amf", "-quality", "balanced", "-rc", "cqp", "-qp_i", "23", "-qp_p",
+                "23",
+            ],
+        );
     }
 
     #[test]
@@ -494,7 +575,19 @@ mod tests {
         config.video_codec = VideoCodec::VP9;
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
         // medium → 3, VP9 需要 -crf 23 -b:v 0
-        assert_args_contain(&args, &["-c:v", "libvpx-vp9", "-cpu-used", "3", "-crf", "23", "-b:v", "0"]);
+        assert_args_contain(
+            &args,
+            &[
+                "-c:v",
+                "libvpx-vp9",
+                "-cpu-used",
+                "3",
+                "-crf",
+                "23",
+                "-b:v",
+                "0",
+            ],
+        );
     }
 
     #[test]
@@ -504,13 +597,19 @@ mod tests {
         let args = build_ffmpeg_args(&config, "in.mp4", "out.mp4");
         assert_args_contain(&args, &["-c:v", "copy"]);
         // Copy 分支不得附加 -crf/-preset
-        assert!(!args.iter().any(|a| a == "-crf" || a == "-preset"), "{args:?}");
+        assert!(
+            !args.iter().any(|a| a == "-crf" || a == "-preset"),
+            "{args:?}"
+        );
     }
 
     #[test]
     fn build_args_resolution_fps_profile_pixfmt_extra() {
         let mut config = sample_config();
-        config.video_settings.resolution = Some(Resolution { width: 1920, height: 1080 });
+        config.video_settings.resolution = Some(Resolution {
+            width: 1920,
+            height: 1080,
+        });
         config.video_settings.frame_rate = Some(30.0);
         config.video_settings.profile = Some("high".into());
         config.video_settings.pixel_format = Some("yuv420p".into());
@@ -520,11 +619,16 @@ mod tests {
         assert_args_contain(
             &args,
             &[
-                "-profile:v", "high",
-                "-pix_fmt", "yuv420p",
-                "-vf", "scale=1920:1080",
-                "-r", "30",
-                "-movflags", "+faststart",
+                "-profile:v",
+                "high",
+                "-pix_fmt",
+                "yuv420p",
+                "-vf",
+                "scale=1920:1080",
+                "-r",
+                "30",
+                "-movflags",
+                "+faststart",
             ],
         );
     }
@@ -560,14 +664,15 @@ mod tests {
     #[test]
     fn build_args_auto_maxrate_guard_nvenc() {
         let config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         // 输入码率 4000 kbps -> maxrate = 4000 * 1.25 = 5000k, bufsize = 10000k
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
         assert_args_contain(&args, &["-maxrate", "5000k", "-bufsize", "10000k"]);
 
         // CPU 编码（hw 为 None）时，不应注入自动 maxrate 保护
-        let cpu_args = build_ffmpeg_args_with_bitrate(&sample_config(), "in.mp4", "out.mp4", Some(4000));
+        let cpu_args =
+            build_ffmpeg_args_with_bitrate(&sample_config(), "in.mp4", "out.mp4", Some(4000));
         assert!(!cpu_args.contains(&"-maxrate".to_string()));
 
         // 当用户在 additional_params 中显式提供了 -maxrate 时，不要覆盖
@@ -583,13 +688,22 @@ mod tests {
         // 顺序锁死：自动 guard（-maxrate/-bufsize）必须先于用户 extra 追加，
         // 顺序由本单测与 flags::video_encoding_args 文档共同锁定，不改行为。
         let mut config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         config.video_settings.additional_params = vec!["-movflags".into(), "+faststart".into()];
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));
-        let maxrate_pos = args.iter().position(|a| a == "-maxrate").expect("应含自动 -maxrate");
-        let bufsize_pos = args.iter().position(|a| a == "-bufsize").expect("应含自动 -bufsize");
-        let extra_pos = args.iter().position(|a| a == "-movflags").expect("应含用户 extra");
+        let maxrate_pos = args
+            .iter()
+            .position(|a| a == "-maxrate")
+            .expect("应含自动 -maxrate");
+        let bufsize_pos = args
+            .iter()
+            .position(|a| a == "-bufsize")
+            .expect("应含自动 -bufsize");
+        let extra_pos = args
+            .iter()
+            .position(|a| a == "-movflags")
+            .expect("应含用户 extra");
         assert!(
             maxrate_pos < extra_pos,
             "-maxrate 应在用户 extra 之前：{args:?}"
@@ -605,7 +719,7 @@ mod tests {
         // Copy+NVENC 生产路径：直接 `-c:v copy`，不经过视频编码 flags；
         // flags::video_encoding_args(Copy, …) 直调组合生产不可达，故只在 args 层锁定。
         let mut config = config_with_hw(Some(HwAccelConfig {
-            device: HwAccelDevice::NVENC
+            device: HwAccelDevice::NVENC,
         }));
         config.video_codec = VideoCodec::Copy;
         let args = build_ffmpeg_args_with_bitrate(&config, "in.mp4", "out.mp4", Some(4000));

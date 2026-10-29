@@ -61,7 +61,6 @@ pub enum RateControl {
     },
 }
 
-
 /// 音频编码器枚举，与前端 `AudioCodec` 联合类型对齐。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AudioCodec {
@@ -213,10 +212,13 @@ mod tests {
     #[test]
     fn abr_deserialize_camel_case_from_frontend() {
         // 前端 EncodingParams.tsx 实际发送：只有 bitrateKbps，无 maxBitrateKbps
-        let cfg: EncodeConfig = serde_json::from_str(ABR_CONFIG_JSON)
-            .expect("ABR camelCase 配置应能反序列化");
+        let cfg: EncodeConfig =
+            serde_json::from_str(ABR_CONFIG_JSON).expect("ABR camelCase 配置应能反序列化");
         match cfg.video_settings.rate_control {
-            RateControl::Abr { bitrate_kbps, max_bitrate_kbps } => {
+            RateControl::Abr {
+                bitrate_kbps,
+                max_bitrate_kbps,
+            } => {
                 assert_eq!(bitrate_kbps, 5000);
                 assert_eq!(max_bitrate_kbps, None);
             }
@@ -230,9 +232,13 @@ mod tests {
             "\"bitrateKbps\": 5000",
             "\"bitrateKbps\": 5000, \"maxBitrateKbps\": 8000",
         );
-        let cfg: EncodeConfig = serde_json::from_str(&json).expect("带 maxBitrateKbps 应能反序列化");
+        let cfg: EncodeConfig =
+            serde_json::from_str(&json).expect("带 maxBitrateKbps 应能反序列化");
         match cfg.video_settings.rate_control {
-            RateControl::Abr { bitrate_kbps, max_bitrate_kbps } => {
+            RateControl::Abr {
+                bitrate_kbps,
+                max_bitrate_kbps,
+            } => {
                 assert_eq!(bitrate_kbps, 5000);
                 assert_eq!(max_bitrate_kbps, Some(8000));
             }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::encoder::codec::EncodeConfig;
+use serde::{Deserialize, Serialize};
 
 /// 队列中编码任务的状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

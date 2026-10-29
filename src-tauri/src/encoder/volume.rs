@@ -45,10 +45,18 @@ pub fn crf_baseline(codec: &VideoCodec, hw: Option<&HwAccelConfig>) -> f64 {
     match codec {
         VideoCodec::H264 => 18.0,
         VideoCodec::H265 => {
-            if hw.is_some() { 22.0 } else { 20.0 }
+            if hw.is_some() {
+                22.0
+            } else {
+                20.0
+            }
         }
         VideoCodec::AV1 => {
-            if hw.is_some() { 26.0 } else { 24.0 }
+            if hw.is_some() {
+                26.0
+            } else {
+                24.0
+            }
         }
         VideoCodec::VP9 => 24.0,
         VideoCodec::Copy => 18.0,
@@ -87,10 +95,7 @@ pub fn codec_factor(codec: &VideoCodec) -> f64 {
 /// 硬件编码器动态膨胀系数：
 /// 显卡芯片追求吞吐与低时延，帧间预测深度不及 CPU 细致，在同等质量下容易输出更高码率；
 /// 区分硬件设备类型并对高帧率（>=50fps）适当补足动态系数。
-pub fn hardware_accel_factor(
-    hw_accel: Option<&HwAccelConfig>,
-    fps: Option<f64>,
-) -> f64 {
+pub fn hardware_accel_factor(hw_accel: Option<&HwAccelConfig>, fps: Option<f64>) -> f64 {
     let Some(hw) = hw_accel else {
         return 1.0;
     };
@@ -130,17 +135,25 @@ pub fn physical_anchor_crf_kbps(
     hw_factor: f64,
     crf_val: f64,
 ) -> f64 {
-    let width = config.video_settings.resolution.as_ref()
+    let width = config
+        .video_settings
+        .resolution
+        .as_ref()
         .filter(|r| r.width > 0 && r.height > 0)
         .map(|r| r.width)
         .or(in_width)
         .unwrap_or(1920);
-    let height = config.video_settings.resolution.as_ref()
+    let height = config
+        .video_settings
+        .resolution
+        .as_ref()
         .filter(|r| r.width > 0 && r.height > 0)
         .map(|r| r.height)
         .or(in_height)
         .unwrap_or(1080);
-    let fps = config.video_settings.frame_rate
+    let fps = config
+        .video_settings
+        .frame_rate
         .filter(|f| *f > 0.0)
         .or(in_fps)
         .unwrap_or(30.0);
@@ -176,7 +189,8 @@ pub fn estimate_video_kbps(
 
     let baseline = crf_baseline(&config.video_codec, config.hw_accel.as_ref());
     let quality_ratio = 2f64.powf((baseline - crf_val) / 6.0) * 0.8;
-    let relative_kbps = (input_kbps * relative_factor * hw_factor * quality_ratio * media.scale).max(1.0);
+    let relative_kbps =
+        (input_kbps * relative_factor * hw_factor * quality_ratio * media.scale).max(1.0);
 
     // 物理像素通量锚点码率
     let anchor_kbps = physical_anchor_crf_kbps(
@@ -188,19 +202,19 @@ pub fn estimate_video_kbps(
         crf_val,
     );
 
-            // 65% 相对源片推算 + 35% 物理像素通量锚点，兼顾源片特征与物理客观基准
-            let mut expected = 0.65 * relative_kbps + 0.35 * anchor_kbps;
+    // 65% 相对源片推算 + 35% 物理像素通量锚点，兼顾源片特征与物理客观基准
+    let mut expected = 0.65 * relative_kbps + 0.35 * anchor_kbps;
 
-            // 动态范围：平缓/静态场景 0.75x ~ 高动态/噪点场景 1.40x
-            let mut min = (expected * 0.75).max(1.0);
-            let mut max = (expected * 1.40).max(expected);
+    // 动态范围：平缓/静态场景 0.75x ~ 高动态/噪点场景 1.40x
+    let mut min = (expected * 0.75).max(1.0);
+    let mut max = (expected * 1.40).max(expected);
 
-            // Maxrate 上限截断（Auto Maxrate Guard 或用户指定）
-            if let Some(maxrate) = effective_maxrate_kbps(config, input_kbps) {
-                expected = expected.min(maxrate);
-                max = max.min(maxrate).max(expected);
-                min = min.min(expected);
-            }
+    // Maxrate 上限截断（Auto Maxrate Guard 或用户指定）
+    if let Some(maxrate) = effective_maxrate_kbps(config, input_kbps) {
+        expected = expected.min(maxrate);
+        max = max.min(maxrate).max(expected);
+        min = min.min(expected);
+    }
 
     (expected, min, max)
 }
@@ -256,7 +270,10 @@ mod tests {
     #[test]
     fn matrix_effective_maxrate_clamp_snapshot() {
         // 有效 guard：NVENC CRF 4000 → 5000；自定义 3000k 优先；CPU → None
-        assert_eq!(effective_maxrate_kbps(&hw_config(HwAccelDevice::NVENC), 4000.0), Some(5000.0));
+        assert_eq!(
+            effective_maxrate_kbps(&hw_config(HwAccelDevice::NVENC), 4000.0),
+            Some(5000.0)
+        );
         let mut custom = hw_config(HwAccelDevice::NVENC);
         custom.video_settings.additional_params = vec!["-maxrate".into(), "3000k".into()];
         assert_eq!(effective_maxrate_kbps(&custom, 4000.0), Some(3000.0));
@@ -268,19 +285,83 @@ mod tests {
     #[test]
     fn matrix_estimate_factors_snapshot() {
         assert_eq!(hardware_accel_factor(None, Some(30.0)), 1.0);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(30.0)), 1.30);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::QSV }), Some(30.0)), 1.20);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::AMF }), Some(30.0)), 1.35);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::VAAPI }), Some(30.0)), 1.25);
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::NVENC
+                }),
+                Some(30.0)
+            ),
+            1.30
+        );
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::QSV
+                }),
+                Some(30.0)
+            ),
+            1.20
+        );
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::AMF
+                }),
+                Some(30.0)
+            ),
+            1.35
+        );
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::VAAPI
+                }),
+                Some(30.0)
+            ),
+            1.25
+        );
         // 高帧率 +0.15，低帧率 -0.05（带 1.0 下限）
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(60.0)), 1.45);
-        assert_eq!(hardware_accel_factor(Some(&HwAccelConfig { device: HwAccelDevice::NVENC }), Some(24.0)), 1.25);
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::NVENC
+                }),
+                Some(60.0)
+            ),
+            1.45
+        );
+        assert_eq!(
+            hardware_accel_factor(
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::NVENC
+                }),
+                Some(24.0)
+            ),
+            1.25
+        );
         // baseline 快照
         assert_eq!(crf_baseline(&VideoCodec::H264, None), 18.0);
         assert_eq!(crf_baseline(&VideoCodec::H265, None), 20.0);
-        assert_eq!(crf_baseline(&VideoCodec::H265, Some(&HwAccelConfig { device: HwAccelDevice::NVENC })), 22.0);
+        assert_eq!(
+            crf_baseline(
+                &VideoCodec::H265,
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::NVENC
+                })
+            ),
+            22.0
+        );
         assert_eq!(crf_baseline(&VideoCodec::AV1, None), 24.0);
-        assert_eq!(crf_baseline(&VideoCodec::AV1, Some(&HwAccelConfig { device: HwAccelDevice::NVENC })), 26.0);
+        assert_eq!(
+            crf_baseline(
+                &VideoCodec::AV1,
+                Some(&HwAccelConfig {
+                    device: HwAccelDevice::NVENC
+                })
+            ),
+            26.0
+        );
         // 编解码因子快照
         assert_eq!(codec_factor(&VideoCodec::H264), 1.0);
         assert_eq!(codec_factor(&VideoCodec::H265), 0.65);
@@ -304,8 +385,14 @@ mod tests {
         let mut crf10 = hw_config(HwAccelDevice::NVENC);
         crf10.video_settings.rate_control = RateControl::Crf { value: 10 };
         let (exp, _min, max) = estimate_video_kbps(&crf10, 8000.0, &sample_media(1.0));
-        assert!(exp <= 10000.0 + 1e-6, "exp {exp} should be clamped to guard 10000");
-        assert!(max <= 10000.0 + 1e-6, "max {max} should be clamped to guard 10000");
+        assert!(
+            exp <= 10000.0 + 1e-6,
+            "exp {exp} should be clamped to guard 10000"
+        );
+        assert!(
+            max <= 10000.0 + 1e-6,
+            "max {max} should be clamped to guard 10000"
+        );
         // CPU H264 CRF23 无 guard：estimate 无截断
         let cpu = base_config();
         assert_eq!(effective_maxrate_kbps(&cpu, 8000.0), None);

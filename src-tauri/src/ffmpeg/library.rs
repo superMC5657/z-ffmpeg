@@ -111,19 +111,17 @@ mod tests {
             status.ffprobe_path.as_deref(),
             Some(ffprobe.to_string_lossy().as_ref())
         );
-        assert_eq!(status.codecs, vec!["h264_nvenc".to_string(), "aac".to_string()]);
+        assert_eq!(
+            status.codecs,
+            vec!["h264_nvenc".to_string(), "aac".to_string()]
+        );
     }
 
     #[test]
     fn assemble_available_without_ffprobe() {
         // 有 ffmpeg、无 ffprobe：ffprobe 字串为 None，其余透传
         let ffmpeg = PathBuf::from("/bin/ffmpeg");
-        let status = assemble_status(
-            Some(ffmpeg.clone()),
-            None,
-            None,
-            Vec::new(),
-        );
+        let status = assemble_status(Some(ffmpeg.clone()), None, None, Vec::new());
         assert!(status.available);
         assert!(status.version.is_none());
         assert!(status.codecs.is_empty());

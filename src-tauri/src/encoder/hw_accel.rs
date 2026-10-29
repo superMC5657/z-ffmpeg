@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::ffmpeg::facade;
+use serde::{Deserialize, Serialize};
 
 /// 硬件加速器类型及其编码器前缀和候选编解码器
 const HW_ENCODERS: &[(&str, &str, &[&str])] = &[
@@ -22,8 +22,8 @@ pub struct HwAccelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HwCodecInfo {
-    pub codec: String,       // "h264", "hevc", "av1"（编解码器名称）
-    pub encoder: String,     // "h264_nvenc", "hevc_nvenc" 等（FFmpeg 编码器）
+    pub codec: String,   // "h264", "hevc", "av1"（编解码器名称）
+    pub encoder: String, // "h264_nvenc", "hevc_nvenc" 等（FFmpeg 编码器）
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,7 +114,8 @@ pub fn detect_system_gpus() -> Vec<DiscoveredGpu> {
 
         let mut gpus = Vec::new();
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-        let class_path = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
+        let class_path =
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}";
         if let Ok(class_key) = hklm.open_subkey(class_path) {
             for subkey_name in class_key.enum_keys().filter_map(|r| r.ok()) {
                 if subkey_name.starts_with("0") {
@@ -177,7 +178,10 @@ pub fn detect_system_gpus() -> Vec<DiscoveredGpu> {
         {
             let brand = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !brand.is_empty() {
-                gpus.push(DiscoveredGpu::new(format!("Apple {}", brand), "apple_silicon"));
+                gpus.push(DiscoveredGpu::new(
+                    format!("Apple {}", brand),
+                    "apple_silicon",
+                ));
             } else {
                 gpus.push(DiscoveredGpu::new("Apple Silicon", "apple_silicon"));
             }
@@ -394,14 +398,24 @@ mod tests {
         assert!(nvenc.available);
         assert_eq!(nvenc.device_name, "NVIDIA GeForce RTX 3080");
         // 即使 ffmpeg 包含 av1_nvenc，RTX 3080 也绝不能在支持列表中包含 AV1
-        let codecs: Vec<&str> = nvenc.supported_codecs.iter().map(|c| c.codec.as_str()).collect();
-        assert!(!codecs.contains(&"av1"), "RTX 3080 should not support AV1: {codecs:?}");
+        let codecs: Vec<&str> = nvenc
+            .supported_codecs
+            .iter()
+            .map(|c| c.codec.as_str())
+            .collect();
+        assert!(
+            !codecs.contains(&"av1"),
+            "RTX 3080 should not support AV1: {codecs:?}"
+        );
         assert!(codecs.contains(&"h264"));
         assert!(codecs.contains(&"hevc"));
 
         // 即使 CPU 是 AMD Ryzen，因无 AMD GPU，AMF 也必须不可用
         let amf = results.iter().find(|r| r.device == "AMF").unwrap();
-        assert!(!amf.available, "AMF must be unavailable when no AMD GPU is installed");
+        assert!(
+            !amf.available,
+            "AMF must be unavailable when no AMD GPU is installed"
+        );
 
         // QSV 必须不可用
         let qsv = results.iter().find(|r| r.device == "QSV").unwrap();
@@ -420,13 +434,45 @@ mod tests {
 
     #[test]
     fn fallback_platform_heuristics() {
-        assert!(!platform_supports_device_fallback("QSV", "AMD Ryzen 7 5800X", "windows"));
-        assert!(platform_supports_device_fallback("QSV", "Intel(R) Core(TM) i7-12700K", "windows"));
-        assert!(platform_supports_device_fallback("VideoToolbox", "Apple M1", "macos"));
-        assert!(!platform_supports_device_fallback("VideoToolbox", "Apple M1", "windows"));
-        assert!(platform_supports_device_fallback("NVENC", "AMD Ryzen 7 5800X", "windows"));
-        assert!(!platform_supports_device_fallback("NVENC", "AMD Ryzen 7 5800X", "macos"));
-        assert!(platform_supports_device_fallback("VAAPI", "AMD Ryzen 7 5800X", "linux"));
-        assert!(!platform_supports_device_fallback("VAAPI", "AMD Ryzen 7 5800X", "windows"));
+        assert!(!platform_supports_device_fallback(
+            "QSV",
+            "AMD Ryzen 7 5800X",
+            "windows"
+        ));
+        assert!(platform_supports_device_fallback(
+            "QSV",
+            "Intel(R) Core(TM) i7-12700K",
+            "windows"
+        ));
+        assert!(platform_supports_device_fallback(
+            "VideoToolbox",
+            "Apple M1",
+            "macos"
+        ));
+        assert!(!platform_supports_device_fallback(
+            "VideoToolbox",
+            "Apple M1",
+            "windows"
+        ));
+        assert!(platform_supports_device_fallback(
+            "NVENC",
+            "AMD Ryzen 7 5800X",
+            "windows"
+        ));
+        assert!(!platform_supports_device_fallback(
+            "NVENC",
+            "AMD Ryzen 7 5800X",
+            "macos"
+        ));
+        assert!(platform_supports_device_fallback(
+            "VAAPI",
+            "AMD Ryzen 7 5800X",
+            "linux"
+        ));
+        assert!(!platform_supports_device_fallback(
+            "VAAPI",
+            "AMD Ryzen 7 5800X",
+            "windows"
+        ));
     }
 }

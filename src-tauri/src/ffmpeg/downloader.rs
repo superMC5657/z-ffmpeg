@@ -55,12 +55,7 @@ pub async fn download_ffmpeg(
         move || -> AppResult<(PathBuf, PathBuf, FfmpegStatus)> {
             // 逐源完整安装：每个源走"下载 → 解压 → 移动 → 验证"全流程，
             // 任一步失败(含代理返回 200 错误页导致 zip 无效)都换下一个源。
-            install_ffmpeg_from_sources(
-                &app_clone,
-                &zip_dl,
-                &temp_dl,
-                &install_clone,
-            )?;
+            install_ffmpeg_from_sources(&app_clone, &zip_dl, &temp_dl, &install_clone)?;
 
             let ffmpeg_final = install_clone.join("ffmpeg.exe");
             let ffprobe_final = install_clone.join("ffprobe.exe");
@@ -83,9 +78,8 @@ pub async fn download_ffmpeg(
     let _ = std::fs::remove_file(&zip_path);
     let _ = std::fs::remove_dir_all(&temp_dir);
 
-    let (ffmpeg_path, ffprobe_path, status) =
-        crate::error::flatten_blocking_result(join_result)
-            .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
+    let (ffmpeg_path, ffprobe_path, status) = crate::error::flatten_blocking_result(join_result)
+        .map_err(|e| AppError::Internal(format!("FFmpeg 安装任务异常终止: {e}")))?;
     facade::set_installed_paths(ffmpeg_path, Some(ffprobe_path));
     *status_lock.lock() = status.clone();
 
@@ -118,17 +112,19 @@ fn install_ffmpeg_from_sources(
         .build()
         .map_err(|e| AppError::Ffmpeg(format!("创建下载客户端失败: {e}")))?;
 
-    install_from_sources(FFMPEG_SOURCES, &|url| {
-        install_from_url(app, &client, url, zip_path, temp_dir, install_dir)
-    }, &|| {
-        // 丢弃该源的半成品（zip/临时目录/已移动的二进制），
-        // 让下一个源从零开始；已移动的二进制一并回滚，
-        // 避免 install 根下残留半安装状态。
-        let _ = std::fs::remove_file(zip_path);
-        let _ = std::fs::remove_dir_all(temp_dir);
-        let _ = std::fs::remove_file(install_dir.join("ffmpeg.exe"));
-        let _ = std::fs::remove_file(install_dir.join("ffprobe.exe"));
-    })
+    install_from_sources(
+        FFMPEG_SOURCES,
+        &|url| install_from_url(app, &client, url, zip_path, temp_dir, install_dir),
+        &|| {
+            // 丢弃该源的半成品（zip/临时目录/已移动的二进制），
+            // 让下一个源从零开始；已移动的二进制一并回滚，
+            // 避免 install 根下残留半安装状态。
+            let _ = std::fs::remove_file(zip_path);
+            let _ = std::fs::remove_dir_all(temp_dir);
+            let _ = std::fs::remove_file(install_dir.join("ffmpeg.exe"));
+            let _ = std::fs::remove_file(install_dir.join("ffprobe.exe"));
+        },
+    )
 }
 
 /// 逐源回退的核心循环,与 HTTP/文件系统解耦,便于单元测试注入假安装器。
@@ -146,7 +142,11 @@ fn install_from_sources(
             Err(e) => {
                 // 源切换只记序号+原因首行：不记完整 URL（长查询串噪音）
                 let top = e.top_line();
-                log::error!("ffmpeg source {}/{} failed reason {top}", idx + 1, sources.len());
+                log::error!(
+                    "ffmpeg source {}/{} failed reason {top}",
+                    idx + 1,
+                    sources.len()
+                );
                 errors.push(format!("{url}: {e}"));
                 cleanup_source();
             }
@@ -242,10 +242,7 @@ fn download_from(
         .map_err(|e| AppError::Ffmpeg(format!("连接失败: {e}")))?;
 
     if !response.status().is_success() {
-        return Err(AppError::Ffmpeg(format!(
-            "HTTP {}",
-            response.status()
-        )));
+        return Err(AppError::Ffmpeg(format!("HTTP {}", response.status())));
     }
 
     let total = response.content_length().unwrap_or(0);
@@ -329,8 +326,8 @@ fn extract_binaries(zip_path: &Path, install_dir: &Path) -> AppResult<(PathBuf, 
         }
     }
 
-    let ffmpeg = ffmpeg
-        .ok_or_else(|| AppError::Ffmpeg("FFmpeg 压缩包中未找到 ffmpeg 可执行文件".into()))?;
+    let ffmpeg =
+        ffmpeg.ok_or_else(|| AppError::Ffmpeg("FFmpeg 压缩包中未找到 ffmpeg 可执行文件".into()))?;
     let ffprobe = ffprobe
         .ok_or_else(|| AppError::Ffmpeg("FFmpeg 压缩包中未找到 ffprobe 可执行文件".into()))?;
 
@@ -346,8 +343,8 @@ mod tests {
     fn make_zip(path: &Path, entries: &[(&str, &[u8])]) {
         let file = std::fs::File::create(path).unwrap();
         let mut writer = zip::ZipWriter::new(file);
-        let options = SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
         for (name, data) in entries {
             writer.start_file(*name, options).unwrap();
             writer.write_all(data).unwrap();
@@ -356,11 +353,8 @@ mod tests {
     }
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "z-ffmpeg-test-{}-{}",
-            tag,
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("z-ffmpeg-test-{}-{}", tag, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -381,8 +375,14 @@ mod tests {
         make_zip(
             &zip_path,
             &[
-                ("ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", b"FFMPEGBIN"),
-                ("ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe", b"FFPROBEBIN"),
+                (
+                    "ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe",
+                    b"FFMPEGBIN",
+                ),
+                (
+                    "ffmpeg-master-latest-win64-gpl/bin/ffprobe.exe",
+                    b"FFPROBEBIN",
+                ),
                 ("ffmpeg-master-latest-win64-gpl/README.txt", b"ignore me"),
             ],
         );
@@ -501,12 +501,9 @@ mod tests {
         let mut reader = Cursor::new(data.to_vec());
         let mut progress: Vec<f64> = Vec::new();
 
-        let written = write_response(
-            &mut reader,
-            data.len() as u64,
-            &dest,
-            &mut |pct| progress.push(pct),
-        )
+        let written = write_response(&mut reader, data.len() as u64, &dest, &mut |pct| {
+            progress.push(pct)
+        })
         .unwrap();
 
         assert_eq!(written, data.len() as u64);

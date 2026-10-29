@@ -119,19 +119,33 @@ fn build_segment_args(
 ) -> Vec<String> {
     let mut args = vec!["-y".to_string()];
     if let Some(seg) = seg {
-        args.extend(["-ss".into(), format!("{:.3}", seg.start), "-t".into(), format!("{:.3}", seg.length)]);
+        args.extend([
+            "-ss".into(),
+            format!("{:.3}", seg.start),
+            "-t".into(),
+            format!("{:.3}", seg.length),
+        ]);
     }
     args.push("-i".into());
     args.push(reference.into());
     if let Some(seg) = seg {
-        args.extend(["-ss".into(), format!("{:.3}", seg.start), "-t".into(), format!("{:.3}", seg.length)]);
+        args.extend([
+            "-ss".into(),
+            format!("{:.3}", seg.start),
+            "-t".into(),
+            format!("{:.3}", seg.length),
+        ]);
     }
     args.push("-i".into());
     args.push(distorted.into());
 
     let w = ensure_even_dimension(info.width);
     let h = ensure_even_dimension(info.height);
-    let fps = if info.fps > 0.0 { format!("{:.3}", info.fps) } else { "30.0".to_string() };
+    let fps = if info.fps > 0.0 {
+        format!("{:.3}", info.fps)
+    } else {
+        "30.0".to_string()
+    };
     let filter = format!(
         "[0:v]fps={fps},scale={w}:{h}:flags=bicubic,format=yuv420p[ref];\
          [1:v]fps={fps},scale={w}:{h}:flags=bicubic,format=yuv420p[main];\
@@ -139,7 +153,13 @@ fn build_segment_args(
         log = log_file_name,
         threads = n_threads.max(1),
     );
-    args.extend(["-lavfi".into(), filter, "-f".into(), "null".into(), "-".into()]);
+    args.extend([
+        "-lavfi".into(),
+        filter,
+        "-f".into(),
+        "null".into(),
+        "-".into(),
+    ]);
     args
 }
 
@@ -232,8 +252,7 @@ pub fn compute_vmaf_sampled(
             "当前 ffmpeg 未编译 libvmaf 滤镜，无法计算 VMAF 得分".into(),
         ));
     }
-    let ffmpeg_path = facade::get_ffmpeg_path()
-        .ok_or(AppError::FfmpegNotFound)?;
+    let ffmpeg_path = facade::get_ffmpeg_path().ok_or(AppError::FfmpegNotFound)?;
 
     // 探测参考视频规格（失真视频可能已缩放/改帧率，一律对齐到参考）
     let info = probe_video_info(reference)?;
@@ -291,32 +310,33 @@ pub fn compute_vmaf_sampled(
         let ffmpeg_path_ref = &ffmpeg_path;
         let info_ref = &info;
         let work_dir_ref = &work_dir;
-        let batch_results = std::thread::scope(|scope| {
-            let mut handles = Vec::with_capacity(batch.len());
-            for (i, seg) in batch.iter().enumerate() {
-                // 日志文件名按全局索引唯一，批内批外均不冲突
-                let log_file_name = format!("seg_{}.json", scores.len() + i);
-                handles.push(scope.spawn(move || {
-                    run_segment(
-                        ffmpeg_path_ref,
-                        reference,
-                        distorted,
-                        Some(seg),
-                        info_ref,
-                        work_dir_ref,
-                        &log_file_name,
-                        per_threads,
-                    )
-                }));
-            }
-            let mut results = Vec::with_capacity(handles.len());
-            for h in handles {
-                results.push(h.join().unwrap_or_else(|_| {
-                    Err(AppError::Ffmpeg("VMAF 段计算线程异常终止".into()))
-                })?);
-            }
-            Ok::<Vec<f64>, AppError>(results)
-        });
+        let batch_results =
+            std::thread::scope(|scope| {
+                let mut handles = Vec::with_capacity(batch.len());
+                for (i, seg) in batch.iter().enumerate() {
+                    // 日志文件名按全局索引唯一，批内批外均不冲突
+                    let log_file_name = format!("seg_{}.json", scores.len() + i);
+                    handles.push(scope.spawn(move || {
+                        run_segment(
+                            ffmpeg_path_ref,
+                            reference,
+                            distorted,
+                            Some(seg),
+                            info_ref,
+                            work_dir_ref,
+                            &log_file_name,
+                            per_threads,
+                        )
+                    }));
+                }
+                let mut results = Vec::with_capacity(handles.len());
+                for h in handles {
+                    results.push(h.join().unwrap_or_else(|_| {
+                        Err(AppError::Ffmpeg("VMAF 段计算线程异常终止".into()))
+                    })?);
+                }
+                Ok::<Vec<f64>, AppError>(results)
+            });
         scores.extend(batch_results?);
     }
 
@@ -419,8 +439,16 @@ mod tests {
 
     #[test]
     fn build_args_full_mode_omits_seek() {
-        let info = VideoInfo { duration: 100.0, width: 1920, height: 1080, fps: 30.0 };
-        let seg = VmafSegment { start: 25.0, length: 5.0 };
+        let info = VideoInfo {
+            duration: 100.0,
+            width: 1920,
+            height: 1080,
+            fps: 30.0,
+        };
+        let seg = VmafSegment {
+            start: 25.0,
+            length: 5.0,
+        };
 
         // 采样模式包含 -ss/-t 且显式 n_threads
         let sampled = build_segment_args("a.mp4", "b.mp4", Some(&seg), &info, "seg_1.json", 8);

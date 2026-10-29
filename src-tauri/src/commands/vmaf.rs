@@ -1,9 +1,7 @@
 use tauri::State;
 
-use crate::encoder::vmaf::{
-    self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS,
-};
 use crate::encoder::vmaf::clamp_segments;
+use crate::encoder::vmaf::{self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS};
 use crate::error::{AppResult, LogDisplay};
 use crate::queue::store::SETTINGS_KEY_VMAF_SEGMENTS;
 
@@ -56,13 +54,7 @@ pub async fn compute_vmaf(
     let work_id = format!("{job_id}_{}", uuid::Uuid::new_v4());
     let result = crate::error::flatten_blocking_result(
         tokio::task::spawn_blocking(move || {
-            vmaf::compute_vmaf_sampled(
-                &input,
-                &output,
-                segments,
-                DEFAULT_SEGMENT_SECONDS,
-                &work_id,
-            )
+            vmaf::compute_vmaf_sampled(&input, &output, segments, DEFAULT_SEGMENT_SECONDS, &work_id)
         })
         .await,
     )
@@ -87,9 +79,7 @@ pub async fn compute_vmaf(
 
 /// 读取 VMAF 段数设置（0 = 全量对比，N = N 段 × 5 秒均匀采样）。
 #[tauri::command]
-pub async fn get_vmaf_segments(
-    state: State<'_, crate::AppState>,
-) -> AppResult<usize> {
+pub async fn get_vmaf_segments(state: State<'_, crate::AppState>) -> AppResult<usize> {
     let queue = state
         .queue_manager
         .as_ref()

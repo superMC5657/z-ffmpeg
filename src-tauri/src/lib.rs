@@ -1,21 +1,21 @@
+mod analytics;
 mod commands;
 mod encoder;
-mod queue;
-mod preset;
+mod error;
 mod ffmpeg;
 mod license;
-mod analytics;
-mod error;
+mod preset;
+mod queue;
 mod util;
 mod z_log;
 
-use std::sync::Arc;
-use parking_lot::Mutex;
-use tauri::Manager;
 use crate::ffmpeg::library::FfmpegStatus;
 use crate::license::LicenseManager;
 use crate::preset::manager::PresetManager;
 use crate::queue::QueueManager;
+use parking_lot::Mutex;
+use std::sync::Arc;
+use tauri::Manager;
 
 /// 在所有 Tauri 命令间共享的应用全局状态
 pub struct AppState {
@@ -37,8 +37,17 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            let version = app.config().version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
-            log::info!("app started version={} os={} arch={}", version, std::env::consts::OS, std::env::consts::ARCH);
+            let version = app
+                .config()
+                .version
+                .as_deref()
+                .unwrap_or(env!("CARGO_PKG_VERSION"));
+            log::info!(
+                "app started version={} os={} arch={}",
+                version,
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            );
 
             // 所有落盘数据的根目录：Tauri app_data_dir（跟随 tauri.conf.json
             // 的 identifier，Windows = %APPDATA%\{identifier}）

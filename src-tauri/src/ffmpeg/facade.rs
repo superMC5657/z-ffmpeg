@@ -143,8 +143,7 @@ pub(crate) fn exe_name(name: &str) -> String {
 
 /// 在系统环境变量 PATH 中查找指定可执行文件
 pub fn find_in_path(name: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH")
-        .and_then(|paths| find_in_path_in(&paths, name))
+    std::env::var_os("PATH").and_then(|paths| find_in_path_in(&paths, name))
 }
 
 /// 可注入的 PATH 检索内核：`path_var` 为 PATH 变量取值，纯函数、可单测，
@@ -181,11 +180,9 @@ pub(crate) fn find_local_install(install_dir: &Path) -> Option<(PathBuf, PathBuf
 /// 2. PATH 无 ffmpeg → 本地安装成对出现才可用；
 /// 3. 否则均无。只做路径检索，不派生子进程。
 pub fn resolve_paths(data_dir: &Path) -> (Option<PathBuf>, Option<PathBuf>) {
-    resolve_paths_with(
-        data_dir,
-        &|name| find_in_path(name),
-        &|dir| find_local_install(dir),
-    )
+    resolve_paths_with(data_dir, &|name| find_in_path(name), &|dir| {
+        find_local_install(dir)
+    })
 }
 
 /// 可注入的解析内核：检索函数由调用方传入，测试用 fake 闭包，
@@ -280,7 +277,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("z-ffmpeg-test-{}-{}", tag, uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("z-ffmpeg-test-{}-{}", tag, uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -360,17 +358,21 @@ mod tests {
         // 2. PATH 有 ffmpeg、无 ffprobe → ffprobe 回退本地
         let (ff, fp) = resolve_paths_with(
             &data_dir,
-            &|n| if n == "ffmpeg" { Some(path_ff.clone()) } else { None },
+            &|n| {
+                if n == "ffmpeg" {
+                    Some(path_ff.clone())
+                } else {
+                    None
+                }
+            },
             &|_| Some((local_ff.clone(), local_fp.clone())),
         );
         assert_eq!((ff, fp), (Some(path_ff.clone()), Some(local_fp.clone())));
 
         // 3. PATH 全无 → 本地成对
-        let (ff, fp) = resolve_paths_with(
-            &data_dir,
-            &|_| None,
-            &|_| Some((local_ff.clone(), local_fp.clone())),
-        );
+        let (ff, fp) = resolve_paths_with(&data_dir, &|_| None, &|_| {
+            Some((local_ff.clone(), local_fp.clone()))
+        });
         assert_eq!((ff, fp), (Some(local_ff.clone()), Some(local_fp.clone())));
 
         // 4. 全 miss → (None, None)
@@ -393,7 +395,9 @@ mod tests {
         assert!(list.contains(&"h264_nvenc".to_string()));
         // 音频行保留（单一语义）；hw_accel 只查视频名故行为不变
         assert!(list.contains(&"aac".to_string()));
-        assert!(!list.iter().any(|e| e == "short" || e == "ass" || e == "BADLINE"));
+        assert!(!list
+            .iter()
+            .any(|e| e == "short" || e == "ass" || e == "BADLINE"));
     }
 
     #[test]
@@ -408,7 +412,9 @@ mod tests {
 
     #[test]
     fn parse_filters_support_detects_libvmaf() {
-        assert!(parse_filters_support(" ... libvmaf Video Multimethod Assessment Fusion ...\n"));
+        assert!(parse_filters_support(
+            " ... libvmaf Video Multimethod Assessment Fusion ...\n"
+        ));
         assert!(!parse_filters_support(" ... scale filter ...\n"));
         assert!(!parse_filters_support(""));
     }

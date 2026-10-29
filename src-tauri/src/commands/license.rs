@@ -21,7 +21,8 @@ pub async fn activate_license(
     email: String,
 ) -> AppResult<LicenseStatus> {
     let manager = state.license.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || manager.activate(&code, &email)).await;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || manager.activate(&code, &email)).await;
     crate::error::flatten_blocking_result(result)
         .map_err(|e| AppError::Internal(format!("激活任务异常终止: {e}")))
 }

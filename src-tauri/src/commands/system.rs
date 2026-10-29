@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use tauri::State;
 use crate::encoder::hw_accel::{self, HwAccelInfo};
 use crate::error::{AppResult, LogDisplay};
 use crate::AppState;
+use serde::{Deserialize, Serialize};
+use tauri::State;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,9 +29,7 @@ pub struct FfmpegStatusInfo {
 /// 系统信息唯一入口（原 `detect_hw_accel` 与 `get_system_info` 重复，
 /// 前者命名误导——实际返回完整 SystemInfo，已合并删除）。
 #[tauri::command]
-pub async fn get_system_info(
-    state: State<'_, AppState>,
-) -> AppResult<SystemInfo> {
+pub async fn get_system_info(state: State<'_, AppState>) -> AppResult<SystemInfo> {
     let sys = sysinfo::System::new_all();
     let cpu = sys.cpus();
     let cpu_name = cpu
@@ -71,9 +69,7 @@ pub async fn get_system_info(
 }
 
 #[tauri::command]
-pub async fn check_ffmpeg_status(
-    state: State<'_, AppState>,
-) -> AppResult<FfmpegStatusInfo> {
+pub async fn check_ffmpeg_status(state: State<'_, AppState>) -> AppResult<FfmpegStatusInfo> {
     let status = state.ffmpeg_status.lock();
 
     let status_str = if status.available {

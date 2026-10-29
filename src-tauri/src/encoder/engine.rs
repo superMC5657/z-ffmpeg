@@ -9,11 +9,11 @@ use std::process::Stdio;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter};
 use crate::encoder::codec::EncodeConfig;
 use crate::encoder::file_name_from_path;
 use crate::error::{AppError, AppResult};
 use crate::ffmpeg::facade;
+use tauri::{AppHandle, Emitter};
 
 // 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
 // 进程监管（注册表/取消状态机/进度块拼装）归 `supervisor`，本模块只做事件→emit 薄映射。
@@ -79,7 +79,10 @@ pub fn start_encode(
     // 取消请求可能在进程启动前到达——例如任务在等待阻塞工作线程时被取消
     // （ffmpeg 子进程仅在 spawn 后才注册，`request_cancel`
     // 尚无法 kill 它）。在此响应标记，使编码根本无需启动。
-    if supervision.claim_cancellation(CancelPoint::PreSpawn).is_some() {
+    if supervision
+        .claim_cancellation(CancelPoint::PreSpawn)
+        .is_some()
+    {
         let elapsed = supervision.elapsed_secs();
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed:.1}s", CancelPoint::PreSpawn.as_str());
         let _ = app_handle.emit(
@@ -99,9 +102,18 @@ pub fn start_encode(
         .and_then(|json| parse_probe_result(&json, &input_path).ok());
     let total_duration = probe_info.as_ref().and_then(|info| info.duration);
     // fs 兜底：format.size 缺失导致统一口径无码率时，用文件元数据回退，避免丢 1.25x 封顶。
-    let input_bitrate_kbps = probe_info.as_ref().and_then(|info| info.bitrate).map(|bps| (bps as f64 / 1000.0).round() as u32).or_else(|| total_duration.filter(|d| *d > 0.0).and_then(|d| (input_size > 0).then(|| ((input_size as f64 * 8.0) / (d * 1000.0)).round() as u32)));
+    let input_bitrate_kbps = probe_info
+        .as_ref()
+        .and_then(|info| info.bitrate)
+        .map(|bps| (bps as f64 / 1000.0).round() as u32)
+        .or_else(|| {
+            total_duration.filter(|d| *d > 0.0).and_then(|d| {
+                (input_size > 0).then(|| ((input_size as f64 * 8.0) / (d * 1000.0)).round() as u32)
+            })
+        });
 
-    let args = build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
+    let args =
+        build_ffmpeg_args_with_bitrate(&config, &input_path, &output_path, input_bitrate_kbps);
     let cmd_preview = format_command_line(&args);
 
     // 确保在 ffmpeg 写入前输出目标目录已存在
@@ -140,7 +152,10 @@ pub fn start_encode(
     // 此时子进程尚未注册，因此 `request_cancel` 无法终止任何进程。
     // 若此时已取消则立即终止——否则编码会在后台持续运行直到完成，
     // 而 UI 上任务状态却显示为“已取消”。终态认领归状态机（恰好一次）。
-    if supervision.claim_cancellation(CancelPoint::PostSpawn).is_some() {
+    if supervision
+        .claim_cancellation(CancelPoint::PostSpawn)
+        .is_some()
+    {
         // kill + wait 收进 supervisor（锁内只取走 handle，阻塞的 kill/wait
         // 在锁外——绝不能阻塞其他 cancel 请求，与搬运前一致）。
         supervisor::kill_and_reap(&job_id);
@@ -187,7 +202,9 @@ pub fn start_encode(
                 );
                 let _ = app_handle.emit("encode://progress", &progress);
 
-                if let Some(milestone) = supervisor::next_milestone(last_milestone, progress.percentage) {
+                if let Some(milestone) =
+                    supervisor::next_milestone(last_milestone, progress.percentage)
+                {
                     last_milestone = milestone;
                     log::info!(
                         target: "zffmpeg_lib::encoder",
@@ -215,7 +232,10 @@ pub fn start_encode(
 
     let elapsed = start_time.elapsed();
 
-    if supervision.claim_cancellation(CancelPoint::Running).is_some() {
+    if supervision
+        .claim_cancellation(CancelPoint::Running)
+        .is_some()
+    {
         let _ = std::fs::remove_file(&output_path);
         let elapsed_s = elapsed.as_secs_f64();
         log::warn!(target: "zffmpeg_lib::encoder", "encode cancelled job {job_id} file {file_name} stage {} elapsed {elapsed_s:.1}s", CancelPoint::Running.as_str());
@@ -234,7 +254,8 @@ pub fn start_encode(
             let elapsed_s = elapsed.as_secs_f64();
             let ratio_str = if input_size > 0 {
                 let pct = (output_size as f64 / input_size as f64) * 100.0;
-                let diff_pct = ((output_size as f64 - input_size as f64) / input_size as f64) * 100.0;
+                let diff_pct =
+                    ((output_size as f64 - input_size as f64) / input_size as f64) * 100.0;
                 format!("{:.1}% (delta {:+.1}%)", pct, diff_pct)
             } else {
                 "N/A".to_string()

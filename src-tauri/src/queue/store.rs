@@ -65,7 +65,9 @@ impl JobStore {
             let top = e.top_line();
             log::error!("queue db open failed reason {top}");
         })?;
-        Ok(Self { db: StdMutex::new(db) })
+        Ok(Self {
+            db: StdMutex::new(db),
+        })
     }
 
     /// settings KV 读：缺失/解析失败返回 None，调用方再套默认值。
@@ -172,7 +174,11 @@ impl JobStore {
     }
 
     fn delete_job(&self, id: &str) {
-        let _ = self.db.lock().unwrap().execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![id]);
+        let _ = self
+            .db
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM jobs WHERE id = ?1", rusqlite::params![id]);
     }
 
     /// 留存规则的唯一真相源：已结束（Completed / Failed / Cancelled）的
@@ -303,7 +309,13 @@ impl JobStore {
         }
         if let Some(q) = search.filter(|s| !s.trim().is_empty()) {
             // LIKE 通配符转义，用户输入按字面量匹配
-            let like = format!("%{}%", q.trim().replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+            let like = format!(
+                "%{}%",
+                q.trim()
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            );
             params.push(Box::new(like));
             where_clauses.push(format!("input_path LIKE ?{} ESCAPE '\\'", params.len()));
         }
@@ -311,7 +323,8 @@ impl JobStore {
         let where_sql = where_clauses.join(" AND ");
 
         // 匹配总数（分页前）
-        let total: usize = match db.prepare(&format!("SELECT COUNT(*) FROM jobs WHERE {where_sql}")) {
+        let total: usize = match db.prepare(&format!("SELECT COUNT(*) FROM jobs WHERE {where_sql}"))
+        {
             Ok(mut stmt) => stmt
                 .query_row(
                     rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
@@ -341,26 +354,29 @@ impl JobStore {
         };
 
         let entries = stmt
-            .query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
-                let input_path: String = row.get(1)?;
-                Ok(JobSnapshot {
-                    id: row.get(0)?,
-                    input_path: input_path.clone(),
-                    output_path: row.get(2)?,
-                    file_name: crate::encoder::file_name_from_path(&input_path),
-                    status: row.get(3)?,
-                    progress: row.get(4)?,
-                    input_size: row.get(5)?,
-                    estimated_output_size: row.get(6)?,
-                    output_size: row.get(7)?,
-                    vmaf_score: row.get(8)?,
-                    vmaf_detail: row.get(9)?,
-                    created_at: row.get(10)?,
-                    started_at: row.get(11)?,
-                    completed_at: row.get(12)?,
-                    error: row.get(13)?,
-                })
-            })
+            .query_map(
+                rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+                |row| {
+                    let input_path: String = row.get(1)?;
+                    Ok(JobSnapshot {
+                        id: row.get(0)?,
+                        input_path: input_path.clone(),
+                        output_path: row.get(2)?,
+                        file_name: crate::encoder::file_name_from_path(&input_path),
+                        status: row.get(3)?,
+                        progress: row.get(4)?,
+                        input_size: row.get(5)?,
+                        estimated_output_size: row.get(6)?,
+                        output_size: row.get(7)?,
+                        vmaf_score: row.get(8)?,
+                        vmaf_detail: row.get(9)?,
+                        created_at: row.get(10)?,
+                        started_at: row.get(11)?,
+                        completed_at: row.get(12)?,
+                        error: row.get(13)?,
+                    })
+                },
+            )
             .ok()
             .map(|rows| rows.filter_map(|r| r.ok()).collect())
             .unwrap_or_default();
@@ -385,11 +401,17 @@ mod tests {
     fn mem_store() -> JobStore {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(QUEUE_INIT_SQL).unwrap();
-        JobStore { db: StdMutex::new(db) }
+        JobStore {
+            db: StdMutex::new(db),
+        }
     }
 
     fn finished_job(status: JobStatus) -> EncodeJob {
-        let mut j = EncodeJob::new("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into(), sample_config());
+        let mut j = EncodeJob::new(
+            "C:\\in\\a.mp4".into(),
+            "C:\\in\\a_encoded.mp4".into(),
+            sample_config(),
+        );
         j.status = status;
         j.completed_at = Some(chrono::Utc::now().to_rfc3339());
         j
@@ -418,9 +440,18 @@ mod tests {
         // 未知 ID（仅历史残留）：绝不删库
         store.remove_from_queue("no-such-id", None);
 
-        assert!(store.job_paths_row(&pending.id).is_none(), "pending row must be deleted");
-        assert!(store.job_paths_row(&encoding.id).is_none(), "encoding row must be deleted");
-        assert!(store.job_paths_row(&completed.id).is_some(), "completed row must survive queue-remove");
+        assert!(
+            store.job_paths_row(&pending.id).is_none(),
+            "pending row must be deleted"
+        );
+        assert!(
+            store.job_paths_row(&encoding.id).is_none(),
+            "encoding row must be deleted"
+        );
+        assert!(
+            store.job_paths_row(&completed.id).is_some(),
+            "completed row must survive queue-remove"
+        );
         assert!(store.job_paths_row(&failed.id).is_some());
         assert!(store.job_paths_row(&cancelled.id).is_some());
         // 历史只剩 3 条已结束
@@ -442,7 +473,10 @@ mod tests {
 
         store.clear_history_rows();
 
-        assert!(store.job_paths_row(&pending.id).is_some(), "pending must survive clear_history");
+        assert!(
+            store.job_paths_row(&pending.id).is_some(),
+            "pending must survive clear_history"
+        );
         assert!(store.job_paths_row(&completed.id).is_none());
         assert!(store.job_paths_row(&failed.id).is_none());
         assert!(store.history().is_empty());
@@ -489,7 +523,10 @@ mod tests {
         let reopened = JobStore::open(&db_path).unwrap();
         let active = reopened.load_active_jobs();
         assert_eq!(active.len(), 2, "only pending/encoding reload into memory");
-        assert!(active.iter().all(|j| j.status == JobStatus::Pending), "encoding resets to pending");
+        assert!(
+            active.iter().all(|j| j.status == JobStatus::Pending),
+            "encoding resets to pending"
+        );
         let hist = reopened.history();
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].status, "Completed");
@@ -510,7 +547,11 @@ mod tests {
         );
         assert!(store.job_paths_row("missing").is_none());
 
-        store.update_vmaf_row(&completed.id, 91.25, Some(r#"{"scores":[90.1,92.4]}"#.into()));
+        store.update_vmaf_row(
+            &completed.id,
+            91.25,
+            Some(r#"{"scores":[90.1,92.4]}"#.into()),
+        );
         let hist = store.history();
         let entry = hist.iter().find(|h| h.id == completed.id).unwrap();
         assert_eq!(entry.vmaf_score, Some(91.25));
@@ -524,7 +565,10 @@ mod tests {
         let in_dir = std::path::PathBuf::from("in");
         for name in ["alpha", "beta", "gamma", "delta"] {
             let mut j = finished_job(JobStatus::Completed);
-            j.input_path = in_dir.join(format!("{name}.mp4")).to_string_lossy().to_string();
+            j.input_path = in_dir
+                .join(format!("{name}.mp4"))
+                .to_string_lossy()
+                .to_string();
             store.save_job(&j);
         }
         let mut f = finished_job(JobStatus::Failed);
@@ -552,16 +596,30 @@ mod tests {
         let store = mem_store();
         assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), None);
         store.save_setting_usize(SETTINGS_KEY_MAX_CONCURRENT, 4);
-        assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), Some(4));
+        assert_eq!(
+            store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT),
+            Some(4)
+        );
         // 覆盖写
         store.save_setting_usize(SETTINGS_KEY_MAX_CONCURRENT, 8);
-        assert_eq!(store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT), Some(8));
+        assert_eq!(
+            store.load_setting_usize(SETTINGS_KEY_MAX_CONCURRENT),
+            Some(8)
+        );
         // 脏值解析失败按缺失处理
         store.save_setting_string(SETTINGS_KEY_VMAF_SEGMENTS, "not-a-number");
         assert_eq!(store.load_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS), None);
         // 字符串口径 roundtrip
         store.save_setting_string(SETTINGS_KEY_VMAF_SEGMENTS, "6");
-        assert_eq!(store.load_setting_string(SETTINGS_KEY_VMAF_SEGMENTS).as_deref(), Some("6"));
-        assert_eq!(store.load_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS), Some(6));
+        assert_eq!(
+            store
+                .load_setting_string(SETTINGS_KEY_VMAF_SEGMENTS)
+                .as_deref(),
+            Some("6")
+        );
+        assert_eq!(
+            store.load_setting_usize(SETTINGS_KEY_VMAF_SEGMENTS),
+            Some(6)
+        );
     }
 }
