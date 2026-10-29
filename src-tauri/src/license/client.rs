@@ -5,16 +5,11 @@ use serde_json::{json, Value};
 
 use super::config::HTTP_TIMEOUT_SECS;
 
-/// 服务端返回的授权响应（activate 成功）。等级显示名与到期时间以 JWT 内
-/// claims 为准（验签覆盖），响应体对应字段无人消费。
+/// 服务端返回的授权令牌响应（activate / verify 成功共用同一形状，仅消费
+/// `license` JWT。等级显示名与到期时间以 JWT 内 claims 为准（验签覆盖），
+/// 响应体对应字段无人消费；两接口形状日后分叉时再拆回独立类型）。
 #[derive(Debug, Clone)]
-pub struct ActivateResponse {
-    pub license: String,
-}
-
-/// 服务端返回的续验响应（verify 成功）
-#[derive(Debug, Clone)]
-pub struct VerifyResponse {
+pub struct LicenseResponse {
     pub license: String,
 }
 
@@ -56,7 +51,11 @@ pub fn error_message(code: &str, fallback: &str) -> String {
         "RATE_LIMITED" => "请求过于频繁，请稍后再试",
         _ => fallback,
     };
-    if msg.is_empty() { fallback.to_string() } else { msg.to_string() }
+    if msg.is_empty() {
+        fallback.to_string()
+    } else {
+        msg.to_string()
+    }
 }
 
 fn client() -> reqwest::Result<reqwest::blocking::Client> {
@@ -93,7 +92,10 @@ fn post_json(url: &str, body: Value) -> Result<Value, super::manager::LicenseFlo
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        Err(super::manager::LicenseFlowError::Api(ApiError { code, message }))
+        Err(super::manager::LicenseFlowError::Api(ApiError {
+            code,
+            message,
+        }))
     }
 }
 
@@ -105,7 +107,7 @@ pub fn activate(
     code: &str,
     device_id: &str,
     email: &str,
-) -> Result<ActivateResponse, super::manager::LicenseFlowError> {
+) -> Result<LicenseResponse, super::manager::LicenseFlowError> {
     let value = post_json(
         url,
         json!({
@@ -115,17 +117,24 @@ pub fn activate(
             "level": level,
         }),
     )?;
-    Ok(ActivateResponse {
+    Ok(LicenseResponse {
         license: value
             .get("license")
             .and_then(|v| v.as_str())
-            .ok_or(super::manager::LicenseFlowError::Network("响应缺少 license 字段".into()))?
+            .ok_or(super::manager::LicenseFlowError::Network(
+                "响应缺少 license 字段".into(),
+            ))?
             .to_string(),
     })
 }
 
 /// POST /verify —— 在线续验，服务端签发新令牌延长离线宽限期。
-pub fn verify(url: &str, device_id: &str, license: &str, email: &str) -> Result<VerifyResponse, super::manager::LicenseFlowError> {
+pub fn verify(
+    url: &str,
+    device_id: &str,
+    license: &str,
+    email: &str,
+) -> Result<LicenseResponse, super::manager::LicenseFlowError> {
     let value = post_json(
         url,
         json!({
@@ -139,17 +148,24 @@ pub fn verify(url: &str, device_id: &str, license: &str, email: &str) -> Result<
             "服务端返回 valid != true".into(),
         ));
     }
-    Ok(VerifyResponse {
+    Ok(LicenseResponse {
         license: value
             .get("license")
             .and_then(|v| v.as_str())
-            .ok_or(super::manager::LicenseFlowError::Network("响应缺少 license 字段".into()))?
+            .ok_or(super::manager::LicenseFlowError::Network(
+                "响应缺少 license 字段".into(),
+            ))?
             .to_string(),
     })
 }
 
 /// POST /deactivate —— 解绑设备、释放名额。幂等：已解绑同样返回 200。
-pub fn deactivate(url: &str, code: &str, device_id: &str, email: &str) -> Result<(), super::manager::LicenseFlowError> {
+pub fn deactivate(
+    url: &str,
+    code: &str,
+    device_id: &str,
+    email: &str,
+) -> Result<(), super::manager::LicenseFlowError> {
     let value = post_json(
         url,
         json!({

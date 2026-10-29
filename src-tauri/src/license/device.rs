@@ -1,6 +1,6 @@
 //! 设备标识（机器码）：读取操作系统级机器指纹（Windows = 注册表
-//! MachineGuid），系统级唯一且重装应用/清数据不变、重装系统才变化。
-//! 契约要求：deviceId 变化 = 换设备，会占用新的设备名额。
+//! MachineGuid；Linux = /etc/machine-id），系统级唯一且重装应用/清数据
+//! 不变、重装系统才变化。契约要求：deviceId 变化 = 换设备，会占用新的设备名额。
 
 /// 当前设备的稳定机器码。进程内缓存（OnceLock）：激活/验证/续验/
 /// 埋点都会反复调用，注册表打开+读值不该重复发生（GUID 运行期不变）。
@@ -21,13 +21,20 @@ fn fallback_or_fingerprint() -> String {
     }
     #[cfg(not(windows))]
     {
-        // 非 Windows 仅为编译兼容（发布流水线目前只出 NSIS），
-        // 没有稳定的系统级指纹可用，直接走兜底。
-        fallback_device_id()
+        // Linux 优先 /etc/machine-id（系统安装时生成，重装应用/清数据不变），
+        // 回退 /var/lib/dbus/machine-id；都拿不到才走兜底。
+        // 发布流水线已支持 ubuntu（deb + appimage），deviceId 必须满足契约的
+        //「系统级稳定指纹」——主机名/用户名兜底会随换用户/改主机名漂移。
+        std::fs::read_to_string("/etc/machine-id")
+            .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(fallback_device_id)
     }
 }
 
-/// 兜底：注册表读取失败时用主机名+用户名组合，
+/// 兜底：系统指纹读取失败时用主机名+用户名组合，
 /// 避免所有机器共用同一 id（跨机复制许可证）。
 fn fallback_device_id() -> String {
     #[cfg(windows)]

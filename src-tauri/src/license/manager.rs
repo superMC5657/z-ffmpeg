@@ -1,10 +1,11 @@
-//! 授权状态机：激活 / 在线续验 / 注销 + 离线验签降级（见接入指南 3.6 节流程）。
+//! 授权状态机：激活 / 在线续验 / 注销 + 离线验签降级
+//!（见接入指南第 2 节：激活/续验/注销与 2.4 离线验签）。
 //!
 //! - 本地凭证 `license.json`（code + license JWT + email），启动加载并离线验签，
 //!   验签失败 = 免费版（凭证保留，激活对话框可回显 code/email）；
 //! - 在线请求失败不判定授权失效，按离线宽限期（最近一次在线验证的 `exp`）降级；
-//! - 收到 401 类失效错误（CDK_REVOKED / DEVICE_NOT_ACTIVATED）立即删除凭证降级免费版；
-//! - debug 构建恒为已解锁，开发调试不被门控干扰。
+//! - 收到 401 类失效错误（CDK_REVOKED / DEVICE_NOT_ACTIVATED / INVALID_SIGNATURE）
+//!   立即删除凭证降级免费版。
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -151,10 +152,7 @@ impl LicenseManager {
 
     /// 用编译进二进制的公钥离线验签令牌（签名 + exp + deviceId + app/level）
     fn offline_verify(&self, token: &str) -> Result<Claims, JwtError> {
-        let key_hex = self
-            .config
-            .level_public_key()
-            .ok_or(JwtError::NoKey)?;
+        let key_hex = self.config.level_public_key().ok_or(JwtError::NoKey)?;
         let key = jwt::parse_public_key(key_hex).ok_or(JwtError::NoKey)?;
         jwt::verify_license_token(
             token,
@@ -289,8 +287,7 @@ impl LicenseManager {
             }
         };
 
-        *self.state.write() =
-            LicenseState::Pro(Self::claims_to_pro_info(&claims, &stored, false));
+        *self.state.write() = LicenseState::Pro(Self::claims_to_pro_info(&claims, &stored, false));
         self.save_stored(&stored);
         log::info!("license activated");
 
@@ -312,7 +309,12 @@ impl LicenseManager {
             return Ok(false);
         };
 
-        match client::verify(&self.config.verify_url(), &self.device_id, &stored.license, &stored.email) {
+        match client::verify(
+            &self.config.verify_url(),
+            &self.device_id,
+            &stored.license,
+            &stored.email,
+        ) {
             Ok(resp) => {
                 let new_stored = StoredLicense {
                     code: stored.code,
@@ -321,8 +323,11 @@ impl LicenseManager {
                 };
                 match self.offline_verify(&new_stored.license) {
                     Ok(claims) => {
-                        *self.state.write() =
-                            LicenseState::Pro(Self::claims_to_pro_info(&claims, &new_stored, false));
+                        *self.state.write() = LicenseState::Pro(Self::claims_to_pro_info(
+                            &claims,
+                            &new_stored,
+                            false,
+                        ));
                         self.save_stored(&new_stored);
                         log::debug!("license verify ok");
                         Ok(true)
@@ -338,7 +343,14 @@ impl LicenseManager {
                 Ok(false)
             }
             Err(LicenseFlowError::Api(api)) => {
-                if matches!(api.code.as_str(), "CDK_REVOKED" | "DEVICE_NOT_ACTIVATED" | "INVALID_SIGNATURE") {
+                // INVALID_SIGNATURE（令牌伪造/损坏）不在契约 2.3 的吊销枚举内，
+                // 属有意采纳的更严安全默认：验签不过的凭证没有保留价值，
+                // 只会让后续续验持续失败。该偏差已确认接受
+                //（docs/reviews/2026-10-30-full-review.md P4）。
+                if matches!(
+                    api.code.as_str(),
+                    "CDK_REVOKED" | "DEVICE_NOT_ACTIVATED" | "INVALID_SIGNATURE"
+                ) {
                     log::warn!("license revoked ({}), credentials removed", api.code);
                     *self.state.write() = LicenseState::Free;
                     self.delete_stored();
@@ -360,10 +372,17 @@ impl LicenseManager {
             return Ok(self.status());
         };
 
-        if let Err(e) = client::deactivate(&self.config.deactivate_url(), &stored.code, &self.device_id, &stored.email) {
+        if let Err(e) = client::deactivate(
+            &self.config.deactivate_url(),
+            &stored.code,
+            &self.device_id,
+            &stored.email,
+        ) {
             match &e {
                 LicenseFlowError::Api(api) => log::warn!("license deactivate failed: {}", api.code),
-                LicenseFlowError::Network(e) => log::warn!("license deactivate network failed: {e}"),
+                LicenseFlowError::Network(e) => {
+                    log::warn!("license deactivate network failed: {e}")
+                }
             }
             return Err(e);
         }
@@ -398,9 +417,9 @@ impl LicenseManager {
 fn is_valid_code_format(code: &str) -> bool {
     let parts: Vec<&str> = code.split('-').collect();
     parts.len() == 4
-        && parts.iter().all(|p| {
-            p.len() == 4 && p.chars().all(|c| c.is_ascii_alphanumeric())
-        })
+        && parts
+            .iter()
+            .all(|p| p.len() == 4 && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
 fn is_valid_email(email: &str) -> bool {

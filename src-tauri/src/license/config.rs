@@ -74,23 +74,39 @@ impl SoftCandyConfig {
         };
         match serde_json::from_value::<SoftCandyConfig>(value.clone()) {
             Ok(mut cfg) => {
+                // 编译期注入（release 流水线用）：option_env! 在编译时烘焙进二进制。
                 if let Some(api) = option_env!("SOFTCANDY_API_BASE") {
                     if !api.trim().is_empty() {
                         cfg.api_base = api.trim().to_string();
                     }
-                } else if let Ok(api) = std::env::var("SOFTCANDY_API_BASE") {
-                    if !api.trim().is_empty() {
-                        cfg.api_base = api.trim().to_string();
-                    }
                 }
-
                 if let Some(buy) = option_env!("SOFTCANDY_BUY_URL") {
                     if !buy.trim().is_empty() {
                         cfg.buy_url = buy.trim().to_string();
                     }
-                } else if let Ok(buy) = std::env::var("SOFTCANDY_BUY_URL") {
-                    if !buy.trim().is_empty() {
-                        cfg.buy_url = buy.trim().to_string();
+                }
+
+                // 运行时环境变量仅 debug 构建生效（本地联调指向测试服）；
+                // release 按契约只认编译期注入，避免生产环境被环境变量劫持。
+                if cfg!(debug_assertions) {
+                    if let Ok(api) = std::env::var("SOFTCANDY_API_BASE") {
+                        if !api.trim().is_empty() {
+                            cfg.api_base = api.trim().to_string();
+                        }
+                    }
+                    if let Ok(buy) = std::env::var("SOFTCANDY_BUY_URL") {
+                        if !buy.trim().is_empty() {
+                            cfg.buy_url = buy.trim().to_string();
+                        }
+                    }
+                }
+
+                // 埋点 token 支持编译期注入（GitHub Secret → release workflow），
+                // 不在 tauri.conf.json 明文维护（明文已进 git 历史，见
+                // docs/reviews/2026-10-30-full-review.md P6；token 撤换暂缓）。
+                if let Some(token) = option_env!("SOFTCANDY_ANALYTICS_TOKEN") {
+                    if !token.trim().is_empty() {
+                        cfg.analytics_token = token.trim().to_string();
                     }
                 }
 
