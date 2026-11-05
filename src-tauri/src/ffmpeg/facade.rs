@@ -1,14 +1,11 @@
 //! ffmpeg 执行门面：二进制解析、能力查询、子进程派生的统一入口。
 //!
-//! 收敛前人人直达全局量（`FFMPEG_PATH` / `FFPROBE_PATH`），各模块手搓
-//! 子进程习语，且 `ffmpeg -encoders` 输出被解析两次（`library` 留
-//! ` V`+` A` 行，`hw_accel` 只留 ` V` 行）——同一能力面两个 adapter。
 //! 本模块唯一拥有：二进制状态（PATH vs 本地安装 vs 下载件的优先级链）、
 //! 能力查询（encoders/filters/version 解析各一份、可缓存）、子进程派生
 //!（sync/async、Windows 隐藏窗口、cwd）单一接口。`hw_accel`、`vmaf`、
-//! `probe`、`engine`、`downloader` 改为消费它；`library` 只保留状态聚合
+//! `probe`、`engine`、`downloader` 消费它；`library` 只做状态聚合
 //!（`FfmpegStatus`）与启动日志。纯解析/检索函数可注入 fake 测试，
-//! 不再篡改进程级 PATH，也不再需要 ENV_LOCK 串行。
+//! 不触碰进程级 PATH。
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -66,11 +63,11 @@ pub fn hidden_command_in(
 }
 
 // ============================================================
-// 二进制状态（原 library 全局量收为私有状态 + 可注入 handle）
+// 二进制状态（私有全局 + 可注入 handle）
 // ============================================================
 
 /// 一组二进制路径。全局缓存经 `GLOBAL_BINARIES` 走，测试走本地 handle，
-/// 不再触碰进程级环境。
+/// 不触碰进程级环境。
 #[derive(Debug, Default, Clone)]
 pub struct Binaries {
     pub ffmpeg: Option<PathBuf>,
@@ -86,7 +83,7 @@ impl Binaries {
         self.ffprobe.clone()
     }
 
-    /// 下载完成后刷新缓存（经门面走，不再跨模块直写全局量）。
+    /// 下载完成后刷新缓存。
     pub fn set_installed(&mut self, ffmpeg: PathBuf, ffprobe: Option<PathBuf>) {
         self.ffmpeg = Some(ffmpeg);
         self.ffprobe = ffprobe;
@@ -129,7 +126,7 @@ pub(crate) fn set_resolved_paths(ffmpeg: Option<PathBuf>, ffprobe: Option<PathBu
 }
 
 // ============================================================
-// 二进制解析（PATH vs 本地安装优先级链，逐条与搬运前一致）
+// 二进制解析（PATH vs 本地安装优先级链）
 // ============================================================
 
 /// 当前平台对应的可执行文件名
@@ -221,7 +218,7 @@ pub fn run_stdout_text(program: &Path, args: &[&str]) -> Option<String> {
 /// 解析 `ffmpeg -encoders` 输出：保留视频（` V`）与音频（` A`）编码器行，
 /// 取第二列名称；列不足或它行一律丢弃。
 /// 单一过滤语义：`hw_accel` 只查 `{h264,hevc,av1}_*` 视频编码器名，
-/// 音频行永不命中，故与它原先的纯 ` V` 过滤行为完全一致。
+/// 音频行永不命中。
 pub fn parse_encoders_output(text: &str) -> Vec<String> {
     text.lines()
         .filter(|l| l.starts_with(" V") || l.starts_with(" A"))
@@ -236,7 +233,7 @@ pub fn parse_encoders_output(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// 解析 `ffmpeg -version` 输出：取首行；空输出记 `unknown`（与搬运前一致）。
+/// 解析 `ffmpeg -version` 输出：取首行；空输出记 `unknown`。
 pub fn parse_version_output(text: &str) -> String {
     text.lines().next().unwrap_or("unknown").trim().to_string()
 }

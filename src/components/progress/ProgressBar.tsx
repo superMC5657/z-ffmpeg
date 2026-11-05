@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 import LinearProgress from "@/components/layout/LinearProgress";
 
 interface ProgressBarProps {
-  /** 实时进度对象或后端快照中的数字百分比（0-100） */
-  progress: EncodeProgress | number | null;
+  /** 实时进度对象（encode://progress 事件），非编码中为 null */
+  progress: EncodeProgress | null;
   status: string;
   /** 编码开始前（Pending）的预估输出体积（字节） */
   estimatedSizeBytes?: number | null;
@@ -34,7 +34,7 @@ export default function ProgressBar({
   inputSizeBytes = null,
   vmafScore = null,
 }: ProgressBarProps) {
-  // 经统一契约归一读取：实时对象与快照数字收敛为同一形状
+  // 经统一契约归一读取：缺关键字段的非法载荷归 0
   const normalized = normalizeProgress(progress);
   const isLive = normalized.isLive;
   const pct = normalized.percent;
@@ -43,7 +43,7 @@ export default function ProgressBar({
     ? estimateRemainingSeconds(normalized.elapsed ?? "", pct)
     : null;
 
-  if (status === "Pending" || status === "Queued") {
+  if (status === "Pending") {
     return (
       <div className="flex items-center gap-2.5 text-[11px] text-secondary">
         <LinearProgress value={0} variant="accent" className="flex-1" />

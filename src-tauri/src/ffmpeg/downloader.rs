@@ -59,14 +59,12 @@ pub async fn download_ffmpeg(
 
             let ffmpeg_final = install_clone.join("ffmpeg.exe");
             let ffprobe_final = install_clone.join("ffprobe.exe");
-            // 能力查询经门面直调，状态组装走 library 纯函数（缺二进制吞空见 facade）。
+            // 版本查询经门面直调，状态组装走 library 纯函数（缺二进制吞空见 facade）。
             let version = facade::query_version(&ffmpeg_final);
-            let codecs = facade::query_encoders(&ffmpeg_final);
             let status = library::assemble_status(
                 Some(ffmpeg_final.clone()),
                 Some(ffprobe_final.clone()),
                 version,
-                codecs,
             );
             Ok((ffmpeg_final, ffprobe_final, status))
         },

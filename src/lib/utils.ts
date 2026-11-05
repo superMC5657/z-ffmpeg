@@ -88,10 +88,6 @@ export function getFileName(path: string): string {
   return path.split(/[/\\]/).pop() || path;
 }
 
-export function formatPercentage(value: number): string {
-  return `${value.toFixed(1)}%`;
-}
-
 /** 解析 "HH:MM:SS" / "MM:SS" 为秒；解析失败返回 0 */
 export function parseElapsedSeconds(elapsed: string): number {
   const parts = elapsed.split(":").map((s) => parseInt(s, 10));

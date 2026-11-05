@@ -1,6 +1,6 @@
 //! 编码引擎：ffmpeg 子进程的启动、进度循环与终态 emit（深模块对外小接口）。
 //! 对外只暴露 `start_encode` + `EncodeResult`；取消/注册表语义归 `supervisor`
-//!（调用方直调 `supervisor::request_cancel` / `kill_all`，不再经本模块中转）。
+//!（调用方直调 `supervisor::request_cancel` / `kill_all`）。
 //! 参数构建见 `args`，探测解析归 `probe`（时长/码率经 `parse_probe_result` 统一口径），
 //! 进度结构见 `progress`。
 
@@ -15,7 +15,7 @@ use crate::error::{AppError, AppResult};
 use crate::ffmpeg::facade;
 use tauri::{AppHandle, Emitter};
 
-// 参数构建与探测已拆分到独立模块，调用方直接引用 `args::` / `probe::`；
+// 参数构建与探测在独立模块（`args` / `probe`），调用方直接引用；
 // 进程监管（注册表/取消状态机/进度块拼装）归 `supervisor`，本模块只做事件→emit 薄映射。
 use super::args::{build_ffmpeg_args_with_bitrate, format_command_line};
 use super::probe::{parse_probe_result, probe_file};
@@ -96,7 +96,7 @@ pub fn start_encode(
 
     // 探测时长/码率统一走 `probe::parse_probe_result`（唯一口径，与预估侧一致）：
     // 进度计算与自动最大码率保护只消费 `duration` / `bitrate`，解析失败时退化为
-    // None（与此前手工解析缺字段行为一致）。`input_size` 仍取文件元数据，供日志与完成比展示。
+    // None。`input_size` 仍取文件元数据，供日志与完成比展示。
     let probe_info = probe_file(&input_path)
         .ok()
         .and_then(|json| parse_probe_result(&json, &input_path).ok());
@@ -157,7 +157,7 @@ pub fn start_encode(
         .is_some()
     {
         // kill + wait 收进 supervisor（锁内只取走 handle，阻塞的 kill/wait
-        // 在锁外——绝不能阻塞其他 cancel 请求，与搬运前一致）。
+        // 在锁外——绝不能阻塞其他 cancel 请求）。
         supervisor::kill_and_reap(&job_id);
         let _ = std::fs::remove_file(&output_path);
         let elapsed = supervision.elapsed_secs();

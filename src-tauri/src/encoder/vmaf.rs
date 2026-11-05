@@ -6,7 +6,6 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::encoder::codec::ensure_even_dimension;
@@ -35,15 +34,6 @@ pub struct VmafSegment {
     pub start: f64,
     /// 时长（秒）
     pub length: f64,
-}
-
-/// 一次 VMAF 计算的结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VmafResult {
-    pub average_score: f64,
-    pub segment_scores: Vec<f64>,
-    pub segment_count: usize,
 }
 
 /// 按视频时长规划采样段：起点均匀分布在时间轴上，段长在时长不足时缩短，
@@ -234,7 +224,7 @@ impl Drop for WorkDirGuard {
     }
 }
 
-/// 对参考/失真视频对执行采样 VMAF 计算（阻塞）。
+/// 对参考/失真视频对执行采样 VMAF 计算（阻塞），返回取整到两位小数的平均分。
 ///
 /// `segments == 0` 表示全量对比（整片一次打分，耗时随视频时长线性增长）；
 /// 否则为均匀采样：`segments` 段 × `segment_len` 秒，取平均分。
@@ -246,7 +236,7 @@ pub fn compute_vmaf_sampled(
     segments: usize,
     segment_len: f64,
     work_id: &str,
-) -> AppResult<VmafResult> {
+) -> AppResult<f64> {
     if !ffmpeg_supports_vmaf() {
         return Err(AppError::Ffmpeg(
             "当前 ffmpeg 未编译 libvmaf 滤镜，无法计算 VMAF 得分".into(),
@@ -283,11 +273,7 @@ pub fn compute_vmaf_sampled(
             &log_file_name,
             total_threads,
         )?;
-        return Ok(VmafResult {
-            average_score: round2(score),
-            segment_scores: vec![round2(score)],
-            segment_count: 1,
-        });
+        return Ok(round2(score));
     }
 
     let segments = plan_segments(info.duration, segments, segment_len);
@@ -341,11 +327,7 @@ pub fn compute_vmaf_sampled(
     }
 
     let average = scores.iter().sum::<f64>() / scores.len() as f64;
-    Ok(VmafResult {
-        average_score: round2(average),
-        segment_scores: scores.iter().map(|s| round2(*s)).collect(),
-        segment_count: scores.len(),
-    })
+    Ok(round2(average))
 }
 
 // ============================================================

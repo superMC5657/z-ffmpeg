@@ -1,7 +1,6 @@
 use tauri::State;
 
-use crate::encoder::vmaf::clamp_segments;
-use crate::encoder::vmaf::{self, VmafResult, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS};
+use crate::encoder::vmaf::{self, clamp_segments, DEFAULT_SEGMENTS, DEFAULT_SEGMENT_SECONDS};
 use crate::error::{AppResult, LogDisplay};
 use crate::queue::store::SETTINGS_KEY_VMAF_SEGMENTS;
 
@@ -9,7 +8,7 @@ use crate::queue::store::SETTINGS_KEY_VMAF_SEGMENTS;
 ///
 /// `segments == 0`：全量对比（整片一次打分，耗时随视频时长线性增长）；
 /// 否则：均匀采样 `segments` 段 × 5 秒，取平均分。
-/// 得分与各段明细持久化到 DB（随任务保留），完成后 emit `queue://updated`
+/// 得分持久化到 DB（随任务保留），完成后 emit `queue://updated`
 /// 让队列页刷新展示。
 #[tauri::command]
 pub async fn compute_vmaf(
@@ -17,7 +16,7 @@ pub async fn compute_vmaf(
     state: State<'_, crate::AppState>,
     job_id: String,
     segments: usize,
-) -> AppResult<VmafResult> {
+) -> AppResult<()> {
     // Pro 门控：VMAF 质量对比
     state.license.ensure_pro("VMAF 质量对比")?;
     crate::analytics::bump(&crate::analytics::COUNTERS.vmaf_runs, 1);
@@ -64,17 +63,13 @@ pub async fn compute_vmaf(
         crate::error::AppError::Internal(e)
     })?;
 
-    // 持久化平均分 + 各段明细（含模式标记，供前端区分全量/采样展示）
-    let detail = serde_json::json!({
-        "mode": if segments == 0 { "full" } else { "sampled" },
-        "scores": result.segment_scores,
-    });
-    queue.set_vmaf_score(&job_id, result.average_score, Some(detail.to_string()));
+    // 持久化平均分
+    queue.set_vmaf_score(&job_id, result);
 
     // 刷新队列展示
     queue.emit_updated(&app_handle);
 
-    Ok(result)
+    Ok(())
 }
 
 /// 读取 VMAF 段数设置（0 = 全量对比，N = N 段 × 5 秒均匀采样）。

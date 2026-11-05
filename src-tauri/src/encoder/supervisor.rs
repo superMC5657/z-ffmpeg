@@ -1,17 +1,10 @@
 //! 进程监管：ffmpeg 子进程生命周期的可测试接口。
 //!
-//! 收敛前取消正确性散在三处：`QueueManager::cancel_job` 设 flag、
-//! `supervisor::request_cancel` 经全局注册表 kill、
-//! `start_encode` 内三处检查（pre-spawn / post-spawn / running loop）
-//! 各带 emit+cleanup+log 分支，外加 manager 侧 `Arc::ptr_eq` 移除舞蹈。
 //! 本模块唯一拥有：job-handle 注册表（spawn / poll-progress-block /
 //! cancel / wait）、取消状态机（requested → killed → reaped →
 //! emitted，恰好一次终态）、进度块纯拼装（输入 -progress kv 行，
 //! 输出进度事件，不依赖子进程即可测试）。一律不提 Tauri 类型；
 //! `engine.rs` 只做事件→emit 薄映射。
-//!
-//! TODO: VMAF 的 `run_segment`（阻塞式 `output()` 取全量结果，非
-//! -progress 流）暂不迁移；其行为不受本模块影响。
 
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -47,7 +40,7 @@ impl CancelPoint {
 /// 单次编码运行的监管状态：携带取消 flag 与“终态已认领”位。
 /// 三处取消分支（pre-spawn / post-spawn / running）都经
 /// `claim_cancellation` 认领，首个命中的分支产出唯一终态事件，
-/// 后续分支一律让行——原来三分支各带 emit 分支的重复收进一处。
+/// 后续分支一律让行，保证恰好一次终态。
 pub struct Supervision {
     cancel: Arc<AtomicBool>,
     start: Instant,
@@ -160,7 +153,7 @@ impl TerminalOutcome {
 // ============================================================
 
 /// `-progress` 流的块轮询器：累积 `key=value` 行，直到 `progress=` 行
-/// 组成完整一块。取消检查逐行进行，与搬运前读取循环的检查点一致。
+/// 组成完整一块。取消检查逐行进行。
 pub struct BlockPoller<R> {
     reader: R,
     kv: HashMap<String, String>,
@@ -220,7 +213,7 @@ impl<R: BufRead> BlockPoller<R> {
     }
 }
 
-/// 从一段完整 `-progress` kv 块拼装进度事件（纯函数，与搬运前循环体内构造逐字段一致）。
+/// 从一段完整 `-progress` kv 块拼装进度事件（纯函数）。
 pub fn assemble_progress_event(
     job_id: &str,
     file_name: &str,
@@ -229,24 +222,14 @@ pub fn assemble_progress_event(
     elapsed_secs: u64,
 ) -> EncodeProgress {
     let percentage = compute_percentage(kv, total_duration);
-    let total_size_kb = kv
-        .get("total_size")
-        .and_then(|s| s.parse::<u64>().ok())
-        .map(|b| b / 1024)
-        .unwrap_or(0);
     EncodeProgress {
         job_id: job_id.to_string(),
         file_name: file_name.to_string(),
-        frame: kv.get("frame").and_then(|s| s.parse().ok()).unwrap_or(0),
         fps: kv.get("fps").and_then(|s| s.parse().ok()).unwrap_or(0.0),
         bitrate: kv
             .get("bitrate")
             .map(|s| parse_bitrate_kbps(s))
             .unwrap_or(0.0),
-        total_size_kb,
-        // 线性外推预估最终体积；进度为 0（编码刚开始）时没有可靠估算
-        estimated_size_kb: (total_size_kb > 0 && percentage > 0.0)
-            .then(|| (total_size_kb as f64 * 100.0 / percentage) as u64),
         elapsed: format!(
             "{:02}:{:02}:{:02}",
             elapsed_secs / 3600,
@@ -258,12 +241,11 @@ pub fn assemble_progress_event(
             .get("speed")
             .and_then(|s| s.trim_end_matches('x').parse().ok())
             .unwrap_or(0.0),
-        stage: "encoding".into(),
         time: kv.get("out_time").cloned().unwrap_or_default(),
     }
 }
 
-/// 25% 里程碑判定（纯函数，与搬运前 `pct_u32 >= last+25 && pct<100` 一致）。
+/// 25% 里程碑判定（纯函数：pct 达到 last+25 且 <100 时命中）。
 /// 命中时返回新的里程碑值（调用方记 log），未命中返回 None。
 pub fn next_milestone(last_milestone: u32, percentage: f64) -> Option<u32> {
     let pct_u32 = percentage.floor() as u32;
@@ -304,9 +286,9 @@ pub fn dispatch_register(job_id: String, cancel: Arc<AtomicBool>) {
     );
 }
 
-/// spawn 后挂接子进程（管道须在此之前取走，与搬运前顺序一致）。
+/// spawn 后挂接子进程（管道须在此之前取走）。
 /// 调度已注册时只挂接 child（保留原 cancel 标记，不断 ptr_eq 链）；
-/// 未注册时兜底建 handle（与搬运前“engine 必注册”语义一致）。
+/// 未注册时兜底建 handle。
 pub fn attach_child(job_id: &str, cancel: Arc<AtomicBool>, child: Child) {
     let mut map = jobs().lock().unwrap();
     match map.get_mut(job_id) {
@@ -326,7 +308,7 @@ pub fn attach_child(job_id: &str, cancel: Arc<AtomicBool>, child: Child) {
 }
 
 /// 请求取消：置位标记并 kill 已挂接的子进程（即使 ffmpeg 无输出也立即生效）。
-/// 返回是否找到该任务的 handle（调用方忽略，与搬运前一致）。
+/// 返回是否找到该任务的 handle（调用方忽略返回值）。
 pub fn request_cancel(job_id: &str) -> bool {
     if let Ok(mut map) = jobs().lock() {
         if let Some(handle) = map.get_mut(job_id) {
@@ -340,7 +322,7 @@ pub fn request_cancel(job_id: &str) -> bool {
     false
 }
 
-/// post-spawn 取消路径：取走 handle 并 kill + wait（wait 结果丢弃，与搬运前一致）。
+/// post-spawn 取消路径：取走 handle 并 kill + wait（wait 结果丢弃）。
 pub fn kill_and_reap(job_id: &str) {
     if let Some(mut handle) = take_handle(job_id) {
         if let Some(mut child) = handle.child.take() {
@@ -356,7 +338,7 @@ pub fn reap_child(job_id: &str) -> Option<std::process::ExitStatus> {
 }
 
 /// 仅移除属于本次调度的 handle——被重试的任务可能已在相同 ID 下注册了新 handle，
-/// 此时不得误删（与搬运前 `Arc::ptr_eq` 语义一致）。
+/// 此时不得误删（按 `Arc::ptr_eq` 匹配）。
 pub fn finish_if_same(job_id: &str, expected: &Arc<AtomicBool>) {
     let mut map = jobs().lock().unwrap();
     if let Some(handle) = map.get(job_id) {
@@ -480,23 +462,18 @@ mod tests {
 
         assert_eq!(poller.poll_block(&s), PollOutcome::Block { is_end: false });
         let first = assemble_progress_event("j5", "a.mp4", poller.kv(), Some(100.0), 100);
-        assert_eq!(first.frame, 1500);
         assert!((first.fps - 30.0).abs() < 1e-6);
         assert!((first.bitrate - 1600.0).abs() < 1e-6);
-        assert_eq!(first.total_size_kb, 2000);
-        // 50/100s → 50%，外推 2000*100/50 = 4000KB
+        // 50/100s → 50%
         assert!((first.percentage - 50.0).abs() < 1e-6);
-        assert_eq!(first.estimated_size_kb, Some(4000));
         assert_eq!(first.elapsed, "00:01:40");
         assert!((first.speed - 1.5).abs() < 1e-6);
-        assert_eq!(first.stage, "encoding");
         assert_eq!(first.time, "00:00:50.000000");
 
         poller.clear_block();
         assert_eq!(poller.poll_block(&s), PollOutcome::Block { is_end: true });
         let second = assemble_progress_event("j5", "a.mp4", poller.kv(), Some(100.0), 200);
-        assert_eq!(second.frame, 3000);
-        // 缺字段退化为 0/空，与搬运前 unwrap_or 一致
+        // 缺字段退化为 0/空
         assert_eq!(second.fps, 0.0);
         assert_eq!(second.time, "");
         assert_eq!(poller.poll_block(&s), PollOutcome::Eof);
@@ -519,12 +496,11 @@ mod tests {
             .collect();
         let p = assemble_progress_event("j7", "a.mp4", &kv, None, 5);
         assert_eq!(p.percentage, 0.0);
-        assert_eq!(p.estimated_size_kb, None);
         assert_eq!(p.elapsed, "00:00:05");
     }
 
     #[test]
-    fn milestone_boundaries_match_legacy_loop() {
+    fn milestone_boundaries() {
         assert_eq!(next_milestone(0, 24.9), None);
         assert_eq!(next_milestone(0, 25.0), Some(25));
         assert_eq!(next_milestone(25, 50.0), Some(50));

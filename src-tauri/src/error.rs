@@ -11,8 +11,6 @@ pub enum AppError {
     EncodingFailed(String),
     #[error("配置无效:{0}")]
     InvalidConfig(String),
-    #[error("任务不存在:{0}")]
-    JobNotFound(String),
     #[error("IO 错误:{0}")]
     Io(#[from] std::io::Error),
     #[error("序列化错误:{0}")]

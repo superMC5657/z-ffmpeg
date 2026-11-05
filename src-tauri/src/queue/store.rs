@@ -1,16 +1,11 @@
 //! 队列持久化 seam：`jobs` 表与 `settings` 表全部 SQLite 访问的唯一拥有者。
 //!
-//! 收敛前 `history.rs` 名义上是持久化模块，实则直掏 manager 的
-//! `jobs` / db 锁，且 `remove_jobs` / `delete_history` /
-//! `clear_completed` 三处手写同一条留存规则（Pending 行删、Finished 行留）。
 //! 本模块唯一拥有：全部 SQL（save/delete/history/paths/vmaf/settings KV）、
 //! finished-vs-pending 留存谓词、重启恢复查询、内存优先→DB 回退的分支真相
 //! （`resolve_job_paths` / `write_vmaf_score`，调用方只传内存预查结果）。
-//! `QueueManager` 只保留调度状态（deque、active 计数、cancel flags、pause），
-//! 经显式接口与 store 对话，不再直接触碰 rusqlite。`settings` 表原
-//! `settings.rs` 薄 adapter（经 Connection 直透）已并入本模块，JobStore
-//! 是 settings KV 的唯一 interface（`max_concurrent` + `vmaf_segments`
-//! 语义不变）。
+//! `QueueManager` 只保留调度状态（deque、active 计数、pause），
+//! 经显式接口与 store 对话，不直接触碰 rusqlite；JobStore
+//! 是 settings KV 的唯一接口（`max_concurrent` + `vmaf_segments`）。
 
 use std::sync::Mutex as StdMutex;
 
@@ -20,21 +15,18 @@ use crate::error::{AppResult, LogDisplay};
 use crate::queue::job::{EncodeJob, JobSnapshot, JobStatus};
 
 /// 队列库建表语句（jobs + settings），经 `util::db::open_sqlite_store` 执行。
-/// 与搬运前逐字一致：DB 文件位置与表结构不变，重启恢复兼容。
+/// DB 文件位置与表结构保持稳定，重启恢复兼容（旧库中已停用的列不引用、不迁移）。
 const QUEUE_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS jobs (
                 id TEXT PRIMARY KEY,
                 input_path TEXT NOT NULL,
                 output_path TEXT NOT NULL,
                 config_json TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'Pending',
-                progress REAL,
                 input_size INTEGER,
                 estimated_output_size INTEGER,
                 output_size INTEGER,
                 vmaf_score REAL,
-                vmaf_detail TEXT,
                 created_at TEXT NOT NULL,
-                started_at TEXT,
                 completed_at TEXT,
                 error TEXT
             );
@@ -43,13 +35,12 @@ const QUEUE_INIT_SQL: &str = "CREATE TABLE IF NOT EXISTS jobs (
                 value TEXT NOT NULL
             );";
 
-/// settings 表中已知的 key（原 `settings.rs`，现并入本模块；
-/// JobStore 是 settings KV 的唯一 interface）。
+/// settings 表中已知的 key（JobStore 是 settings KV 的唯一接口）。
 pub(crate) const SETTINGS_KEY_MAX_CONCURRENT: &str = "max_concurrent";
 pub(crate) const SETTINGS_KEY_VMAF_SEGMENTS: &str = "vmaf_segments";
 
 /// 全部 jobs 表访问的唯一拥有者。内部以 std Mutex 串行化 Connection
-///（Connection 实现 Send 但未实现 Sync，与搬运前一致）。
+///（Connection 实现 Send 但未实现 Sync）。
 pub(crate) struct JobStore {
     db: StdMutex<Connection>,
 }
@@ -70,18 +61,17 @@ impl JobStore {
         })
     }
 
-    /// settings KV 读：缺失/解析失败返回 None，调用方再套默认值。
-    /// 与并入前 `settings::load_usize` 逐行一致（含 trim）。
+    /// settings KV 读：缺失/解析失败返回 None，调用方再套默认值（含 trim）。
     pub(crate) fn load_setting_usize(&self, key: &str) -> Option<usize> {
         self.load_setting_string(key)?.trim().parse().ok()
     }
 
-    /// settings KV 写：INSERT OR REPLACE。与并入前 `settings::save_usize` 一致。
+    /// settings KV 写：INSERT OR REPLACE。
     pub(crate) fn save_setting_usize(&self, key: &str, value: usize) {
         self.save_setting_string(key, &value.to_string());
     }
 
-    /// settings 表字符串读（私有 helper，原 `settings::load_string` 下沉）。
+    /// settings 表字符串读（私有 helper）。
     fn load_setting_string(&self, key: &str) -> Option<String> {
         self.db
             .lock()
@@ -94,7 +84,7 @@ impl JobStore {
             .ok()
     }
 
-    /// settings 表字符串写（私有 helper，原 `settings::save_string` 下沉）。
+    /// settings 表字符串写（私有 helper）。
     fn save_setting_string(&self, key: &str, value: &str) {
         let _ = self.db.lock().unwrap().execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
@@ -103,12 +93,11 @@ impl JobStore {
     }
 
     /// 重启恢复查询：仅 Pending / Encoding 行，Encoding 回 Pending。
-    /// 与搬运前逐行一致。
     pub(crate) fn load_active_jobs(&self) -> Vec<EncodeJob> {
         let db = self.db.lock().unwrap();
         let mut stmt = match db.prepare(
-            "SELECT id, input_path, output_path, config_json, status, progress,
-                    input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail, created_at, started_at, completed_at, error
+            "SELECT id, input_path, output_path, config_json, status,
+                    input_size, estimated_output_size, output_size, vmaf_score, created_at, completed_at, error
              FROM jobs WHERE status IN ('Pending', 'Encoding')
              ORDER BY created_at ASC"
         ) {
@@ -128,16 +117,13 @@ impl JobStore {
                 output_path: row.get(2)?,
                 config: serde_json::from_str(&row.get::<_, String>(3)?).ok(),
                 status: JobStatus::from_str(&status_str),
-                progress: row.get(5)?,
-                input_size: row.get(6)?,
-                estimated_output_size: row.get(7)?,
-                output_size: row.get(8)?,
-                vmaf_score: row.get(9)?,
-                vmaf_detail: row.get(10)?,
-                created_at: row.get(11)?,
-                started_at: row.get(12)?,
-                completed_at: row.get(13)?,
-                error: row.get(14)?,
+                input_size: row.get(5)?,
+                estimated_output_size: row.get(6)?,
+                output_size: row.get(7)?,
+                vmaf_score: row.get(8)?,
+                created_at: row.get(9)?,
+                completed_at: row.get(10)?,
+                error: row.get(11)?,
             })
         })
         .ok()
@@ -158,17 +144,17 @@ impl JobStore {
     pub(crate) fn save_job(&self, job: &EncodeJob) {
         let db = self.db.lock().unwrap();
         let _ = db.execute(
-            "INSERT OR REPLACE INTO jobs (id, input_path, output_path, config_json, status, progress, input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail, created_at, started_at, completed_at, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT OR REPLACE INTO jobs (id, input_path, output_path, config_json, status, input_size, estimated_output_size, output_size, vmaf_score, created_at, completed_at, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 job.id, job.input_path, job.output_path,
                 serde_json::to_string(&job.config).unwrap_or_default(),
-                job.status.as_str(), job.progress,
+                job.status.as_str(),
                 job.input_size,
                 job.estimated_output_size,
                 job.output_size,
-                job.vmaf_score, job.vmaf_detail,
-                job.created_at, job.started_at, job.completed_at, job.error,
+                job.vmaf_score,
+                job.created_at, job.completed_at, job.error,
             ],
         );
     }
@@ -190,7 +176,7 @@ impl JobStore {
         )
     }
 
-    /// 留存语义三者分工（行为与收拢前逐行一致，只收拢位置）：
+    /// 留存语义三者分工：
     /// - `clear_completed`（manager 侧）：仅内存 retain，绝不碰 DB；
     ///   队列页“清除已完成”只把已结束任务移出内存，DB 行保留，历史页仍可读。
     /// - `clear_history_rows`（本模块，下方）：SQL DELETE 全部已结束行；
@@ -198,10 +184,6 @@ impl JobStore {
     /// - `remove_from_queue`（本模块，下方）：按 ID + 内存状态逐行处理，
     ///   Pending / Encoding 行删库，Finished 行留库；未知 ID（`status=None`，
     ///   仅历史残留）按 `unwrap_or(true)` 视为已结束、绝不删库。
-    ///
-    /// 队列页移除的 DB 侧：Pending / Encoding 行删除，Finished 行保留，
-    /// 未知 ID（仅历史残留）视为已结束、绝不删库。与搬运前
-    /// `remove_jobs` 的 `unwrap_or(true)` 语义一致。
     pub(crate) fn remove_from_queue(&self, id: &str, status: Option<&JobStatus>) {
         let is_finished = status.map(Self::is_finished).unwrap_or(true);
         if !is_finished {
@@ -239,18 +221,17 @@ impl JobStore {
 
     /// VMAF 的 DB 回退写：已移出内存的历史任务直接 UPDATE，避免静默丢结果
     ///（私有，对外经 `write_vmaf_score` 统一口径）。
-    fn update_vmaf_row(&self, job_id: &str, score: f64, detail_json: Option<String>) {
+    fn update_vmaf_row(&self, job_id: &str, score: f64) {
         let db = self.db.lock().unwrap();
         let _ = db.execute(
-            "UPDATE jobs SET vmaf_score = ?1, vmaf_detail = ?2 WHERE id = ?3",
-            rusqlite::params![score, detail_json, job_id],
+            "UPDATE jobs SET vmaf_score = ?1 WHERE id = ?2",
+            rusqlite::params![score, job_id],
         );
     }
 
-    /// 路径解析的唯一真相源：内存优先→DB 回退的分支原在 `history.rs`，
-    /// 现下沉到此。`memory_hit` 是调用方在内存队列中的预查结果
+    /// 路径解析的唯一真相源：内存优先→DB 回退。
+    /// `memory_hit` 是调用方在内存队列中的预查结果
     ///（Some=命中直接返回；None=未命中，回退查 DB 历史行）。
-    /// 调用方只做内存预查，不再手写回退分支。
     pub(crate) fn resolve_job_paths(
         &self,
         memory_hit: Option<(String, String)>,
@@ -262,7 +243,7 @@ impl JobStore {
         self.job_paths_row(job_id)
     }
 
-    /// VMAF 写分支的唯一真相源：原在 `history.rs` 的内存/DB 双写分支下沉到此。
+    /// VMAF 写分支的唯一真相源：内存/DB 双写。
     /// `memory_job` 是调用方持锁查到的可变借用（Some=在内存：更新字段并经
     /// save_job 持久化；None=已移出内存：直接 UPDATE DB 行）。
     pub(crate) fn write_vmaf_score(
@@ -270,22 +251,13 @@ impl JobStore {
         memory_job: Option<&mut EncodeJob>,
         job_id: &str,
         score: f64,
-        detail_json: Option<String>,
     ) {
         if let Some(job) = memory_job {
             job.vmaf_score = Some(score);
-            job.vmaf_detail = detail_json;
             self.save_job(job);
             return;
         }
-        self.update_vmaf_row(job_id, score, detail_json);
-    }
-
-    /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
-    /// 与内存队列（启动时仅恢复活动任务）不同，数据库会持久保留已结束任务，
-    /// 使历史记录在应用重启后依然有效。
-    pub(crate) fn history(&self) -> Vec<JobSnapshot> {
-        self.history_filtered(None, 0, None, None).0
+        self.update_vmaf_row(job_id, score);
     }
 
     /// 带筛选/搜索/分页的历史查询。`status` 过滤单个状态；`search` 对
@@ -336,9 +308,9 @@ impl JobStore {
         };
 
         let mut sql = format!(
-            "SELECT id, input_path, output_path, status, progress,
-                    input_size, estimated_output_size, output_size, vmaf_score, vmaf_detail,
-                    created_at, started_at, completed_at, error
+            "SELECT id, input_path, output_path, status,
+                    input_size, estimated_output_size, output_size, vmaf_score,
+                    created_at, completed_at, error
              FROM jobs WHERE {where_sql}
              ORDER BY completed_at DESC, created_at DESC"
         );
@@ -364,16 +336,12 @@ impl JobStore {
                         output_path: row.get(2)?,
                         file_name: crate::encoder::file_name_from_path(&input_path),
                         status: row.get(3)?,
-                        progress: row.get(4)?,
-                        input_size: row.get(5)?,
-                        estimated_output_size: row.get(6)?,
-                        output_size: row.get(7)?,
-                        vmaf_score: row.get(8)?,
-                        vmaf_detail: row.get(9)?,
-                        created_at: row.get(10)?,
-                        started_at: row.get(11)?,
-                        completed_at: row.get(12)?,
-                        error: row.get(13)?,
+                        input_size: row.get(4)?,
+                        estimated_output_size: row.get(5)?,
+                        output_size: row.get(6)?,
+                        vmaf_score: row.get(7)?,
+                        created_at: row.get(8)?,
+                        error: row.get(9)?,
                     })
                 },
             )
@@ -417,6 +385,11 @@ mod tests {
         j
     }
 
+    /// 全量历史（不分页、不过滤），等价于历史页不带条件查询。
+    fn all_history(store: &JobStore) -> Vec<JobSnapshot> {
+        store.history_filtered(None, 0, None, None).0
+    }
+
     /// 留存矩阵：remove × pending/finished —— Pending/Encoding 行删、Finished 行留、未知 ID 不删库。
     #[test]
     fn retention_remove_pending_deletes_finished_keeps() {
@@ -455,7 +428,7 @@ mod tests {
         assert!(store.job_paths_row(&failed.id).is_some());
         assert!(store.job_paths_row(&cancelled.id).is_some());
         // 历史只剩 3 条已结束
-        assert_eq!(store.history().len(), 3);
+        assert_eq!(all_history(&store).len(), 3);
         // 活动恢复为空（pending/encoding 已删，finished 本就不加载）
         assert!(store.load_active_jobs().is_empty());
     }
@@ -479,7 +452,7 @@ mod tests {
         );
         assert!(store.job_paths_row(&completed.id).is_none());
         assert!(store.job_paths_row(&failed.id).is_none());
-        assert!(store.history().is_empty());
+        assert!(all_history(&store).is_empty());
         // 活动恢复仍见 pending
         assert_eq!(store.load_active_jobs().len(), 1);
     }
@@ -494,10 +467,10 @@ mod tests {
         for j in [&a, &b, &c] {
             store.save_job(j);
         }
-        assert_eq!(store.history().len(), 3);
+        assert_eq!(all_history(&store).len(), 3);
 
         store.delete_history_rows(std::slice::from_ref(&b.id));
-        let hist = store.history();
+        let hist = all_history(&store);
         assert_eq!(hist.len(), 2);
         assert!(hist.iter().all(|h| h.id != b.id));
         assert!(store.job_paths_row(&b.id).is_none());
@@ -527,7 +500,7 @@ mod tests {
             active.iter().all(|j| j.status == JobStatus::Pending),
             "encoding resets to pending"
         );
-        let hist = reopened.history();
+        let hist = all_history(&reopened);
         assert_eq!(hist.len(), 1);
         assert_eq!(hist[0].status, "Completed");
 
@@ -547,15 +520,10 @@ mod tests {
         );
         assert!(store.job_paths_row("missing").is_none());
 
-        store.update_vmaf_row(
-            &completed.id,
-            91.25,
-            Some(r#"{"scores":[90.1,92.4]}"#.into()),
-        );
-        let hist = store.history();
+        store.update_vmaf_row(&completed.id, 91.25);
+        let hist = all_history(&store);
         let entry = hist.iter().find(|h| h.id == completed.id).unwrap();
         assert_eq!(entry.vmaf_score, Some(91.25));
-        assert!(entry.vmaf_detail.is_some());
     }
 
     /// 历史查询仍归 store：状态过滤 + LIKE 转义 + 分页（轻量版，不起整 manager）。
@@ -590,7 +558,7 @@ mod tests {
         assert_eq!(p1.len(), 2);
     }
 
-    /// settings KV（原 `settings.rs` 并入）：缺省 None、写入覆盖、解析语义不变。
+    /// settings KV：缺省 None、写入覆盖、解析失败按缺失处理。
     #[test]
     fn settings_roundtrip_and_default() {
         let store = mem_store();

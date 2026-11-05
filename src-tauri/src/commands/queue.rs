@@ -6,7 +6,7 @@ use crate::queue::QueueStatus;
 use tauri::State;
 
 /// 队列管理器统一取用：写命令在队列未初始化时显式报错，
-/// 与 add_to_queue/retry_job 的既有口径一致，避免静默成功掩盖初始化失败。
+/// 避免静默成功掩盖初始化失败。
 /// 只读命令（get_queue_status / get_history）保留空形状回退，前端需要形状可用。
 fn queue_or_err<'a>(
     state: &'a State<'a, crate::AppState>,
@@ -119,11 +119,6 @@ pub async fn get_queue_status(state: State<'_, crate::AppState>) -> AppResult<Qu
         Some(queue) => Ok(queue.get_status()),
         None => Ok(QueueStatus {
             jobs: vec![],
-            total: 0,
-            pending: 0,
-            encoding: 0,
-            completed: 0,
-            failed: 0,
             paused: false,
         }),
     }

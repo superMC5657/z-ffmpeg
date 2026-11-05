@@ -107,7 +107,6 @@ pub fn run() {
             commands::queue::set_max_concurrent,
             commands::preset::load_presets,
             commands::preset::delete_preset,
-            commands::preset::export_preset,
             commands::preset::export_preset_to_file,
             commands::preset::import_preset,
             commands::preset::get_builtin_presets,
@@ -120,8 +119,6 @@ pub fn run() {
             commands::vmaf::compute_vmaf,
             commands::vmaf::get_vmaf_segments,
             commands::vmaf::set_vmaf_segments,
-            z_log::zlog_get_dir,
-            z_log::zlog_export_bundle,
         ])
         .build(tauri::generate_context!())
         .expect("error while building z-ffmpeg")

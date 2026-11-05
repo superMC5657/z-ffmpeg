@@ -26,8 +26,7 @@ pub struct FfmpegStatusInfo {
     pub error: Option<String>,
 }
 
-/// 系统信息唯一入口（原 `detect_hw_accel` 与 `get_system_info` 重复，
-/// 前者命名误导——实际返回完整 SystemInfo，已合并删除）。
+/// 系统信息唯一入口：硬件加速、CPU、内存与 FFmpeg 状态一次性聚合。
 #[tauri::command]
 pub async fn get_system_info(state: State<'_, AppState>) -> AppResult<SystemInfo> {
     let sys = sysinfo::System::new_all();

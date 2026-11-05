@@ -8,7 +8,6 @@ import {
   formatError,
   formatFileSize,
   formatFileSizeCompact,
-  formatPercentage,
   formatSpeed,
   getFileName,
   isTauriRuntime,
@@ -53,10 +52,9 @@ describe("formatBitrate", () => {
 });
 
 describe("misc formatters", () => {
-  it("formatSpeed / formatFps / formatPercentage", () => {
+  it("formatSpeed / formatFps", () => {
     expect(formatSpeed(1.234)).toBe("1.23x");
     expect(formatSpeed(1.234, 1)).toBe("1.2x");
-    expect(formatPercentage(33.33)).toBe("33.3%");
   });
 });
 

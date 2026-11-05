@@ -1,6 +1,6 @@
 //! CLI flags 拥有者：codec × device × rate-control → ffmpeg 视频标志。
 //!
-//! 与 `super::volume` 的分工（C3 按 seam 拆分）：
+//! 与 `super::volume` 的分工：
 //! - 本模块唯一拥有 CLI 侧：`encoder_name` / `encoder_preset_args` /
 //!   `rate_control_args` / `auto_maxrate_guard_args` / `video_encoding_args`，
 //!   以及 guard 解析中属于 flags 的部分（`should_apply` / `has_custom` /
@@ -9,7 +9,7 @@
 //!   `effective_maxrate_kbps` 截断）唯一拥有者为 `super::volume`，
 //!   体积侧需要 guard 时从本模块导入，不各自重述 1.25x 规则。
 //!
-//! NVENC `-cq` / `-spatial-aq` / `-rc-lookahead` 语义与拆分前逐行一致，不得擅改。
+//! NVENC `-cq` / `-spatial-aq` / `-rc-lookahead` 语义为锁定行为，不得擅改。
 
 use crate::encoder::codec::{EncodeConfig, HwAccelConfig, HwAccelDevice, RateControl, VideoCodec};
 
@@ -19,7 +19,7 @@ pub const MAXRATE_GUARD_FACTOR: f64 = 1.25;
 pub const MAXRATE_GUARD_FLOOR_KBPS: f64 = 500.0;
 
 // ============================================================
-// 编码器映射（原 codec.rs 策略知识，原样搬运）
+// 编码器映射
 // ============================================================
 
 /// (加速设备, 视频编码) → FFmpeg 编码器名，`encoder_name` 的唯一事实来源。
@@ -78,7 +78,7 @@ pub fn software_encoder(codec: &VideoCodec) -> &'static str {
 }
 
 // ============================================================
-// preset 词汇映射（原 args.rs，原样搬运）
+// preset 词汇映射
 // ============================================================
 
 /// 将 x264 风格的命名预设（preset）映射为实际编码器所接受的参数。
@@ -185,7 +185,7 @@ pub fn encoder_preset_args(config: &EncodeConfig) -> Vec<String> {
 }
 
 // ============================================================
-// rate-control 标志映射（原 args.rs，原样搬运）
+// rate-control 标志映射
 // ============================================================
 
 /// 根据目标编码器映射码率控制配置。
@@ -296,7 +296,7 @@ fn qp_style_args(encoder: &str, value: impl std::fmt::Display) -> Option<Vec<Str
 // ============================================================
 // maxrate guard 中属于 flags 的部分（CLI 侧解析 + 自动 guard 标志）
 // 体积侧的 `effective_maxrate_kbps` 截断见 `super::volume`，
-// 需要时从本模块导入 `should_apply` / `parse_custom` / `guard_maxrate`，不再重述 1.25x。
+// 需要时从本模块导入 `should_apply` / `parse_custom` / `guard_maxrate`，不重述 1.25x。
 // ============================================================
 
 /// 是否应对当前配置启用 Auto Maxrate Guard（硬件 + 非 ABR）。
@@ -337,8 +337,8 @@ pub fn parse_custom_maxrate_kbps(params: &[String]) -> Option<f64> {
 }
 
 /// args 侧的自动 guard 标志（`-maxrate .. -bufsize ..`），供 `build_ffmpeg_args` 直接扩展。
-/// 行为与搬运前完全一致：CPU / ABR / 已有自定义 -maxrate / 无输入码率时返回空。
-/// 分歧锁死（搬运前既有，不统一）：CLI 侧以 has_custom 为准、体积侧以 parse 为准，不可解析时前者空、后者回退 guard。
+/// CPU / ABR / 已有自定义 -maxrate / 无输入码率时返回空。
+/// 有意保留的分歧：CLI 侧以 has_custom 为准、体积侧以 parse 为准——不可解析时前者返回空、后者回退 guard。
 pub fn auto_maxrate_guard_args(
     config: &EncodeConfig,
     input_bitrate_kbps: Option<u32>,
@@ -362,8 +362,7 @@ pub fn auto_maxrate_guard_args(
     vec![]
 }
 
-/// 组合入口：一次学会——preset + rate-control + guard 按固定顺序产出，
-/// 与搬运前 `build_ffmpeg_args` 内的扩展顺序逐 flag 一致。
+/// 组合入口：一次学会——preset + rate-control + guard 按固定顺序产出。
 ///
 /// 顺序依赖（类型/注释锁死，不改行为）：
 /// 调用方（`args::build_ffmpeg_args_with_bitrate`）必须先扩展本函数产出的
@@ -520,7 +519,7 @@ mod tests {
             encoder_preset_args(&hw_config(HwAccelDevice::VideoToolbox)),
             Vec::<String>::new()
         );
-        // 边界词汇快照（与搬运前逐 flag 一致）
+        // 边界词汇快照
         let mut nvenc_fast = hw_config(HwAccelDevice::NVENC);
         nvenc_fast.video_settings.encoder_preset = "ultrafast".into();
         assert_eq!(encoder_preset_args(&nvenc_fast)[1], "p1");
@@ -544,7 +543,7 @@ mod tests {
     }
 
     // ---- 矩阵：rate-control 标志（encoder × rate-control 快照，唯一拥有者） ----
-    // args 侧 NVENC 单测不再硬编码同一字符串，改为调用本模块接口后断言输出。
+    // args 侧 NVENC 单测调用本模块接口后断言输出，不硬编码同一字符串。
 
     #[test]
     fn matrix_rate_control_flags_snapshot() {

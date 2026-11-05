@@ -45,7 +45,6 @@ pub struct EncodeJob {
     #[serde(skip)]
     pub config: Option<EncodeConfig>,
     pub status: JobStatus,
-    pub progress: Option<f64>, // 0.0 - 100.0 进度百分比
     /// 原始文件体积（字节）；add_to_queue 入队时读取，用于完成时计算压缩率
     pub input_size: Option<u64>,
     /// 编码开始前的预估输出体积（字节）；add_to_queue 时由 ffprobe + 配置推算
@@ -54,10 +53,8 @@ pub struct EncodeJob {
     pub output_size: Option<u64>,
     /// VMAF 平均得分（0-100），由用户点击“计算 VMAF”后写入
     pub vmaf_score: Option<f64>,
-    /// VMAF 各采样段得分（JSON 数组），供明细展示
-    pub vmaf_detail: Option<String>,
     pub created_at: String,
-    pub started_at: Option<String>,
+    /// 完成时间（RFC3339）；历史页按它倒序排序
     pub completed_at: Option<String>,
     pub error: Option<String>,
 }
@@ -70,14 +67,11 @@ impl EncodeJob {
             output_path,
             config: Some(config),
             status: JobStatus::Pending,
-            progress: None,
             input_size: None,
             estimated_output_size: None,
             output_size: None,
             vmaf_score: None,
-            vmaf_detail: None,
             created_at: chrono::Utc::now().to_rfc3339(),
-            started_at: None,
             completed_at: None,
             error: None,
         }
@@ -97,7 +91,6 @@ pub struct JobSnapshot {
     pub output_path: String,
     pub file_name: String,
     pub status: String,
-    pub progress: Option<f64>,
     /// 原始文件体积（字节），入队时读取；用于完成时计算压缩率
     pub input_size: Option<u64>,
     /// 编码开始前的预估输出体积（字节），未探测到时为 null
@@ -106,11 +99,7 @@ pub struct JobSnapshot {
     pub output_size: Option<u64>,
     /// VMAF 平均得分（0-100），未计算时为 null
     pub vmaf_score: Option<f64>,
-    /// VMAF 各采样段得分 JSON，未计算时为 null
-    pub vmaf_detail: Option<String>,
     pub created_at: String,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
     pub error: Option<String>,
 }
 
@@ -122,15 +111,11 @@ impl From<&EncodeJob> for JobSnapshot {
             output_path: job.output_path.clone(),
             file_name: job.file_name(),
             status: job.status.as_str().to_string(),
-            progress: job.progress,
             input_size: job.input_size,
             estimated_output_size: job.estimated_output_size,
             output_size: job.output_size,
             vmaf_score: job.vmaf_score,
-            vmaf_detail: job.vmaf_detail.clone(),
             created_at: job.created_at.clone(),
-            started_at: job.started_at.clone(),
-            completed_at: job.completed_at.clone(),
             error: job.error.clone(),
         }
     }
@@ -141,11 +126,6 @@ impl From<&EncodeJob> for JobSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct QueueStatus {
     pub jobs: Vec<JobSnapshot>,
-    pub total: usize,
-    pub pending: usize,
-    pub encoding: usize,
-    pub completed: usize,
-    pub failed: usize,
     /// 队列级暂停：暂停后不再自动启动下一个任务（正在编码的任务不受影响）
     pub paused: bool,
 }

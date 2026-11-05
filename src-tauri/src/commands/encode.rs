@@ -3,7 +3,7 @@ use crate::error::{AppError, AppResult, LogDisplay};
 
 // 为调用方便重新导出类型
 pub use crate::encoder::codec::EncodeConfig;
-// FileInfo 唯一拥有者为 encoder::probe；此处重导出以保持命令签名与前端契约不变
+// FileInfo 唯一拥有者为 encoder::probe；此处重导出用于命令签名
 pub use crate::encoder::probe::FileInfo;
 
 // ============================================================

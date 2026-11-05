@@ -26,8 +26,7 @@ pub enum VideoCodec {
     Copy,
 }
 
-// 编码器映射唯一拥有者：`crate::encoder::flags::encoder_name`
-// （此前的 `VideoCodec::encoder_name / software_encoder` 薄委托已删除，调用方直调 flags）。
+// 编码器映射唯一拥有者：`crate::encoder::flags::encoder_name`，调用方直调 flags。
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,8 +155,7 @@ pub fn ensure_even_dimension(val: u32) -> u32 {
     }
 }
 
-/// 硬件加速配置：只保留设备类型。多卡索引从未被使用（恒为 None），
-// 已删除以收敛接口；旧载荷若带该字段会被 serde 默认忽略，安全兼容。
+/// 硬件加速配置：只保留设备类型；旧载荷若带多余字段会被 serde 默认忽略。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HwAccelConfig {
@@ -246,7 +244,7 @@ mod tests {
         }
     }
 
-    /// 音频 codec 收敛为枚举后，前端发来的 "AAC"/"Opus"/"Copy"/"None"
+    /// 前端发来的 "AAC"/"Opus"/"Copy"/"None"
     /// 字符串必须原样兼容（wire 格式不变），非法值必须直接报错而非透传给 ffmpeg。
     #[test]
     fn audio_codec_deserializes_frontend_strings() {

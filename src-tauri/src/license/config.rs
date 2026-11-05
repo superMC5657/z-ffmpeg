@@ -1,5 +1,5 @@
 //! 软糖铺接入配置：编译进二进制的 `tauri.conf.json → plugins.softcandy` 区块，
-//! 启动时解析一次（对齐 z-viewer 参考实现的配置方式）。
+//! 启动时解析一次。
 //!
 //! 字段缺失即视为未配置（契约约定）：
 //! - `apiBase` 为空 → 客户端完全不联网（激活/续验/注销/埋点均跳过）；
@@ -102,8 +102,7 @@ impl SoftCandyConfig {
                 }
 
                 // 埋点 token 支持编译期注入（GitHub Secret → release workflow），
-                // 不在 tauri.conf.json 明文维护（明文已进 git 历史，见
-                // docs/reviews/2026-10-30-full-review.md P6；token 撤换暂缓）。
+                // 不在 tauri.conf.json 明文维护；历史泄漏的旧 token 撤换暂缓。
                 if let Some(token) = option_env!("SOFTCANDY_ANALYTICS_TOKEN") {
                     if !token.trim().is_empty() {
                         cfg.analytics_token = token.trim().to_string();

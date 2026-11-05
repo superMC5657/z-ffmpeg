@@ -52,7 +52,6 @@ struct ProInfo {
     expires_at: String,
     /// 令牌到期时间（Unix 秒），is_pro 快速判断用。
     exp: i64,
-    features: Vec<String>,
     /// 是否处于离线宽限期（最近一次在线验证失败 / 尚未在线验证）
     offline: bool,
 }
@@ -72,7 +71,6 @@ pub struct LicenseStatus {
     pub email: Option<String>,
     /// 令牌到期时间（RFC3339）
     pub expires_at: Option<String>,
-    pub features: Vec<String>,
     /// 是否处于离线宽限期
     pub offline: bool,
     /// 已绑定的激活码（激活对话框回显）
@@ -141,7 +139,6 @@ impl LicenseManager {
                 level_label: claims.level_label,
                 expires_at: exp_to_rfc3339(claims.exp.unwrap_or(0)),
                 exp: claims.exp.unwrap_or(0),
-                features: claims.features,
                 offline: true,
             });
         } else {
@@ -171,7 +168,6 @@ impl LicenseManager {
             level_label: claims.level_label.clone(),
             expires_at: exp_to_rfc3339(claims.exp.unwrap_or(0)),
             exp: claims.exp.unwrap_or(0),
-            features: claims.features.clone(),
             offline,
         }
     }
@@ -192,7 +188,6 @@ impl LicenseManager {
                 level_label: None,
                 email: None,
                 expires_at: None,
-                features: vec![],
                 offline: false,
                 code: self.load_stored().map(|s| s.code),
                 buy_url,
@@ -202,7 +197,6 @@ impl LicenseManager {
                 level_label: p.level_label.clone(),
                 email: Some(p.email.clone()),
                 expires_at: Some(p.expires_at.clone()),
-                features: p.features.clone(),
                 offline: p.offline,
                 code: Some(p.code.clone()),
                 buy_url,
@@ -345,8 +339,7 @@ impl LicenseManager {
             Err(LicenseFlowError::Api(api)) => {
                 // INVALID_SIGNATURE（令牌伪造/损坏）不在契约 2.3 的吊销枚举内，
                 // 属有意采纳的更严安全默认：验签不过的凭证没有保留价值，
-                // 只会让后续续验持续失败。该偏差已确认接受
-                //（docs/reviews/2026-10-30-full-review.md P4）。
+                // 只会让后续续验持续失败。
                 if matches!(
                     api.code.as_str(),
                     "CDK_REVOKED" | "DEVICE_NOT_ACTIVATED" | "INVALID_SIGNATURE"
@@ -472,7 +465,6 @@ mod tests {
         assert!(!status.pro);
         assert_eq!(status.level_label, None);
         assert_eq!(status.expires_at, None);
-        assert!(status.features.is_empty());
 
         let err = manager.ensure_pro("VMAF 质量对比").unwrap_err();
         assert!(err.to_string().contains("VMAF 质量对比为 Pro 版功能"));
@@ -494,7 +486,6 @@ mod tests {
             level_label: Some("专业版".into()),
             expires_at: "2099-01-01T00:00:00Z".into(),
             exp: chrono::Utc::now().timestamp() + 3600,
-            features: vec!["pro".into()],
             offline: false,
         });
 
@@ -511,7 +502,6 @@ mod tests {
             level_label: Some("专业版".into()),
             expires_at: "2020-01-01T00:00:00Z".into(),
             exp: chrono::Utc::now().timestamp() - 3600,
-            features: vec!["pro".into()],
             offline: false,
         });
 

@@ -2,8 +2,7 @@
 //! 以及流选择 / 音频码率回退等共享启发式（供预估模块复用）。
 //!
 //! `FileInfo` 的唯一拥有者：probe JSON 进、FileInfo 出。对外接口为
-//! `parse_probe_result`；`commands::encode` 仅做薄 adapter（重导出类型以
-//! 保持命令签名与前端契约不变）。
+//! `parse_probe_result`；`commands::encode` 仅做薄 adapter（重导出类型用于命令签名）。
 
 use crate::encoder::codec::parse_fraction_fps;
 use crate::encoder::file_name_from_path;
@@ -12,7 +11,7 @@ use crate::ffmpeg::facade;
 use serde::{Deserialize, Serialize};
 
 /// 由 probe_file 返回的文件元信息结构体
-/// serde 形状（camelCase）与前端 `src/types/index.ts` 对齐，禁止改动。
+/// serde 形状（camelCase）与前端 `src/types/index.ts` 对齐，两侧需同步修改。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileInfo {
@@ -21,14 +20,12 @@ pub struct FileInfo {
     pub file_size: u64,
     pub duration: Option<f64>,
     pub video_codec: Option<String>,
-    pub audio_codec: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub frame_rate: Option<f64>,
     pub bitrate: Option<u64>,
     /// 源音频流码率（bps）；音频 Copy 时预估输出体积用，缺失时由容器总码率近似
     pub audio_bitrate: Option<u64>,
-    pub pixel_format: Option<String>,
 }
 
 /// ffprobe 参数，供同步和异步探测路径共用。
@@ -148,10 +145,6 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
             .and_then(|s| s.get("codec_name"))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
-        audio_codec: audio_stream
-            .and_then(|s| s.get("codec_name"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
         width: video_stream
             .and_then(|s| s.get("width"))
             .and_then(|v| v.as_u64())
@@ -199,10 +192,6 @@ pub fn parse_probe_result(json: &serde_json::Value, path: &str) -> AppResult<Fil
                     .and_then(|s| s.parse::<f64>().ok());
                 Some(fallback_audio_bps(container_bps, video_bps) as u64)
             }),
-        pixel_format: video_stream
-            .and_then(|s| s.get("pix_fmt"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string()),
     })
 }
 
@@ -232,7 +221,7 @@ mod tests {
             "format": { "size": "104857600", "duration": "100.0", "bit_rate": "8000000" },
             "streams": [
                 { "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
-                  "pix_fmt": "yuv420p", "r_frame_rate": "30/1" },
+                  "r_frame_rate": "30/1" },
                 { "codec_type": "audio", "codec_name": "aac", "bit_rate": "192000" },
             ],
         });
@@ -279,7 +268,7 @@ mod tests {
                 { "codec_type": "video", "codec_name": "mjpeg", "width": 400, "height": 300,
                   "disposition": { "attached_pic": 1 } },
                 { "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080,
-                  "pix_fmt": "yuv420p", "r_frame_rate": "30/1", "bit_rate": "7000000" },
+                  "r_frame_rate": "30/1", "bit_rate": "7000000" },
                 { "codec_type": "audio", "codec_name": "aac", "bit_rate": "192000" },
             ],
         });
@@ -300,7 +289,6 @@ mod tests {
         });
         let info = parse_probe_result(&json, r"C:\in\a.mp4").unwrap();
         assert_eq!(info.audio_bitrate, None);
-        assert_eq!(info.audio_codec, None);
     }
 
     #[test]

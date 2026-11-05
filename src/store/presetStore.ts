@@ -16,7 +16,6 @@ interface PresetState {
   removePreset: (id: string) => Promise<void>;
   importPreset: (json: string, name: string) => Promise<Preset>;
   selectPreset: (id: string | null) => void;
-  applyPreset: (preset: Preset) => Preset["config"];
 }
 
 export const usePresetStore = create<PresetState>((set, get) => ({
@@ -53,9 +52,4 @@ export const usePresetStore = create<PresetState>((set, get) => ({
   },
 
   selectPreset: (id) => set({ selectedPresetId: id }),
-
-  applyPreset: (preset) => {
-    set({ selectedPresetId: preset.id });
-    return preset.config;
-  },
 }));

@@ -35,8 +35,7 @@ impl std::fmt::Display for JwtError {
     }
 }
 
-/// JWT payload 中客户端关心的 claims 子集（只保留实际读取的字段；
-/// 服务端多发的 `sub` / `iat` 已删除——serde 默认忽略未知键，解析不受影响）
+/// JWT payload 中客户端关心的 claims 子集；服务端多发字段由 serde 默认忽略。
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Claims {
@@ -46,8 +45,6 @@ pub struct Claims {
     pub level_label: Option<String>,
     pub device_id: Option<String>,
     pub email: Option<String>,
-    #[serde(default)]
-    pub features: Vec<String>,
     pub exp: Option<i64>,
 }
 

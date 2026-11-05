@@ -86,7 +86,7 @@ const PERSISTED_ENCODER_KEYS = [
   "hwAccel",
 ] as const;
 
-/** 探测占位/失败项构造（addFiles 内两处重复同一 12 字段字面量，收敛到此） */
+/** 探测占位/失败项的 FileInfo 构造：统一占位字段字面量 */
 function filePlaceholder(
   path: string,
   state: { probing: boolean; probeError?: boolean }
@@ -97,20 +97,18 @@ function filePlaceholder(
     fileSize: 0,
     duration: null,
     videoCodec: null,
-    audioCodec: null,
     width: null,
     height: null,
     frameRate: null,
     bitrate: null,
     audioBitrate: null,
-    pixelFormat: null,
     probing: state.probing,
     ...(state.probeError !== undefined ? { probeError: state.probeError } : {}),
   };
 }
 
 /** 各视频格式与硬件加速环境下的黄金推荐质量值（CRF / CQ） */
-export function getRecommendedQuality(
+function getRecommendedQuality(
   videoCodec: VideoCodec,
   hwDevice?: string | null
 ): number {
@@ -129,7 +127,7 @@ export function getRecommendedQuality(
 }
 
 /** 各视频格式的量化范围 [min, max] */
-export function getQualityRange(videoCodec: VideoCodec): { min: number; max: number } {
+function getQualityRange(videoCodec: VideoCodec): { min: number; max: number } {
   if (videoCodec === "AV1" || videoCodec === "VP9") {
     return { min: 0, max: 63 };
   }
@@ -142,7 +140,7 @@ export function getQualityRange(videoCodec: VideoCodec): { min: number; max: num
  * - 输入为 CRF/CQP 时，把"相对推荐值的偏移"平移并限幅到 [min, max]，归一化为 CRF；
  * - 输入为 ABR 等非质量模式时原样返回（码率模式不随画质推荐值迁移）。
  */
-export function adaptRateControl(
+function adaptRateControl(
   rc: RateControl,
   prevRecommended: number,
   newRecommended: number,

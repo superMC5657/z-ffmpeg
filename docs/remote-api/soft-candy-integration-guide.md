@@ -195,7 +195,6 @@ GET /api/v1/apps/{slug}/latest?platform=windows&channel=stable
 - 客户端按分段数字版本号进行比较。
 - 检查失败时静默跳过，不阻断应用使用。
 
-> **z-ffmpeg 偏差声明**：客户端未接入本节端点，更新检查走自建 Tauri updater
+> **z-ffmpeg 接入说明**：客户端更新检查未走本节端点，而是自建 Tauri updater
 >（`latest.json` 双清单，见 `tauri.conf.json → plugins.updater` 与发布流水线）。
-> 该偏差已确认接受（`docs/reviews/2026-10-30-full-review.md` P1/D1）；
 > 若平台侧要求集中管控更新，再按本节实现。

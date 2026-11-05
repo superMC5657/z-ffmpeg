@@ -9,7 +9,7 @@ import { isTauriRuntime, formatError } from "@/lib/utils";
 
 /**
  * 全局激活对话框：由 licenseStore.activationOpen 驱动，
- * 门控 UI（ProGate / 硬件加速卡片等）点击时拉起，挂在 App 根部。
+ * ProGate 门控的功能（VMAF 质量对比、命令导出为文件）点击时拉起，挂在 App 根部。
  */
 export default function ActivationDialog() {
   const open = useLicenseStore((s) => s.activationOpen);

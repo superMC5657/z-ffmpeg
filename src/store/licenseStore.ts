@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { LicenseStatus } from "@/types";
 import { getLicenseStatus, activateLicense, deactivateLicense } from "@/lib/tauri";
 
-/** 免费版并发数上限（与后端 set_max_concurrent 的 1..=16 范围对齐） */
+/** 并发数选择上限（与后端 set_max_concurrent 的 1..=16 范围对齐，免费版/Pro 一致） */
 export const FREE_MAX_CONCURRENT = 16;
 
 interface LicenseState {
@@ -60,8 +60,3 @@ export const useLicenseStore = create<LicenseState>((set) => ({
 
   setActivationOpen: (open) => set({ activationOpen: open }),
 }));
-
-/** 是否已解锁 Pro（未加载完成时返回 false，由调用方决定如何展示） */
-export function selectIsPro(status: LicenseStatus | null): boolean {
-  return status?.pro === true;
-}

@@ -13,15 +13,15 @@ const DEFAULT_MAX_CONCURRENT: usize = 2;
 use crate::queue::store::{JobStore, SETTINGS_KEY_MAX_CONCURRENT};
 
 pub struct QueueManager {
-    /// 内存调度状态（私有：全部跨文件协作经 store 显式接口，不再跨 seam 互摸）。
+    /// 内存调度状态（私有）。
     jobs: RwLock<VecDeque<EncodeJob>>,
     active_count: RwLock<usize>,
     max_concurrent: RwLock<usize>,
-    /// 持久化 seam：全部 SQLite 访问归 store，manager 不再直接持有 Connection。
+    /// 持久化存储：全部 SQLite 访问归 store。
     store: JobStore,
     /// 调度期取消标记由 supervisor 注册表拥有（dispatch 时注册，完成后经
-    /// `supervisor::finish_if_same` 按 `Arc::ptr_eq` 移除）；本地不再保留
-    /// 第二份 flag 映射。`cancel_job` 经 supervisor 置位，编码 worker 经
+    /// `supervisor::finish_if_same` 按 `Arc::ptr_eq` 移除）。
+    /// `cancel_job` 经 supervisor 置位，编码 worker 经
     /// 传参 flag 读取，覆盖子进程尚未挂接的窗口。
     /// 串行化 `process_queue` 循环，防止并发调用（用户点击按钮与自动推进竞态）产生超出 max_concurrent 的任务。
     processing: tokio::sync::Mutex<()>,
@@ -60,12 +60,8 @@ impl QueueManager {
 
     // --- 公共 API ---
 
-    pub fn add_jobs(&self, files: Vec<(String, String)>, config: EncodeConfig) -> Vec<String> {
-        self.add_jobs_estimated(files, vec![], config)
-    }
-
-    /// 与 `add_jobs` 相同，但可附带每个文件的预估输出体积（字节）；
-    /// `estimates` 长度可小于 `files`，缺失项按 None 处理。
+    /// 入队一批任务；`estimates` 为每个文件的预估输出体积（字节），
+    /// 长度可小于 `files`，缺失项按 None 处理。
     pub fn add_jobs_estimated(
         &self,
         files: Vec<(String, String)>,
@@ -100,7 +96,7 @@ impl QueueManager {
     ///
     /// DB 侧留存规则唯一拥有者为 `JobStore::remove_from_queue`
     ///（Pending/Encoding 行删、Finished 行留、未知 ID 不删库）；
-    /// 此处只做内存 retain，不再手写状态分支。
+    /// 此处只做内存 retain。
     pub fn remove_jobs(&self, ids: &[String]) {
         let mut jobs = self.jobs.write();
         log::info!("queue remove jobs count={} ids={:?}", ids.len(), ids);
@@ -114,7 +110,7 @@ impl QueueManager {
     /// 仅从内存队列中移除已结束的任务（Completed / Failed / Cancelled）。
     /// 数据库记录会被特意保留——历史页面读取 store，
     /// 并通过 `delete_history` / `clear_history` 进行管理，因此队列的“清除已完成”绝不能抹除它们。
-    /// 留存三者分工（行为不变）：本方法仅内存 retain 不碰 DB；
+    /// 留存三者分工：本方法仅内存 retain 不碰 DB；
     /// `store::clear_history_rows` 删库已结束行；`store::remove_from_queue`
     /// 按状态逐行删库（未知 ID 不删库）。详见 store 侧注释。
     pub fn clear_completed(&self) {
@@ -135,16 +131,9 @@ impl QueueManager {
             .collect()
     }
 
-    pub fn update_progress(&self, job_id: &str, pct: f64) {
-        if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
-            job.progress = Some(pct);
-        }
-    }
-
     pub fn cancel_job(&self, job_id: &str) {
         // 取消语义归 supervisor 注册表：一处置位 flag（含子进程尚未挂接的
-        // 窗口）+ kill 已挂接进程（直调 supervisor，语义与此前“先设 flag
-        // 再 kill”一致）。恰好一次终态由编码侧状态机保证。
+        // 窗口）+ kill 已挂接进程。恰好一次终态由编码侧状态机保证。
         supervisor::request_cancel(job_id);
 
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
@@ -182,7 +171,6 @@ impl QueueManager {
         job.status = JobStatus::Pending;
         job.error = None;
         job.completed_at = None;
-        job.progress = None;
         job.output_size = None;
         self.store.save_job(job);
         log::warn!("queue retry job {id} file {name} reason {top}");
@@ -190,7 +178,7 @@ impl QueueManager {
         true
     }
 
-    /// 完成收尾（`history.rs` 的回归测试经此路径覆盖 DB 落盘，crate 内可见）。
+    /// 完成收尾：终态写入 DB（crate 内可见，供测试直接驱动）。
     pub(crate) fn complete_job(&self, job_id: &str, success: bool, error: Option<String>) {
         if let Some(job) = self.jobs.write().iter_mut().find(|j| j.id == job_id) {
             // 绝不覆盖已被用户取消的任务
@@ -235,30 +223,9 @@ impl QueueManager {
     pub fn get_status(&self) -> QueueStatus {
         let jobs = self.jobs.read();
         let snapshots: Vec<JobSnapshot> = jobs.iter().map(JobSnapshot::from).collect();
-        let pending = jobs
-            .iter()
-            .filter(|j| j.status == JobStatus::Pending)
-            .count();
-        let encoding = jobs
-            .iter()
-            .filter(|j| j.status == JobStatus::Encoding)
-            .count();
-        let completed = jobs
-            .iter()
-            .filter(|j| j.status == JobStatus::Completed)
-            .count();
-        let failed = jobs
-            .iter()
-            .filter(|j| j.status == JobStatus::Failed)
-            .count();
         QueueStatus {
-            total: jobs.len(),
-            pending,
-            encoding,
-            completed,
-            failed,
-            paused: *self.paused.read(),
             jobs: snapshots,
+            paused: *self.paused.read(),
         }
     }
 
@@ -337,21 +304,13 @@ impl QueueManager {
         self.store.resolve_job_paths(cached, job_id)
     }
 
-    /// 写入 VMAF 计算结果（平均分 + 各段明细 JSON）。
+    /// 写入 VMAF 计算结果（平均分）。
     /// 内存队列中的任务直接更新并经 store 持久化；已移出内存的任务（历史）直接 UPDATE store，
     /// 避免计算结果被静默丢弃。双写分支归 store，本方法只传内存持锁查到的借用。
-    pub fn set_vmaf_score(&self, job_id: &str, score: f64, detail_json: Option<String>) {
+    pub fn set_vmaf_score(&self, job_id: &str, score: f64) {
         let mut jobs = self.jobs.write();
         let memory_job = jobs.iter_mut().find(|j| j.id == job_id);
-        self.store
-            .write_vmaf_score(memory_job, job_id, score, detail_json);
-    }
-
-    /// 直接从数据库加载历史条目（已完成 / 失败 / 已取消）。
-    /// 与内存队列（启动时仅恢复活动任务）不同，数据库会持久保留已结束任务，
-    /// 使历史记录在应用重启后依然有效。
-    pub fn history(&self) -> Vec<JobSnapshot> {
-        self.store.history()
+        self.store.write_vmaf_score(memory_job, job_id, score);
     }
 
     /// 带筛选/搜索/分页的历史查询。status 过滤单个状态；search 对
@@ -372,7 +331,6 @@ impl QueueManager {
         let pos = jobs.iter().position(|j| j.status == JobStatus::Pending)?;
         let job = jobs.get_mut(pos)?;
         job.status = JobStatus::Encoding;
-        job.started_at = Some(chrono::Utc::now().to_rfc3339());
         let job = job.clone();
         self.store.save_job(&job);
         Some(job)
@@ -477,8 +435,8 @@ impl QueueManager {
                     };
                     // complete_job 绝不覆盖已被用户取消的任务
                     manager.complete_job(&job_id, success, error);
-                    // 仅移除本次调度的注册——被重试的任务可能已在相同 ID 下注册了新标记，
-                    // ptr_eq 语义收进 supervisor 一处。
+                    // 仅移除属于本次调度的注册——被重试的任务可能已在相同 ID
+                    // 下注册了新标记，按 `Arc::ptr_eq` 匹配（语义归 supervisor）。
                     supervisor::finish_if_same(&job_id, &cancel_flag);
                     manager.dec_active();
 
@@ -511,8 +469,9 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        manager.add_jobs(
+        manager.add_jobs_estimated(
             vec![("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into())],
+            vec![],
             sample_config(),
         );
 
@@ -525,7 +484,15 @@ mod tests {
         assert!(manager.get_status().paused);
         assert!(!manager.can_start(), "暂停后不应再启动新任务");
         // Pending 任务本身不受影响，仍在队列中等待恢复
-        assert_eq!(manager.get_status().pending, 1);
+        assert_eq!(
+            manager
+                .get_status()
+                .jobs
+                .iter()
+                .filter(|j| j.status == "Pending")
+                .count(),
+            1
+        );
 
         manager.resume_queue();
         assert!(!manager.is_paused());
@@ -566,8 +533,9 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into())],
+            vec![],
             sample_config(),
         );
 
@@ -600,12 +568,13 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![
                 ("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into()),
                 ("C:\\in\\b.mp4".into(), "C:\\in\\b_encoded.mp4".into()),
                 ("C:\\in\\c.mp4".into(), "C:\\in\\c_encoded.mp4".into()),
             ],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], false, Some("boom".into()));
@@ -647,7 +616,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // --- 历史页回归（原 `history.rs`，随实现并入本文件；行为不变） ---
+    /// 全量历史（不分页、不过滤），等价于历史页不带条件查询。
+    fn all_history(manager: &QueueManager) -> Vec<JobSnapshot> {
+        manager.history_filtered(None, 0, None, None).0
+    }
+
+    // --- 历史页回归测试 ---
 
     #[test]
     fn history_survives_restart() {
@@ -657,11 +631,12 @@ mod tests {
 
         // 第一次“会话”：添加任务并完成它
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![(
                 dir.join("a.mp4").to_string_lossy().to_string(),
                 dir.join("a_encoded.mp4").to_string_lossy().to_string(),
             )],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
@@ -675,7 +650,7 @@ mod tests {
             "active queue should be empty after restart"
         );
 
-        let history = reopened.history();
+        let history = all_history(&reopened);
         assert_eq!(history.len(), 1, "finished job must be visible in history");
         assert_eq!(history[0].status, "Completed");
         assert_eq!(history[0].file_name, "a.mp4");
@@ -690,28 +665,29 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![
                 ("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into()),
                 ("C:\\in\\b.mp4".into(), "C:\\in\\b_encoded.mp4".into()),
                 ("C:\\in\\c.mp4".into(), "C:\\in\\c_encoded.mp4".into()),
             ],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
         manager.complete_job(&ids[1], false, Some("boom".into()));
         manager.complete_job(&ids[2], true, None);
-        assert_eq!(manager.history().len(), 3);
+        assert_eq!(all_history(&manager).len(), 3);
 
         // 删除单个条目
         manager.delete_history(&[ids[1].clone()]);
-        let history = manager.history();
+        let history = all_history(&manager);
         assert_eq!(history.len(), 2);
         assert!(history.iter().all(|h| h.id != ids[1]));
 
         // 清空剩余条目
         manager.clear_history();
-        assert!(manager.history().is_empty());
+        assert!(all_history(&manager).is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -723,7 +699,7 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![
                 (
                     dir.join("alpha.mp4").to_string_lossy().to_string(),
@@ -742,6 +718,7 @@ mod tests {
                     dir.join("delta_encoded.mp4").to_string_lossy().to_string(),
                 ),
             ],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
@@ -795,34 +772,36 @@ mod tests {
         let out_path = dir.join("out.mp4");
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![(
                 "C:\\in\\a.mp4".into(),
                 out_path.to_string_lossy().to_string(),
             )],
+            vec![],
             sample_config(),
         );
 
         // 无输出文件时 output_size 保持 None
         manager.complete_job(&ids[0], true, None);
-        assert_eq!(manager.history()[0].output_size, None);
+        assert_eq!(all_history(&manager)[0].output_size, None);
 
         // 重建一个任务，写一个真实输出文件再完成 → 记录实际大小
-        let ids2 = manager.add_jobs(
+        let ids2 = manager.add_jobs_estimated(
             vec![(
                 "C:\\in\\b.mp4".into(),
                 out_path.to_string_lossy().to_string(),
             )],
+            vec![],
             sample_config(),
         );
         std::fs::write(&out_path, vec![0u8; 4096]).unwrap();
         manager.complete_job(&ids2[0], true, None);
-        assert_eq!(manager.history()[0].output_size, Some(4096));
+        assert_eq!(all_history(&manager)[0].output_size, Some(4096));
 
         // 重启后大小保留在历史里
         drop(manager);
         let reopened = QueueManager::new(&db_path).unwrap();
-        let hist = reopened.history();
+        let hist = all_history(&reopened);
         assert!(hist
             .iter()
             .any(|h| h.id == ids2[0] && h.output_size == Some(4096)));
@@ -837,8 +816,9 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![("C:\\in\\a.mp4".into(), "C:\\out\\a_encoded.mp4".into())],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
@@ -851,7 +831,7 @@ mod tests {
 
         // 清除已完成 → 任务移出内存，但 DB 行保留
         manager.clear_completed();
-        assert_eq!(manager.history().len(), 1);
+        assert_eq!(all_history(&manager).len(), 1);
         // 回退 DB 仍能解析路径
         assert_eq!(
             manager.get_job_paths(&ids[0]),
@@ -864,15 +844,10 @@ mod tests {
         assert!(reopened.get_job_paths(&ids[0]).is_some());
 
         // DB-only 任务写 VMAF 分数 → history 可读（不丢结果）
-        reopened.set_vmaf_score(
-            &ids[0],
-            91.25,
-            Some(r#"{"mode":"sampled","scores":[90.1,92.4]}"#.into()),
-        );
-        let hist = reopened.history();
+        reopened.set_vmaf_score(&ids[0], 91.25);
+        let hist = all_history(&reopened);
         let entry = hist.iter().find(|h| h.id == ids[0]).unwrap();
         assert_eq!(entry.vmaf_score, Some(91.25));
-        assert!(entry.vmaf_detail.is_some());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -884,12 +859,13 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![
                 ("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into()),
                 ("C:\\in\\b.mp4".into(), "C:\\in\\b_encoded.mp4".into()),
                 ("C:\\in\\c.mp4".into(), "C:\\in\\c_encoded.mp4".into()),
             ],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None);
@@ -902,7 +878,7 @@ mod tests {
         assert_eq!(manager.jobs.read()[0].id, ids[2]);
 
         // 历史记录保持不受影响
-        let history = manager.history();
+        let history = all_history(&manager);
         assert_eq!(
             history.len(),
             2,
@@ -921,12 +897,13 @@ mod tests {
         let db_path = dir.join("queue.db").to_string_lossy().to_string();
 
         let manager = QueueManager::new(&db_path).unwrap();
-        let ids = manager.add_jobs(
+        let ids = manager.add_jobs_estimated(
             vec![
                 ("C:\\in\\a.mp4".into(), "C:\\in\\a_encoded.mp4".into()),
                 ("C:\\in\\b.mp4".into(), "C:\\in\\b_encoded.mp4".into()),
                 ("C:\\in\\c.mp4".into(), "C:\\in\\c_encoded.mp4".into()),
             ],
+            vec![],
             sample_config(),
         );
         manager.complete_job(&ids[0], true, None); // 已完成 -> 历史记录
@@ -936,7 +913,7 @@ mod tests {
         manager.remove_jobs(&[ids[0].clone(), ids[1].clone()]);
 
         // 历史记录中仍然保留该已完成记录
-        let history = manager.history();
+        let history = all_history(&manager);
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, ids[0]);
 

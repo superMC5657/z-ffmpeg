@@ -190,7 +190,7 @@ fn builtin_presets() -> Vec<Preset> {
     ]
 }
 
-/// 预设默认音频配置（强类型构造，序列化后与历史快照一致）。
+/// 预设默认音频配置（强类型构造）。
 fn audio_settings(codec: &str) -> AudioSettings {
     let codec = match codec {
         "Opus" => AudioCodec::Opus,
@@ -207,7 +207,7 @@ fn audio_settings(codec: &str) -> AudioSettings {
 }
 
 /// 统一的 EncodeConfig 强类型构造：软编/硬编共用同一 VideoSettings 组装，
-/// 序列化经 `EncodeConfig` 的 camelCase 保证与历史快照一致。
+/// 序列化经 `EncodeConfig` 的 camelCase。
 fn preset_config(
     codec: &str,
     preset: &str,
@@ -298,7 +298,7 @@ fn hw_p(
     device: &str,
     value: u32,
 ) -> Preset {
-    // 未知 device 统一回退 NVENC（与历史行为一致，避免拼写漂移产生不可用预设）
+    // 未知 device 统一回退 NVENC（避免拼写漂移产生不可用预设）
     let device = match device {
         "QSV" => HwAccelDevice::QSV,
         "AMF" => HwAccelDevice::AMF,
@@ -365,14 +365,7 @@ fn preset_export_json(state: &crate::AppState, id: &str) -> AppResult<String> {
     Err(err)
 }
 
-/// 将预设导出为 JSON 字符串（包含名称、描述和配置），便于后续重新导入。
-#[tauri::command]
-pub async fn export_preset(state: State<'_, crate::AppState>, id: String) -> AppResult<String> {
-    crate::analytics::bump(&crate::analytics::COUNTERS.presets_exported, 1);
-    preset_export_json(&state, &id)
-}
-
-/// 直接将预设导出为指定路径的 JSON 文件。
+/// 将预设导出为指定路径的 JSON 文件（包含名称、描述和配置），便于后续重新导入。
 /// 文件由 Rust 后端直接写入，因此不受前端 fs 插件的作用域限制。
 #[tauri::command]
 pub async fn export_preset_to_file(
@@ -396,7 +389,7 @@ pub async fn export_preset_to_file(
 /// 导入 JSON 解析与校验（纯函数，import_preset 的唯一解析入口）：
 /// 支持完整导出格式 { name, description, config } 与纯编解码配置两种形状；
 /// 校验 config 符合 EncodeConfig 结构，防止损坏或不兼容的配置入库。
-/// 返回 (preset_name, description, config)。与搬运前逐行一致，仅抽取为可单测形态。
+/// 返回 (preset_name, description, config)。
 fn parse_import_preset(json: &str, name: &str) -> AppResult<(String, String, serde_json::Value)> {
     let value: serde_json::Value = serde_json::from_str(json).map_err(AppError::Serialization)?;
 
@@ -498,7 +491,7 @@ pub async fn get_builtin_presets() -> AppResult<Vec<Preset>> {
 mod tests {
     use super::*;
 
-    /// 合法 EncodeConfig（经内置构造，与历史快照同一序列化路径）
+    /// 合法 EncodeConfig（经内置构造生成）
     fn valid_config() -> serde_json::Value {
         preset_config(
             "H264",

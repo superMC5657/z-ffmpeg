@@ -11,7 +11,6 @@ import type {
   Preset,
   SystemInfo,
   FfmpegStatusInfo,
-  VmafResult,
   LicenseStatus,
   EstimatedSize,
 } from "@/types";
@@ -118,10 +117,6 @@ export async function deletePreset(id: string): Promise<void> {
   return invoke("delete_preset", { id });
 }
 
-export async function exportPreset(id: string): Promise<string> {
-  return invoke<string>("export_preset", { id });
-}
-
 /** 直接把预设导出为 JSON 文件到指定路径(由 Rust 后端写文件) */
 export async function exportPresetToFile(id: string, path: string): Promise<string> {
   return invoke<string>("export_preset_to_file", { id, path });
@@ -160,9 +155,10 @@ export async function clearHistory(): Promise<void> {
 // VMAF 画质相关命令
 // ============================================================
 
-/** 计算已完成编码任务的 VMAF 得分。segments=0 全量对比，否则 N 段 × 5 秒均匀采样 */
-export async function computeVmaf(jobId: string, segments: number): Promise<VmafResult> {
-  return invoke<VmafResult>("compute_vmaf", { jobId, segments });
+/** 计算已完成编码任务的 VMAF 得分（得分随任务持久化，经队列快照刷新展示）。
+ * segments=0 全量对比，否则 N 段 × 5 秒均匀采样 */
+export async function computeVmaf(jobId: string, segments: number): Promise<void> {
+  return invoke<void>("compute_vmaf", { jobId, segments });
 }
 
 /** 读取 VMAF 段数设置（0 = 全量，N = N 段 × 5 秒） */
@@ -179,7 +175,7 @@ export async function setVmafSegments(value: number): Promise<number> {
 // 系统相关命令
 // ============================================================
 
-/** 系统信息唯一入口（后端已合并原 detect_hw_accel 重复命令） */
+/** 系统信息唯一入口：硬件加速、FFmpeg 版本、CPU/内存等统一经 get_system_info 获取 */
 export async function getSystemInfo(): Promise<SystemInfo> {
   return invoke<SystemInfo>("get_system_info");
 }

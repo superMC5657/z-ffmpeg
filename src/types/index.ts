@@ -66,14 +66,12 @@ export interface FileInfo {
   fileSize: number;
   duration: number | null;
   videoCodec: string | null;
-  audioCodec: string | null;
   width: number | null;
   height: number | null;
   frameRate: number | null;
   bitrate: number | null;
   /** 源音频流码率（bps）；音频 Copy 时预估输出体积用 */
   audioBitrate: number | null;
-  pixelFormat: string | null;
   /** 前端专用:正在 ffprobe 探测中(占位项) */
   probing?: boolean;
   /** 前端专用:探测失败时的降级标记 */
@@ -93,34 +91,24 @@ export interface EstimatedSize {
 // 编码进度相关类型
 // ============================================================
 
-export type EncodeStage =
-  | "encoding"
-  | "complete"
-  | "error";
-
 /**
  * 与后端 `src-tauri/src/encoder/progress.rs` 的 `EncodeProgress` 载荷严格对齐
- * (serde camelCase)：`totalSizeKb` / `elapsed`(字符串) / `time`(out_time 原文)。
+ * (serde camelCase)：`elapsed` 为字符串、`time` 为 out_time 原文。
  */
 export interface EncodeProgress {
   jobId: string;
   fileName: string;
-  frame: number;
   fps: number;
   speed: number;
   bitrate: number;
-  totalSizeKb: number;
-  /** 预估压缩后的输出体积（KB），编码开始后才有值，否则为 null */
-  estimatedSizeKb: number | null;
   elapsed: string;
   percentage: number;
-  stage: EncodeStage;
   time: string;
 }
 
 /**
- * EncodeProgress 的严格类型守卫与归一统一收敛在 `@/lib/progress`
- *（isEncodeProgressStrict / normalizeProgress），本文件不再重复导出。
+ * EncodeProgress 的严格类型守卫与归一实现集中在 `@/lib/progress`
+ *（isEncodeProgressStrict / normalizeProgress）。
  */
 
 export interface EncodeResult {
@@ -164,35 +152,19 @@ export interface EncodeJob {
   outputSize: number | null;
   /** VMAF 平均得分（0-100），点击「计算 VMAF」后写入，未计算时为 null */
   vmafScore: number | null;
-  /** VMAF 明细 JSON（{mode:"full"|"sampled", scores:number[]}），未计算时为 null */
-  vmafDetail: string | null;
   /**
-   * 实时编码中为 EncodeProgress 对象（来自 encode://progress 事件）；
-   * 后端队列快照（queue://updated / get_queue_status）携带的是 0-100 的数字百分比。
+   * 实时编码中的 EncodeProgress 对象（来自 encode://progress 事件）；
+   * 后端队列快照（queue://updated / get_queue_status）不带实时进度，为 null。
    */
-  progress: EncodeProgress | number | null;
+  progress: EncodeProgress | null;
   createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
   error: string | null;
 }
 
 export interface QueueStatus {
   jobs: EncodeJob[];
-  total: number;
-  pending: number;
-  encoding: number;
-  completed: number;
-  failed: number;
   /** 队列级暂停：暂停后不再自动启动下一个任务（正在编码的不受影响） */
   paused: boolean;
-}
-
-/** compute_vmaf 命令的返回（4 段 × 5 秒采样 VMAF 结果） */
-export interface VmafResult {
-  averageScore: number;
-  segmentScores: number[];
-  segmentCount: number;
 }
 
 // ============================================================
@@ -212,7 +184,6 @@ export interface HistoryEntry {
   /** 原始文件体积（字节），入队时读取，用于计算压缩率 */
   inputSize: number | null;
   createdAt: string;
-  completedAt: string | null;
   error: string | null;
 }
 
@@ -305,8 +276,6 @@ export interface LicenseStatus {
   email: string | null;
   /** 令牌到期时间（RFC3339），未激活为 null */
   expiresAt: string | null;
-  /** 该等级功能特性列表 */
-  features: string[];
   /** 是否处于离线宽限期（最近一次在线续验未成功） */
   offline: boolean;
   /** 已绑定的激活码（激活对话框回显），未激活为 null */

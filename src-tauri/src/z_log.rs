@@ -5,7 +5,7 @@
 //! - 编码进度循环是噪音源：`zffmpeg encoder` 模块在 release 下压到 `Info`，
 //!   dev 下放开到 `Debug`；进度循环内部禁止逐帧打 log，只在开始/完成/失败
 //!   打 `info`、取消打 `warn`（见 `encoder::engine`）。
-//! - 不上报，只支持本地导出诊断包（`zlog_export_bundle`）。
+//! - 不上报，只落盘本地。
 //! - 不碰 sqlite 业务库（queue.db / presets.db），只管日志目录。
 
 use std::path::{Path, PathBuf};
@@ -14,8 +14,6 @@ use std::time::SystemTime;
 use log::LevelFilter;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
-
-use crate::error::AppResult;
 
 /// 单个日志文件滚动阈值：5MB（单文件封顶，避免单个日志过大拖慢导出）。
 const MAX_FILE_SIZE: u128 = 5 * 1024 * 1024;
@@ -369,79 +367,6 @@ pub fn prune(dir: &Path) {
     if removed > 0 {
         log::debug!("zlog pruned count={removed}");
     }
-}
-
-/// 取日志目录（前端“打开日志目录 / 导出诊断包”入口）。
-#[tauri::command]
-pub fn zlog_get_dir(app: AppHandle) -> AppResult<String> {
-    Ok(log_dir(&app).to_string_lossy().into_owned())
-}
-
-/// 导出诊断包：把日志目录下 *.log 打包为 temp 下的 zip（文件名带时间戳），
-/// 返回 zip 绝对路径。不上报、不碰 sqlite 业务库。
-#[tauri::command]
-pub fn zlog_export_bundle(app: AppHandle) -> AppResult<String> {
-    use crate::error::AppError;
-    use std::io::Write;
-
-    let dir = log_dir(&app);
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let out_path = std::env::temp_dir().join(format!("zffmpeg-logs-{}.zip", stamp));
-
-    let file = std::fs::File::create(&out_path).map_err(|e| AppError::Internal(e.to_string()))?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .map(|rd| {
-            rd.filter_map(Result::ok)
-                .map(|e| e.path())
-                .filter(|p| {
-                    p.extension()
-                        .and_then(|x| x.to_str())
-                        .map(|x| x.eq_ignore_ascii_case("log"))
-                        .unwrap_or(false)
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    entries.sort();
-    if entries.is_empty() {
-        zip.start_file("README.txt", options)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        zip.write_all(b"no log files yet")
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-    for path in entries {
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("log.log")
-            .to_string();
-        let content = std::fs::read_to_string(&path).unwrap_or_default();
-        let redacted = redact(&content);
-        zip.start_file(name, options)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        zip.write_all(redacted.as_bytes())
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-    // 附带一行版本信息，方便定位问题
-    zip.start_file("bundle-info.txt", options)
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    zip.write_all(
-        format!(
-            "product=z-ffmpeg version={} exported_at={}\n",
-            app.config().version.as_deref().unwrap_or("unknown"),
-            chrono::Local::now().to_rfc3339(),
-        )
-        .as_bytes(),
-    )
-    .map_err(|e| AppError::Internal(e.to_string()))?;
-    zip.finish()
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
-    Ok(out_path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

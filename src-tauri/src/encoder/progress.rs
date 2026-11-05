@@ -10,17 +10,12 @@ use std::collections::HashMap;
 pub struct EncodeProgress {
     pub job_id: String,
     pub file_name: String,
-    pub frame: u64,
     pub fps: f64,
     pub bitrate: f64,
-    pub total_size_kb: u64,
-    /// 预估压缩后的输出体积（KB）：按已写出大小 / 当前进度线性外推；
-    /// 进度未知（percentage 为 0 或无 total_size）时为 null，编码开始后才有值。
-    pub estimated_size_kb: Option<u64>,
     pub elapsed: String,
     pub percentage: f64,
     pub speed: f64,
-    pub stage: String, // "encoding", "complete", "error"（编码中、完成、错误）
+    /// out_time 原文（HH:MM:SS.micro）
     pub time: String,
 }
 

@@ -1,6 +1,6 @@
 # 统一日志（logging）
 
-本地为主、不上报。Rust 侧经 `tauri-plugin-log` v2 落盘，前端经 `src/lib/z-log.ts` 转发到同一份日志文件。实现入口：`src-tauri/src/z_log.rs`，插件装配与命令注册见 `src-tauri/src/lib.rs`。
+本地为主、不上报。Rust 侧经 `tauri-plugin-log` v2 落盘，前端经 `src/lib/z-log.ts` 转发到同一份日志文件。实现入口：`src-tauri/src/z_log.rs`，插件装配见 `src-tauri/src/lib.rs`。
 
 ## 日志目录（OS 路径）
 
@@ -26,7 +26,7 @@
 | 单文件滚动 | 5MB（`MAX_FILE_SIZE`，`KeepSome(5)` 保留 5 个轮转兄弟） | 同左 |
 | 总量水位 + 保留期 | 14 天 / 25MB（`prune`） | 同左 |
 
-前端 `zlog.debug` 在 release 下会被 root `Info` 阈值过滤，无需前端重复判断环境。
+前端 `zlog.uiSetting`（debug 级）在 release 下会被 root `Info` 阈值过滤，无需前端重复判断环境。
 
 ## 编码器噪音控制
 
@@ -82,16 +82,11 @@
 
 ## 脱敏（redact）
 
-`z_log::redact()` 在写盘前 `format` 内执行（导出诊断包时二次脱敏为纵深）：
+`z_log::redact()` 在写盘前 `format` 内统一执行：
 
 - 邮箱 → `[redacted-email]`
 - `token[:=] <值>` / `code[:=] <值>` → `[redacted]`
 - `C:\Users\<名>\` / `/home/<名>/` / `/Users/<名>/` → `[user]`
-
-## 导出诊断包
-
-- `zlog_get_dir`：返回日志目录绝对路径。
-- `zlog_export_bundle`：把 `*.log` 脱敏后打包为系统 temp 下 `zffmpeg-logs-<timestamp>.zip`，附 `bundle-info.txt`（版本 + 导出时间）；无 log 时包内放 `README.txt` 占位。返回 zip 绝对路径。
 
 ## 修剪策略（prune）
 
@@ -104,9 +99,9 @@
 ## 前端接入（`src/lib/z-log.ts`）
 
 - `initZLog()`（`src/main.tsx` 初始化）：DEV 下 `attachConsole()`；注册全局 `window.onerror` / `onunhandledrejection` 转发为 `error` 落盘。
-- `zlog.{debug,info,warn,error,route,uiAction,uiSetting}`：经 IPC 落到 Rust 日志文件。
+- `zlog.{route,uiAction,uiSetting}`：经 IPC 落到 Rust 日志文件。
 
 ## 约束边界
 
-- 不做任何远程日志上报（无 Sentry / Tracing 上报），诊断仅支持本地导出 zip。
-- 日志修剪与导出仅处理 `*.log` 文件，不触碰业务数据库 `queue.db` 与 `presets.db`。
+- 不做任何远程日志上报（无 Sentry / Tracing 上报）。
+- 日志修剪仅处理 `*.log` 文件，不触碰业务数据库 `queue.db` 与 `presets.db`。

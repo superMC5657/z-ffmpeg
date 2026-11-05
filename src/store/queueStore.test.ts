@@ -28,10 +28,7 @@ function job(id: string, status: EncodeJob["status"]): EncodeJob {
     estimatedOutputSize: null,
     outputSize: null,
     vmafScore: null,
-    vmafDetail: null,
     createdAt: new Date().toISOString(),
-    startedAt: null,
-    completedAt: null,
     error: null,
   };
 }
@@ -44,11 +41,10 @@ describe("queueStore job status updates", () => {
     });
   });
 
-  it("updateJobStatus marks completion time for finished jobs", () => {
+  it("updateJobStatus marks finished status", () => {
     useQueueStore.getState().updateJobStatus("a", "Completed");
     const a = useQueueStore.getState().jobs.find((j) => j.id === "a")!;
     expect(a.status).toBe("Completed");
-    expect(a.completedAt).toBeTruthy();
   });
 
   it("updateJobStatus records error text on failure", () => {
@@ -62,15 +58,11 @@ describe("queueStore job status updates", () => {
     useQueueStore.getState().updateProgress({
       jobId: "b",
       fileName: "b.mp4",
-      frame: 12,
       fps: 30,
       bitrate: 4000,
-      totalSizeKb: 1024,
-      estimatedSizeKb: 4096,
       elapsed: "00:00:10",
       percentage: 25,
       speed: 1.5,
-      stage: "encoding",
       time: "00:00:05",
     });
     const b = useQueueStore.getState().jobs.find((j) => j.id === "b")!;
@@ -82,15 +74,11 @@ describe("queueStore job status updates", () => {
     useQueueStore.getState().updateProgress({
       jobId: "a",
       fileName: "a.mp4",
-      frame: 1,
       fps: 30,
       bitrate: 0,
-      totalSizeKb: 0,
-      estimatedSizeKb: null,
       elapsed: "00:00:01",
       percentage: 1,
       speed: 1,
-      stage: "encoding",
       time: "",
     });
     // 后端快照到达：a 仍在编码，b 仍在排队

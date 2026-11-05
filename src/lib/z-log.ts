@@ -98,11 +98,6 @@ function logUiSetting(setting: string, value: unknown, debounceMs = 300): Promis
 
 /** 前端结构化日志出口：调用即经 IPC 落到 Rust 日志文件。 */
 export const zlog = {
-  debug: (msg: string): Promise<void> => safeLog("debug", msg),
-  info: (msg: string): Promise<void> => safeLog("info", msg),
-  warn: (msg: string): Promise<void> => safeLog("warn", msg),
-  error: (msg: string): Promise<void> => safeLog("error", msg),
-
   /** 记录路由/页面导航 */
   route: (pathname: string): Promise<void> => {
     return safeLog("info", `[UI] 导航至页面: ${pathname}`);

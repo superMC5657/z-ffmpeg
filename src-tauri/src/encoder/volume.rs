@@ -1,6 +1,6 @@
 //! 体积模型拥有者：codec × device 因子 + 物理锚点 + guard 截断。
 //!
-//! 与 `super::flags` 的分工（C3 按 seam 拆分）：
+//! 与 `super::flags` 的分工：
 //!
 //! - 本模块唯一拥有体积侧：`crf_baseline` / `source_codec_factor` /
 //!   `codec_factor` / `hardware_accel_factor` / `physical_anchor_crf_kbps` /
@@ -16,8 +16,8 @@ use crate::encoder::flags::{
 };
 
 /// 获取当前转码任务的有效 -maxrate 限制（Auto Maxrate Guard 或用户自定义 -maxrate），用于封顶截断。
-/// 与搬运前逐行一致：自定义值可解析则优先；不可解析/缺值时穿透到自动 guard。
-/// 分歧锁死（搬运前既有，不统一）：CLI 侧以 has_custom 为准、体积侧以 parse 为准，不可解析时前者空、后者回退 guard。
+/// 规则：自定义值可解析则优先；不可解析/缺值时穿透到自动 guard。
+/// 有意保留的分歧：CLI 侧以 has_custom 为准、体积侧以 parse 为准——不可解析时前者返回空、后者回退 guard。
 pub fn effective_maxrate_kbps(config: &EncodeConfig, input_kbps: f64) -> Option<f64> {
     // 1. 用户显式指定的 -maxrate
     if let Some(v) = parse_custom_maxrate_kbps(&config.video_settings.additional_params) {
@@ -33,7 +33,7 @@ pub fn effective_maxrate_kbps(config: &EncodeConfig, input_kbps: f64) -> Option<
 }
 
 // ============================================================
-// 体积预估因子（原 estimate.rs，原样搬运）
+// 体积预估因子
 // ============================================================
 
 /// 各编码器与硬件环境下的画质参考基准点（对应视觉平衡参考值）：

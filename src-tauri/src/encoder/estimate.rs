@@ -370,7 +370,6 @@ mod tests {
         });
         let info = parse_probe_result(&probe, r"C:\in\a.mp4").unwrap();
         assert_eq!(info.audio_bitrate, None);
-        assert_eq!(info.audio_codec, None);
         // 视频 2000kbps + 音频 0 × 100s → 单一结果
         let expected = (2000.0 * 1000.0 / 8.0 * 100.0) as u64;
         assert_eq!(
@@ -497,13 +496,11 @@ mod tests {
             file_size: 100_000_000,
             duration: Some(100.0),
             video_codec: Some("h264".into()),
-            audio_codec: Some("aac".into()),
             width: Some(1920),
             height: Some(1080),
             frame_rate: Some(30.0),
             bitrate: Some(8_000_000),
             audio_bitrate: Some(192_000),
-            pixel_format: Some("yuv420p".into()),
         }
     }
 
@@ -521,13 +518,11 @@ mod tests {
             file_size: 100_000_000,
             duration: Some(100.0),
             video_codec: Some("h264".into()),
-            audio_codec: Some("aac".into()),
             width: Some(1920),
             height: Some(1080),
             frame_rate: Some(30.0),
             bitrate: Some(8_000_000),
             audio_bitrate: Some(192_000),
-            pixel_format: Some("yuv420p".into()),
         };
         // 视频 2000kbps + 音频 Copy 192kbps × 100s
         let expected = (2192.0 * 1000.0 / 8.0 * 100.0) as u64;
@@ -546,13 +541,11 @@ mod tests {
             file_size: 0,
             duration: None,
             video_codec: None,
-            audio_codec: None,
             width: None,
             height: None,
             frame_rate: None,
             bitrate: None,
             audio_bitrate: None,
-            pixel_format: None,
         };
         assert_eq!(
             estimate_output_size_from_info(&cfg, &info).map(|e| e.expected),
