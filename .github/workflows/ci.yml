@@ -1,13 +1,12 @@
-# CI: 前端与 Rust 质量检查门禁 (Windows/Linux 双平台矩阵，零 dist 重复构建)
-# 触发: main 分支 push、PR、手动触发以及 Release 工作流内部调用
+# CI: 前端与跨平台 Rust 门禁（同轨运行与产物单源复用）
+# 触发: main 分支 push、PR 与手动调度
 name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
-  workflow_call:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -18,22 +17,12 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Quality & Tests (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+  # Job 1: 前端质量检查与打包，上传 dist/ 作为单源产物
+  quality:
+    name: Frontend Quality & Build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      # Tauri v2 Linux 编译所需系统依赖 (与发版机保持一致)
-      - name: Install Tauri Linux system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: pnpm/action-setup@v6
 
@@ -45,27 +34,44 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Frontend Lint (if configured)
-        run: pnpm run --if-present lint
+      - name: Frontend Check (lint + typecheck + test)
+        run: pnpm check
 
-      - name: Frontend Test (Windows, plain)
-        if: runner.os != 'Linux'
-        run: pnpm run --if-present test
-
-      # ubuntu leg 优先执行 test:coverage（若已配置卡点阈值），否则执行普通 test
-      - name: Frontend Test (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          if node -e "const p = require('./package.json'); process.exit(p.scripts && p.scripts['test:coverage'] ? 0 : 1)"; then
-            pnpm run test:coverage
-          else
-            pnpm run --if-present test
-          fi
-
-      # 构建前端生成 dist/ (供 tauri::generate_context! 编译期展开)
       - name: Build frontend
         run: pnpm build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: dist
+          if-no-files-found: error
+
+  # Job 2: 跨平台 Rust 门禁免装前端环境，直接复用 frontend-dist
+  rust:
+    name: Rust Gate (${{ matrix.os }})
+    needs: [quality]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Tauri v2 Linux 系统依赖
+      - name: Install Tauri Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # 下载前端单源产物供 tauri build.rs / generate_context 校验
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: dist
 
       - uses: dtolnay/rust-toolchain@stable
         with:

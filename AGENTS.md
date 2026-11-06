@@ -8,14 +8,13 @@ FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 
 pnpm install          # 安装依赖
 pnpm tauri dev        # 开发模式（vite :1430）
 pnpm tauri build      # 生产构建
-pnpm test             # 前端 vitest 测试
-pnpm lint             # eslint（0 error 才能合入，警告可保留）
+pnpm check            # 前端单一门禁（eslint + tsc + vitest，必须 100% 全绿）
+pnpm fix              # 规范修复（eslint --fix）
 cd src-tauri && cargo test   # Rust 单元测试
 cd src-tauri && cargo clippy -- -D warnings # Rust 代码检查
-pnpm exec tsc --noEmit # TS 类型检查
 ```
 
-CI（tag 推送时）跑 tsc + eslint + vitest + cargo test + clippy；发布流水线 `release-tauri.yml` 先行触发 CI 质量门禁，通过后直接打包并发布。
+CI：PR 与 main 分支同轨运行单一门禁 `pnpm check` + 前端打包，并由 Rust 门禁复用前端产物；发布流水线 `release-tauri.yml` 解耦直通构建打包并由 `.github/release.env` 驱动发布。
 
 ## 架构
 

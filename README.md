@@ -38,8 +38,8 @@ FFmpeg CLI 驱动的跨平台桌面视频编码应用（Rust + Tauri v2 + React 
 pnpm install          # 安装依赖
 pnpm tauri dev        # 开发模式（vite :1430）
 pnpm tauri build      # 生产构建
-pnpm test             # 前端测试（vitest）
-pnpm lint             # eslint
+pnpm check            # 前端门禁（eslint + 类型检查 + vitest 单测）
+pnpm fix              # 代码风格与规范自动修复
 cd src-tauri && cargo test   # Rust 单元测试
 ```
 
@@ -47,7 +47,7 @@ cd src-tauri && cargo test   # Rust 单元测试
 
 ## 发布
 
-推送 `v*` tag 触发 `release-tauri.yml`：先以 workflow 调用方式跑 `ci.yml` 质量门（类型检查、eslint、vitest、cargo test、clippy），通过后再并行构建 NSIS 安装包并发布 GitHub Release 到公开产物仓库 `superMC5657/z-ffmpeg-release`（匿名下载 + gh-proxy 加速），产物含 updater 签名文件与国内镜像 `latest-cn.json`。版本号用 `pnpm bump` 同步。
+推送 `v*` tag 触发 `release-tauri.yml`：解耦独立构建（合入 main 的 CI 已提供质量保障，避免 Tag 双跑），并行打包 Windows NSIS 与 Linux AppImage/deb，并通过统一发布流转将产物与双清单（`latest.json` 直连 / `latest-cn.json` 加速）发布到 GitHub Release 仓库（配置由 `.github/release.env` 驱动）。版本号用 `pnpm bump` 同步。
 
 ## 许可
 

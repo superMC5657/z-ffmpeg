@@ -1,11 +1,13 @@
-# CD: Tauri 双平台(Windows/Linux)打包与双清单发布
+# CD: Tauri 双平台(Windows/Linux)构建与双清单发布
 #
-# 架构: 矩阵并行打包经 artifacts 中转后统一发布;配置严格外置于 release.env,门禁先行调用 ci.yml。
+# 架构: 并行打包 -> 收集 artifacts -> 统一发布;
+# 项目配置完全由 .github/release.env 控制，发版工作流直通构建（解耦 CI 门禁，避免 Tag 双跑）。
 #
-# 需要配置的 repository secrets:
+# 需要用到的 repository secrets:
 #   TAURI_SIGNING_PRIVATE_KEY          = 私钥(base64)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD = 私钥密码(如有)
-#   RELEASES_PAT                       = 对 RELEASES_REPO 具有写入权限的 GitHub PAT
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD = 私钥密码(若有)
+#   SOFTCANDY_ANALYTICS_TOKEN          = 软糖上报鉴权 token（若有）
+#   RELEASES_PAT                       = 对 RELEASES_REPO 有写入权限的 GitHub PAT
 name: Release Tauri
 
 on:
@@ -14,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (如 v0.2.0), 手动发布时必填'
+        description: 'Release tag (如 v0.2.0), 手动触发时必填'
         required: true
         default: ''
 
@@ -22,15 +24,9 @@ permissions:
   contents: read
 
 jobs:
-  # 步骤 1: 先跑 CI 质量门禁 (质量没通过绝不浪费时间打包)
-  ci:
-    name: Run CI Verification
-    uses: ./.github/workflows/ci.yml
-
-  # 步骤 2: CI 通过后，Windows/Linux 并行打包 (签名后上传 artifacts)
+  # 步骤 1: Windows/Linux 并行打包 (带签名并上传 artifacts)
   build:
     name: Build ${{ matrix.platform }}
-    needs: [ci]
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +43,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      # Tauri v2 Linux 打包所需系统依赖
+      # Tauri v2 Linux 系统依赖
       - name: Install Tauri Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -64,24 +60,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Rust 工具链与构建缓存
+      # Rust 编译构建
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      # 【核心步骤】打包安装包与更新器数字签名
+      # 核心步骤：打包安装包并签名
       - name: Build Tauri bundle (signed)
         run: pnpm tauri build --bundles ${{ matrix.bundles }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-          # 埋点上报鉴权 token：编译期注入，不在 tauri.conf.json 明文维护
-          #（上线前在仓库 Secrets 配置 SOFTCANDY_ANALYTICS_TOKEN）
           SOFTCANDY_ANALYTICS_TOKEN: ${{ secrets.SOFTCANDY_ANALYTICS_TOKEN }}
+          APPIMAGE_EXTRACT_AND_RUN: '1'
 
-      # 收集产物: windows = exe+sig; linux = AppImage+sig 与 deb (普通安装资产，不参与自动更新)
+      # 收集产物: windows = exe+sig; linux = AppImage+sig 和 deb (deb通常不作为自动更新)
       - name: Collect artifacts
         shell: bash
         run: |
@@ -123,7 +117,7 @@ jobs:
           path: artifacts
           if-no-files-found: error
 
-  # 步骤 3: 统一发布 — 合并双平台产物，一次生成 latest.json 并原子发布
+  # 步骤 2: 统一发布 —— 合并双平台产物，一次性写 latest.json 并原子发布
   publish:
     name: Publish Release
     needs: [build]
@@ -145,18 +139,18 @@ jobs:
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::发布 tag 必须符合 SemVer 格式 (如 v0.1.0 或 v1.0.0-rc.1, 当前: $TAG)"
+            echo "::error::非法 tag 格式，必须符合 SemVer 格式 (如 v0.1.0 或 v1.0.0-rc.1，当前: $TAG)"
             exit 1
           fi
 
           if [ ! -f .github/release.env ]; then
-            echo "::error::未找到配置文件 .github/release.env，请创建该文件并配置 APP_NAME 与 RELEASES_REPO"
+            echo "::error::未找到配置文件 .github/release.env，请创建该文件并定义 APP_NAME 与 RELEASES_REPO"
             exit 1
           fi
 
           source .github/release.env
           if [ -z "$APP_NAME" ] || [ -z "$RELEASES_REPO" ]; then
-            echo "::error::.github/release.env 必须配置非空的 APP_NAME 和 RELEASES_REPO"
+            echo "::error::.github/release.env 必须定义非空的 APP_NAME 与 RELEASES_REPO"
             exit 1
           fi
 
@@ -172,12 +166,12 @@ jobs:
           EXE=$(basename "$(ls artifacts/windows-x86_64/*.exe 2>/dev/null | head -1)")
           APPIMAGE=$(basename "$(ls artifacts/linux-x86_64/*.AppImage 2>/dev/null | head -1)")
           if [ -z "$EXE" ] || [ -z "$APPIMAGE" ]; then
-            echo "::error::产物不完整: windows-x86_64=$EXE, linux-x86_64=$APPIMAGE"
+            echo "::error::安装包不完整: windows-x86_64=$EXE, linux-x86_64=$APPIMAGE"
             exit 1
           fi
           ASSETS_JSON="[{\"target\":\"windows-x86_64\",\"file\":\"$EXE\"},{\"target\":\"linux-x86_64\",\"file\":\"$APPIMAGE\"}]"
 
-          # 双区清单(均带扩展字段,updater 忽略未知字段;仅 URL 前缀不同):海外直链 latest.json / 镜像加速 latest-cn.json
+          # 双清单模式(带扩展字段，updater 忽略未知字段；仅 URL 前缀不同)：直连 latest.json / 国内加速 latest-cn.json
           node scripts/build-latest-json.mjs \
             --name "$APP_NAME" \
             --repo "$RELEASES_REPO" \
@@ -203,13 +197,13 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_PAT }}
         run: |
           set -e
-          NOTES="$APP_NAME $TAG 安装包与双区更新清单（latest.json 海外直链 / latest-cn.json 镜像加速）。客户端 updater 按端点顺序自动回落检测。"
+          NOTES="$APP_NAME $TAG 安装包与双清单（latest.json 直连 / latest-cn.json 加速），客户端 updater 按顺序自动回退。"
           cd artifacts
           FILES=()
           while IFS= read -r -d '' f; do FILES+=("$f"); done < <(find . -type f -print0)
 
           if gh release view "$TAG" --repo "$RELEASES_REPO" >/dev/null 2>&1; then
-            echo "Release $TAG 已存在，原地覆盖更新资产..."
+            echo "Release $TAG 已存在，覆盖资产并更新..."
             gh release upload "$TAG" "${FILES[@]}" --clobber --repo "$RELEASES_REPO"
             gh release edit "$TAG" \
               --repo "$RELEASES_REPO" \
