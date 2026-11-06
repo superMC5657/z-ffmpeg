@@ -43,12 +43,24 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      # Tauri v2 Linux 系统依赖
+      # 优化 Windows 磁盘 IO，避免杀毒实时扫描海量编译临时文件
+      - name: Optimize Windows Defender for Rust builds
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$HOME\.cargo" -ErrorAction SilentlyContinue
+
+      # Tauri v2 Linux 系统依赖（剔除推荐包加速安装，换源规避 Azure 节点限速）
       - name: Install Tauri Linux system dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/sources.list || true
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: pnpm/action-setup@v6
 
@@ -116,6 +128,7 @@ jobs:
           name: release-${{ matrix.platform }}
           path: artifacts
           if-no-files-found: error
+          compression-level: 1
 
   # 步骤 2: 统一发布 —— 合并双平台产物，一次性写 latest.json 并原子发布
   publish:

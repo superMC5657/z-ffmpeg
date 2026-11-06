@@ -46,6 +46,7 @@ jobs:
           name: frontend-dist
           path: dist
           if-no-files-found: error
+          compression-level: 1
 
   # Job 2: 跨平台 Rust 门禁免装前端环境，直接复用 frontend-dist
   rust:
@@ -59,12 +60,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Tauri v2 Linux 系统依赖
+      # 优化 Windows 磁盘 IO，避免杀毒实时扫描海量编译临时文件
+      - name: Optimize Windows Defender for Rust builds
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}" -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "$HOME\.cargo" -ErrorAction SilentlyContinue
+
+      # Tauri v2 Linux 系统依赖（剔除推荐包加速安装，换源规避 Azure 节点限速）
       - name: Install Tauri Linux system dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/sources.list || true
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev build-essential curl wget file patchelf libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       # 下载前端单源产物供 tauri build.rs / generate_context 校验
       - name: Download frontend dist
@@ -81,7 +94,9 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # 代码格式检查单平台运行即可，避免 Windows 重复执行
       - name: Rust Format
+        if: runner.os == 'Linux'
         run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
       - name: Rust Clippy
