@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 /**
  * 自动化发版闭环脚本：
- *   1. 校验当前 main 分支与提交状态（支持可选的自动升版并提交推送）
- *   2. 自动检测并等待当前 commit 在 main 上的 CI 门禁 100% 全绿（支持实时轮询进度）
- *   3. 门禁全绿后，自动打 Tag 并推送到 GitHub，触发 release-tauri.yml 直通打包出包
+ *   1. 校验当前 main 分支与提交状态（确保工作区干净且所有提交已推送到远端）
+ *   2. 读取 package.json 当前版本号，校验目标 Tag 是否已发布
+ *   3. 自动检测并等待当前 commit 在 main 上的 CI 门禁 100% 全绿（实时轮询进度）
+ *   4. 门禁全绿后，自动创建 Git Tag 并推送到 GitHub，触发部署/打包流水线
  *
  * 用法:
- *   node scripts/release.mjs               # 针对当前版本，等待 CI 绿后打 Tag 推送
- *   node scripts/release.mjs --dry-run     # 预检 CI 状态，不实际打 Tag 或推送
- *   node scripts/release.mjs --patch       # 递增 patch 版本，提交推 main，等 CI 绿后打 Tag
- *   node scripts/release.mjs --minor       # 递增 minor 版本，提交推 main，等 CI 绿后打 Tag
- *   node scripts/release.mjs <x.y.z>       # 指定版本号，提交推 main，等 CI 绿后打 Tag
+ *   pnpm release                          # 针对当前版本，等待 CI 绿后打 Tag 推送
+ *   pnpm release --dry-run                # 预检 CI 状态，不实际打 Tag 或推送
+ *   pnpm release -h, --help               # 显示帮助信息
+ *
+ * 说明:
+ *   本脚本专职负责“CI 门禁核验”与“打 Tag 触发发版”，不负责修改版本号。
+ *   如需升级版本，请先运行 `pnpm bump`（如 pnpm bump --patch）修改版本号，
+ *   随同代码一起 Commit 推送至 main，然后再执行 `pnpm release`。
  */
 
 import { execSync, spawnSync } from 'node:child_process'
@@ -68,28 +72,44 @@ function parseCliArgs() {
   const raw = process.argv.slice(2)
   const isDryRun = raw.includes('--dry-run')
   const isHelp = raw.includes('--help') || raw.includes('-h')
-  const bumpArgs = raw.filter((a) => a !== '--dry-run' && a !== '--help' && a !== '-h')
-  const hasBumpArg = bumpArgs.some(
-    (a) => a === '--patch' || a === '--minor' || a === '--major' || /^\d+\.\d+\.\d+/.test(a),
-  )
-  return { isDryRun, isHelp, hasBumpArg, bumpArgs }
+  const unknownArgs = raw.filter((a) => a !== '--dry-run' && a !== '--help' && a !== '-h')
+
+  if (unknownArgs.length > 0) {
+    const hasBumpArg = unknownArgs.some(
+      (a) => a === '--patch' || a === '--minor' || a === '--major' || /^\d+\.\d+\.\d+/.test(a),
+    )
+    if (hasBumpArg) {
+      console.error(`\n❌ pnpm release 不再支持递增版本号参数 (${unknownArgs.join(' ')})。`)
+      console.error(`   发版脚本专职负责“CI 校验”与“打 Tag 发布”。`)
+      console.error(`   如需修改版本号，请先运行: pnpm bump ${unknownArgs.join(' ')}`)
+      console.error(
+        `   将版本修改与业务代码一同 Commit 提交到 main 分支后，再运行 pnpm release。\n`,
+      )
+    } else {
+      console.error(`\n❌ 未知参数: ${unknownArgs.join(' ')}。请使用 --help 查看说明。\n`)
+    }
+    process.exit(1)
+  }
+
+  return { isDryRun, isHelp }
 }
 
 async function main() {
-  const { isDryRun, isHelp, hasBumpArg, bumpArgs } = parseCliArgs()
+  const { isDryRun, isHelp } = parseCliArgs()
 
   if (isHelp) {
     console.log(`
 用法:
-  node scripts/release.mjs [选项]
+  pnpm release [选项]
 
 选项:
-  --patch               递增 patch 版本号 (0.1.0 -> 0.1.1)
-  --minor               递增 minor 版本号 (0.1.0 -> 0.2.0)
-  --major               递增 major 版本号 (0.1.0 -> 1.0.0)
-  <x.y.z>               直接指定版本号 (如 1.2.3)
   --dry-run             预检当前 Commit 的 CI 状态，不执行打 Tag 或推送
   -h, --help            显示帮助信息
+
+说明:
+  发版脚本专职负责“CI 门禁核验”与“打 Tag 触发发版”，不负责修改版本号。
+  如需升级版本，请先运行 \`pnpm bump\`（如 pnpm bump --patch）修改版本号，
+  随同代码一起 Commit 推送至 main，然后再执行 \`pnpm release\`。
 `)
     process.exit(0)
   }
@@ -109,53 +129,33 @@ async function main() {
     process.exit(1)
   }
 
-  // 2. 如果指定了自动 bump
-  if (hasBumpArg) {
-    const status = run('git status --porcelain')
-    if (status) {
-      console.error('❌ 当前工作区有未提交的改动，请先提交或暂存后再执行发版！\n' + status)
-      process.exit(1)
-    }
+  // 2. 检查工作区状态（确保所有改动都已提交）
+  const status = run('git status --porcelain')
+  if (status) {
+    console.error('❌ 当前工作区有未提交的改动，请先提交或暂存后再执行发版！\n' + status)
+    process.exit(1)
+  }
 
-    console.log('📦 正在执行版本号递增...')
-    runInherit('node', ['scripts/bump-version.mjs', ...bumpArgs])
-
-    const nextVersion = getPkgVersion()
-    console.log(`📝 正在提交版本递增 commit: chore(release): bump to v${nextVersion}`)
-    runInherit('git', [
-      'add',
-      'package.json',
-      'src-tauri/Cargo.toml',
-      'src-tauri/Cargo.lock',
-      'src-tauri/tauri.conf.json',
-    ])
-    runInherit('git', ['commit', '-m', `chore(release): bump to v${nextVersion}`])
-
-    if (!isDryRun) {
-      console.log('⬆️ 正在推送到远端 main 分支...')
+  // 3. 检查是否有尚未推送的 commit
+  const unpushed = run('git log @{u}..HEAD --oneline || true')
+  if (unpushed) {
+    if (isDryRun) {
+      console.log('ℹ️ [dry-run] 本地有尚未推送到远端的提交:\n' + unpushed)
+    } else {
+      console.log('⬆️ 检测到本地有尚未推送到远端的提交，正在推送到 main...')
       runInherit('git', ['push', 'origin', currentBranch])
-    }
-  } else {
-    // 检查是否有尚未推送的 commit
-    const unpushed = run('git log @{u}..HEAD --oneline || true')
-    if (unpushed) {
-      if (isDryRun) {
-        console.log('ℹ️ [dry-run] 本地有尚未推送到远端的提交:\n' + unpushed)
-      } else {
-        console.log('⬆️ 检测到本地有尚未推送到远端的提交，正在推送到 main...')
-        runInherit('git', ['push', 'origin', currentBranch])
-      }
     }
   }
 
-  // 3. 校验目标 Tag
+  // 4. 校验目标 Tag
   const version = getPkgVersion()
   const tag = `v${version}`
 
   const remoteTag = run(`git ls-remote --tags origin refs/tags/${tag} || true`)
   if (remoteTag) {
-    console.error(`❌ Tag [${tag}] 在远端仓库已存在！`)
-    console.error(`   如果需要发布新版本，请运行: node scripts/release.mjs --patch`)
+    console.error(`\n❌ 远端仓库已存在 Tag [${tag}]！`)
+    console.error(`   当前代码尚未升级新版本。请先修改版本号（例如运行 pnpm bump --patch），`)
+    console.error(`   将版本修改提交并推送到 main 后，再运行 pnpm release。\n`)
     process.exit(1)
   }
 
@@ -165,7 +165,7 @@ async function main() {
   console.log(`📍 目标 Commit:  ${headSha.slice(0, 8)} (${repo})`)
   console.log(`==================================================\n`)
 
-  // 4. 检索 CI 任务
+  // 5. 检索 CI 任务
   console.log(`🔍 正在检索 GitHub Actions CI 任务...`)
   let runId = null
   let runUrl = null
@@ -197,7 +197,7 @@ async function main() {
 
   console.log(`🔗 对应 CI 任务: ${runUrl}`)
 
-  // 5. 轮询 CI 状态
+  // 6. 轮询 CI 状态
   const pollStart = Date.now()
   let finalConclusion = null
 
@@ -213,7 +213,10 @@ async function main() {
 
       const elapsedSec = Math.floor((Date.now() - pollStart) / 1000)
       const jobsSummary = (info.jobs || [])
-        .map((j) => `${j.name}: ${j.status === 'completed' ? (j.conclusion === 'success' ? '✔' : '✖') : '⏳'}`)
+        .map(
+          (j) =>
+            `${j.name}: ${j.status === 'completed' ? (j.conclusion === 'success' ? '✔' : '✖') : '⏳'}`,
+        )
         .join(' | ')
 
       process.stdout.write(`\r⏳ CI 门禁运行中... [${elapsedSec}s] ${jobsSummary} `)
@@ -237,7 +240,7 @@ async function main() {
     return
   }
 
-  // 6. 门禁全绿，打 Tag 并推送到 GitHub 触发 Release
+  // 7. 门禁全绿，打 Tag 并推送到 GitHub 触发 Release
   console.log(`\n🏷️ 正在创建本地 Git Tag: ${tag}...`)
   try {
     run(`git tag -a ${tag} -m "Release ${tag}"`)
@@ -250,7 +253,7 @@ async function main() {
 
   console.log(`\n==================================================`)
   console.log(`🎉 发版 Tag [${tag}] 推送成功！`)
-  console.log(`📦 GitHub Actions 发版流水线 (release-tauri.yml) 已自动拉起直通构建打包。`)
+  console.log(`📦 GitHub Actions 已自动拉起发版部署/打包流水线。`)
   console.log(`🌐 实时查看发布进度: https://github.com/${repo}/actions`)
   console.log(`==================================================\n`)
 }
